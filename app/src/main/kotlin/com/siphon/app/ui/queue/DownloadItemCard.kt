@@ -471,9 +471,12 @@ fun computeProgress(download: DownloadEntity, chunks: List<ChunkEntity>): Float 
 fun computeDownloadedBytes(download: DownloadEntity, chunks: List<ChunkEntity>): Long {
     val isHls = download.type == DownloadType.HLS
     return if (isHls) {
-        val mergedBytes = chunks.filter { it.state == ChunkState.MERGED }.maxOfOrNull { it.endOffset } ?: 0L
-        val doneBytes = chunks.filter { it.state == ChunkState.DONE || it.state == ChunkState.MERGED }.sumOf { it.currentOffset }
-        val actualBytes = maxOf(mergedBytes, doneBytes)
+        val mergedBytes = chunks.filter { it.state == ChunkState.MERGED }
+            .groupBy { it.trackIndex }
+            .values
+            .sumOf { trackChunks -> trackChunks.maxOfOrNull { it.endOffset } ?: 0L }
+        val doneBytes = chunks.filter { it.state == ChunkState.DONE }.sumOf { it.currentOffset }
+        val actualBytes = mergedBytes + doneBytes
         if (actualBytes > 0L) {
             actualBytes
         } else {
