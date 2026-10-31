@@ -151,7 +151,11 @@ class HlsQueueEngine(
                     onSegmentMerged = { bytesMerged ->
                         currentMergedCount++
                         val estTotal = if (download.totalBytes > 0L) {
-                            download.totalBytes
+                            if (bytesMerged >= download.totalBytes && currentMergedCount > 0 && totalSegmentsCount > 0) {
+                                (bytesMerged.toDouble() / currentMergedCount * totalSegmentsCount).toLong()
+                            } else {
+                                download.totalBytes
+                            }
                         } else if (currentMergedCount > 0 && totalSegmentsCount > 0) {
                             (bytesMerged.toDouble() / currentMergedCount * totalSegmentsCount).toLong()
                         } else {

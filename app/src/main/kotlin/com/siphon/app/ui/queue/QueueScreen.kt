@@ -747,6 +747,12 @@ private fun DownloadItemCard(
                 val progressPercent = (progressFraction * 100).toInt()
                 val downloadedBytes = computeDownloadedBytes(download, chunks)
 
+                val estTotal = if (completedSegments > 0 && totalSegments > 0 && (downloadedBytes >= download.totalBytes || download.totalBytes <= 0L)) {
+                    (downloadedBytes.toDouble() / completedSegments * totalSegments).toLong()
+                } else {
+                    download.totalBytes
+                }
+
                 // Subtitle: Type & Size / Progress
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -761,11 +767,16 @@ private fun DownloadItemCard(
                         download.state == DownloadState.COMPLETED -> {
                             " • ${formatFileSize(if (download.totalBytes > 0) download.totalBytes else downloadedBytes)} (100%)"
                         }
+                        isHls -> {
+                            val totalStr = if (estTotal > 0L) " of ~${formatFileSize(estTotal)}" else ""
+                            if (totalSegments > 0) {
+                                " • ${formatFileSize(downloadedBytes)}$totalStr · $completedSegments/$totalSegments segs ($progressPercent%)"
+                            } else {
+                                " • ${formatFileSize(downloadedBytes)}$totalStr ($progressPercent%)"
+                            }
+                        }
                         download.totalBytes > 0L -> {
                             " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%)"
-                        }
-                        isHls && totalSegments > 0 -> {
-                            " • $completedSegments / $totalSegments segments ($progressPercent%)"
                         }
                         else -> {
                             " • " + formatFileSize(download.totalBytes)
@@ -1104,11 +1115,16 @@ private fun computeProgress(download: DownloadEntity, chunks: List<ChunkEntity>)
 private fun computeDownloadedBytes(download: DownloadEntity, chunks: List<ChunkEntity>): Long {
     val isHls = download.type == DownloadType.HLS
     return if (isHls) {
-        val totalSegments = chunks.size
-        val completedSegments = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
-        if (download.totalBytes > 0 && totalSegments > 0) {
-            (download.totalBytes * (completedSegments.toDouble() / totalSegments)).toLong()
-        } else 0L
+        val mergedBytes = chunks.filter { it.state == ChunkState.MERGED }.maxOfOrNull { it.endOffset } ?: 0L
+        if (mergedBytes > 0L) {
+            mergedBytes
+        } else {
+            val totalSegments = chunks.size
+            val completedSegments = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
+            if (download.totalBytes > 0 && totalSegments > 0) {
+                (download.totalBytes * (completedSegments.toDouble() / totalSegments)).toLong()
+            } else 0L
+        }
     } else {
         chunks.sumOf { (it.currentOffset - it.startOffset).coerceAtLeast(0L) }
     }
