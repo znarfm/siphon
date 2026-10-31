@@ -277,7 +277,15 @@ fun MainContent(
                     onDeleteBookmark = { browserViewModel.deleteBookmark(it) },
                     onDeleteHistory = { browserViewModel.deleteHistory(it) },
                     onClearHistory = { browserViewModel.clearHistory() },
-                    onRefreshAdblock = { browserViewModel.refreshAdblockSubscriptions(it) },
+                    onRefreshAdblock = { config ->
+                        browserViewModel.refreshAdblockSubscriptions(config) { result ->
+                            val msg = result.fold(
+                                onSuccess = { (blocked, allowed) -> "Adblock: $blocked blocked, $allowed allowed" },
+                                onFailure = { err -> "Adblock error: ${err.message ?: "Failed to update"}" }
+                            )
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     onUpdateTabMeta = { url, title -> browserViewModel.updateActiveTabMeta(url, title) },
                     onRegisterDomScan = { scanner -> browserViewModel.onRequestDomScan = scanner },
                     onRegisterPageReload = { reloader -> browserViewModel.onRequestPageReload = reloader }

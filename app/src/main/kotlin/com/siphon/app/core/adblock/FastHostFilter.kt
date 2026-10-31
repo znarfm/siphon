@@ -90,18 +90,30 @@ class FastHostFilter(
 
             val fetchedBlocks = coroutineScope {
                 blockUrls.filter { it.isNotBlank() }.map { url ->
-                    async { fetchAndParse(url, isAllow = false) }
+                    val cleanUrl = url.trim().replace("/refs/heads/", "/")
+                    async {
+                        runCatching { fetchAndParse(cleanUrl, isAllow = false) }
+                            .getOrElse { emptySet() }
+                    }
                 }.awaitAll()
             }
 
             val fetchedAllows = coroutineScope {
                 allowUrls.filter { it.isNotBlank() }.map { url ->
-                    async { fetchAndParse(url, isAllow = true) }
+                    val cleanUrl = url.trim().replace("/refs/heads/", "/")
+                    async {
+                        runCatching { fetchAndParse(cleanUrl, isAllow = true) }
+                            .getOrElse { emptySet() }
+                    }
                 }.awaitAll()
             }
 
             val newBlocked = fetchedBlocks.flatten().toHashSet()
             val newAllowed = fetchedAllows.flatten().toHashSet()
+
+            if (newBlocked.isEmpty() && blockUrls.any { it.isNotBlank() }) {
+                throw IOException("Failed to load rules: network unreachable or invalid blocklist URL")
+            }
 
             // Atomic pointer swap
             blockedHosts = newBlocked
@@ -127,6 +139,28 @@ class FastHostFilter(
     }
 
     private fun fetchAndParse(url: String, isAllow: Boolean): Set<String> {
+        val cleanUrl = url.trim().replace("/refs/heads/", "/")
+        val result = runCatching { doNetworkFetch(cleanUrl, isAllow) }
+        if (result.isSuccess) return result.getOrThrow()
+
+        // Fallback to jsDelivr CDN if raw.githubusercontent.com is blocked
+        if (cleanUrl.contains("raw.githubusercontent.com/")) {
+            val cdnFallback = when (cleanUrl) {
+                "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/normal.txt" -> HAGEZI_NORMAL_URL
+                "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/light.txt" -> HAGEZI_LIGHT_URL
+                "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/pro.txt" -> HAGEZI_PRO_URL
+                "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/fake.txt" -> HAGEZI_THREAT_URL
+                "https://raw.githubusercontent.com/DandelionSprout/adfilt/master/LegitimateURLShortener.txt" -> DANDELION_SHORTENERS_URL
+                else -> null
+            }
+            if (cdnFallback != null) {
+                return doNetworkFetch(cdnFallback, isAllow)
+            }
+        }
+        throw result.exceptionOrNull() ?: IOException("Failed to load $url")
+    }
+
+    private fun doNetworkFetch(url: String, isAllow: Boolean): Set<String> {
         val req = Request.Builder().url(url).build()
         val set = HashSet<String>(1024)
         NetworkClients.defaultClient.newCall(req).execute().use { resp ->
@@ -246,11 +280,11 @@ class FastHostFilter(
     }
 
     companion object {
-        const val HAGEZI_NORMAL_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/normal.txt"
-        const val HAGEZI_LIGHT_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/light.txt"
-        const val HAGEZI_PRO_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/pro.txt"
-        const val HAGEZI_THREAT_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/fake.txt"
-        const val DANDELION_SHORTENERS_URL = "https://raw.githubusercontent.com/DandelionSprout/adfilt/refs/heads/master/LegitimateURLShortener.txt"
+        const val HAGEZI_NORMAL_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/multi.txt"
+        const val HAGEZI_LIGHT_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/light.txt"
+        const val HAGEZI_PRO_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/pro.txt"
+        const val HAGEZI_THREAT_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/fake.txt"
+        const val DANDELION_SHORTENERS_URL = "https://cdn.jsdelivr.net/gh/DandelionSprout/adfilt@master/LegitimateURLShortener.txt"
 
         fun extractHostFromRule(line: String): String? {
             val trimmed = line.trim()

@@ -137,4 +137,13 @@ class FastHostFilterTest {
         // Unallowed blocked hosts still blocked
         assertTrue(filter.shouldBlockHost("doubleclick.net"))
     }
+
+    @Test
+    fun testValidSubscriptionUrls() {
+        assertFalse(FastHostFilter.DANDELION_SHORTENERS_URL.contains("refs/heads"))
+        assertTrue(FastHostFilter.DANDELION_SHORTENERS_URL.contains("jsdelivr.net"))
+        val config = AdblockConfig()
+        assertTrue(config.toBlockUrls().contains(FastHostFilter.HAGEZI_NORMAL_URL))
+        assertTrue(config.toAllowUrls().contains(FastHostFilter.DANDELION_SHORTENERS_URL))
+    }
 }

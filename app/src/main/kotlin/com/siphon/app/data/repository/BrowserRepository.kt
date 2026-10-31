@@ -105,9 +105,13 @@ class BrowserRepository(
     }
 
     fun getActiveAdblockConfig(): AdblockConfig {
+        var base = prefs.getString("pref_adblock_base_url", FastHostFilter.HAGEZI_NORMAL_URL)
+            ?: FastHostFilter.HAGEZI_NORMAL_URL
+        if (base.contains("raw.githubusercontent.com")) {
+            base = FastHostFilter.HAGEZI_NORMAL_URL
+        }
         return AdblockConfig(
-            baseUrl = prefs.getString("pref_adblock_base_url", FastHostFilter.HAGEZI_NORMAL_URL)
-                ?: FastHostFilter.HAGEZI_NORMAL_URL,
+            baseUrl = base,
             allowShorteners = prefs.getBoolean("pref_adblock_allow_shorteners", true),
             enableThreatIntel = prefs.getBoolean("pref_adblock_threat_intel", false),
             customUrl = prefs.getString("pref_adblock_custom_url", "") ?: ""

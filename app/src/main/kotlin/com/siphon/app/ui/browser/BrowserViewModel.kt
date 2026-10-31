@@ -228,10 +228,14 @@ class BrowserViewModel(
         }
     }
 
-    fun refreshAdblockSubscriptions(config: AdblockConfig) {
+    fun refreshAdblockSubscriptions(
+        config: AdblockConfig,
+        onResult: ((Result<Pair<Int, Int>>) -> Unit)? = null
+    ) {
         _adblockConfig.value = config
         viewModelScope.launch {
-            browserRepository.refreshAdblockSubscriptions(config)
+            val result = browserRepository.refreshAdblockSubscriptions(config)
+            onResult?.invoke(result)
         }
     }
 
