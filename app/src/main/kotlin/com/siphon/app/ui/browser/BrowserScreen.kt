@@ -21,6 +21,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -341,12 +342,16 @@ fun BrowserScreen(
         }
     }
 
+    val handleCancelFocus = {
+        isUrlBarFocused = false
+        focusManager.clearFocus()
+        val cur = activeWebView?.url ?: currentUrl
+        urlTextFieldValue = TextFieldValue(cur)
+    }
+
     BackHandler(enabled = isUrlBarFocused || canGoBack) {
         if (isUrlBarFocused) {
-            isUrlBarFocused = false
-            focusManager.clearFocus()
-            val cur = activeWebView?.url ?: currentUrl
-            urlTextFieldValue = TextFieldValue(cur)
+            handleCancelFocus()
         } else {
             activeWebView?.goBack()
         }
@@ -413,7 +418,15 @@ fun BrowserScreen(
                     onUrlChange = { urlTextFieldValue = it },
                     isUrlBarFocused = isUrlBarFocused,
                     onFocusChange = { isUrlBarFocused = it },
+                    onCancelFocus = handleCancelFocus,
                     onSubmitUrl = { target ->
+                        val current = activeWebView?.url ?: currentUrl
+                        val normTarget = target.trimEnd('/')
+                        val normCurrent = current.trimEnd('/')
+                        if (normTarget.equals(normCurrent, ignoreCase = true)) {
+                            handleCancelFocus()
+                            return@BrowserTopBar
+                        }
                         isUrlBarFocused = false
                         focusManager.clearFocus()
                         urlTextFieldValue = TextFieldValue(target)
@@ -486,6 +499,16 @@ fun BrowserScreen(
                 .fillMaxWidth()
                 .background(Color(webViewBgArgb))
         ) {
+            if (isUrlBarFocused) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .clickable { handleCancelFocus() }
+                        .zIndex(10f)
+                )
+            }
+
             tabs.forEach { tab ->
                 key(tab.id) {
                     val isVisible = tab.id == activeTabId

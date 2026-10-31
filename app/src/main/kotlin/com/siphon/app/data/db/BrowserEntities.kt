@@ -41,11 +41,14 @@ interface BrowserDao {
     @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE url = :url LIMIT 1)")
     fun observeIsBookmarked(url: String): Flow<Boolean>
 
-    @Query("SELECT * FROM history ORDER BY visitedAt DESC LIMIT 250")
+    @Query("SELECT * FROM history WHERE id IN (SELECT MAX(id) FROM history GROUP BY url) ORDER BY visitedAt DESC LIMIT 250")
     fun observeHistory(): Flow<List<HistoryEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHistory(history: HistoryEntity): Long
+
+    @Query("DELETE FROM history WHERE url = :url")
+    suspend fun deleteHistoryByUrl(url: String)
 
     @Query("DELETE FROM history WHERE id = :id")
     suspend fun deleteHistoryById(id: Long)

@@ -74,6 +74,7 @@ fun BrowserTopBar(
     onUrlChange: (TextFieldValue) -> Unit,
     isUrlBarFocused: Boolean,
     onFocusChange: (Boolean) -> Unit,
+    onCancelFocus: () -> Unit = {},
     onSubmitUrl: (String) -> Unit,
     onClearUrl: () -> Unit,
     pageProgress: Int,
@@ -107,7 +108,15 @@ fun BrowserTopBar(
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (!isUrlBarFocused && canGoBack) {
+                if (isUrlBarFocused) {
+                    IconButton(
+                        onClick = onCancelFocus,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Text("←", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                } else if (canGoBack) {
                     IconButton(
                         onClick = onGoBack,
                         modifier = Modifier.size(34.dp)

@@ -87,6 +87,7 @@ class BrowserRepository(
 
     suspend fun addHistory(url: String, title: String) = withContext(Dispatchers.IO) {
         if (url.isBlank() || url.startsWith("about:") || url.startsWith("chrome:")) return@withContext
+        browserDao.deleteHistoryByUrl(url)
         browserDao.insertHistory(
             HistoryEntity(
                 title = title.ifBlank { deriveTitleFromUrl(url) },
