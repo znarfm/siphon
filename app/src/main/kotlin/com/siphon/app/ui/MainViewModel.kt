@@ -361,6 +361,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isSnifferSheetOpen.value = false
     }
 
+    fun loadUrlAndOpenSniffer(url: String) {
+        clearDetectedMedia()
+        setBrowserUrl(url)
+        selectTab(AppTab.BROWSER)
+        snifferClient.inspectCandidate(url, forceInspect = true)
+        openSnifferSheet()
+    }
+
     fun setConcurrency(maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean) {
         val maxD = maxDownloads.coerceIn(1, 4)
         val w = workers.coerceIn(1, 8)

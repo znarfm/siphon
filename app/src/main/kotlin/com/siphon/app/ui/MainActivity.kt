@@ -88,12 +88,45 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_VIEW) {
-            val url = intent.dataString
-            if (!url.isNullOrBlank()) {
-                viewModel.setBrowserUrl(url)
-                viewModel.selectTab(AppTab.BROWSER)
+        if (intent == null) return
+        val url = extractUrlFromIntent(intent)
+        if (!url.isNullOrBlank()) {
+            viewModel.loadUrlAndOpenSniffer(url)
+        }
+    }
+
+    private fun extractUrlFromIntent(intent: Intent): String? {
+        val data = intent.dataString
+        if (!data.isNullOrBlank() && (data.startsWith("http://") || data.startsWith("https://"))) {
+            return data
+        }
+
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+        extractUrlFromText(text)?.let { return it }
+
+        val clip = intent.clipData
+        if (clip != null && clip.itemCount > 0) {
+            for (i in 0 until clip.itemCount) {
+                val item = clip.getItemAt(i)
+                val uriStr = item.uri?.toString()
+                if (!uriStr.isNullOrBlank() && (uriStr.startsWith("http://") || uriStr.startsWith("https://"))) {
+                    return uriStr
+                }
+                extractUrlFromText(item.text?.toString())?.let { return it }
             }
+        }
+
+        extractUrlFromText(intent.getStringExtra(Intent.EXTRA_SUBJECT))?.let { return it }
+
+        return null
+    }
+
+    companion object {
+        private val urlRegex = Regex("""https?://[^\s<>"'{}|\\^`]+""")
+
+        fun extractUrlFromText(text: String?): String? {
+            if (text.isNullOrBlank()) return null
+            return urlRegex.find(text)?.value?.trimEnd('.', ',', ')', ']', ';', '!')
         }
     }
 

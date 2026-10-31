@@ -58,9 +58,9 @@ object HlsPlaylistParser {
                     }
                 }
             } else if (line.startsWith("#EXT-X-STREAM-INF:")) {
-                val avgBw = extractAttribute(line, "AVERAGE-BANDWIDTH")?.toLongOrNull()
                 val peakBw = extractAttribute(line, "BANDWIDTH")?.toLongOrNull() ?: 0L
-                currentBandwidth = if (avgBw != null && avgBw > 0L) avgBw else if (peakBw > 0L) (peakBw * 4L / 10L).coerceAtLeast(500_000L) else 0L
+                val avgBw = extractAttribute(line, "AVERAGE-BANDWIDTH")?.toLongOrNull() ?: 0L
+                currentBandwidth = if (peakBw > 0L) peakBw else avgBw
                 currentResolution = extractAttribute(line, "RESOLUTION")
                 currentCodecs = extractAttribute(line, "CODECS")
                 currentAudioGroup = extractAttribute(line, "AUDIO")

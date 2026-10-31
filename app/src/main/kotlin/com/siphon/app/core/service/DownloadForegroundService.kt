@@ -168,7 +168,13 @@ class DownloadForegroundService : Service() {
                 promoteToForeground()
                 if (downloadId > 0L) {
                     startOrResumeDownload(downloadId)
+                } else {
+                    resumeAllDownloads()
                 }
+            }
+            ACTION_RESUME_ALL -> {
+                promoteToForeground()
+                resumeAllDownloads()
             }
             ACTION_PAUSE -> {
                 if (downloadId > 0L) {
@@ -182,6 +188,9 @@ class DownloadForegroundService : Service() {
             }
             ACTION_PAUSE_ALL -> {
                 pauseAllDownloads(postTimeoutResumeNotif = false, stopStartId = startId)
+            }
+            ACTION_CANCEL_ALL -> {
+                cancelAllDownloads()
             }
         }
         return START_NOT_STICKY
@@ -226,7 +235,10 @@ class DownloadForegroundService : Service() {
     }
 
     private fun startOrResumeDownload(downloadId: Long) {
-        if (activeJobs.containsKey(downloadId)) return
+        if (activeJobs.containsKey(downloadId)) {
+            resumeAllDownloads()
+            return
+        }
 
         val job = serviceScope.launch(Dispatchers.IO) {
             val entity = dao.getDownload(downloadId) ?: return@launch
@@ -331,6 +343,26 @@ class DownloadForegroundService : Service() {
         }
     }
 
+    private fun resumeAllDownloads() {
+        serviceScope.launch(Dispatchers.IO) {
+            val resumable = dao.getDownloadsByState(DownloadState.WAITING_FOR_NETWORK) +
+                dao.getDownloadsByState(DownloadState.PAUSED) +
+                dao.getDownloadsByState(DownloadState.QUEUED)
+            for (item in resumable) {
+                startOrResumeDownload(item.id)
+            }
+        }
+    }
+
+    private fun cancelAllDownloads() {
+        serviceScope.launch(Dispatchers.IO) {
+            val runningIds = activeJobs.keys.toList()
+            for (id in runningIds) {
+                cancelDownload(id)
+            }
+        }
+    }
+
     private fun stopForegroundIfIdle() {
         if (activeJobs.isEmpty()) {
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -345,10 +377,25 @@ class DownloadForegroundService : Service() {
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
 
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, com.siphon.app.ui.MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        builder.setContentIntent(contentIntent)
+
         if (items.isEmpty()) {
             return builder
                 .setContentTitle("Preparing download…")
                 .setProgress(0, 0, true)
+                .addAction(
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                    "Cancel",
+                    buildServicePendingIntent(ACTION_CANCEL_ALL, 0L, reqOffset = 7)
+                )
                 .build()
         }
 
@@ -378,6 +425,11 @@ class DownloadForegroundService : Service() {
                 buildServicePendingIntent(ACTION_PAUSE, primary.downloadId, reqOffset = 1)
             )
             builder.addAction(
+                android.R.drawable.ic_media_play,
+                "Resume",
+                buildServicePendingIntent(ACTION_START_OR_RESUME, primary.downloadId, reqOffset = 4)
+            )
+            builder.addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 "Cancel",
                 buildServicePendingIntent(ACTION_CANCEL, primary.downloadId, reqOffset = 2)
@@ -387,6 +439,16 @@ class DownloadForegroundService : Service() {
                 android.R.drawable.ic_media_pause,
                 "Pause All",
                 buildServicePendingIntent(ACTION_PAUSE_ALL, 0L, reqOffset = 3)
+            )
+            builder.addAction(
+                android.R.drawable.ic_media_play,
+                "Resume All",
+                buildServicePendingIntent(ACTION_RESUME_ALL, 0L, reqOffset = 6)
+            )
+            builder.addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Cancel All",
+                buildServicePendingIntent(ACTION_CANCEL_ALL, 0L, reqOffset = 7)
             )
         }
 
@@ -451,7 +513,8 @@ class DownloadForegroundService : Service() {
         }
         val requestCode = ((downloadId.hashCode() * 31) + reqOffset) and 0x7FFFFFFF
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        return if (action == ACTION_START_OR_RESUME && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val isForegroundAction = action == ACTION_START_OR_RESUME || action == ACTION_RESUME_ALL
+        return if (isForegroundAction && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             PendingIntent.getForegroundService(this, requestCode, intent, flags)
         } else {
             PendingIntent.getService(this, requestCode, intent, flags)
@@ -501,6 +564,8 @@ class DownloadForegroundService : Service() {
         const val ACTION_PAUSE = "com.siphon.app.action.PAUSE"
         const val ACTION_CANCEL = "com.siphon.app.action.CANCEL"
         const val ACTION_PAUSE_ALL = "com.siphon.app.action.PAUSE_ALL"
+        const val ACTION_RESUME_ALL = "com.siphon.app.action.RESUME_ALL"
+        const val ACTION_CANCEL_ALL = "com.siphon.app.action.CANCEL_ALL"
         const val ACTION_UPDATE_CONCURRENCY = "com.siphon.app.action.UPDATE_CONCURRENCY"
 
         const val EXTRA_DOWNLOAD_ID = "extra_download_id"
@@ -558,6 +623,24 @@ class DownloadForegroundService : Service() {
             val intent = Intent(context, DownloadForegroundService::class.java).apply {
                 action = ACTION_CANCEL
                 putExtra(EXTRA_DOWNLOAD_ID, downloadId)
+            }
+            context.startService(intent)
+        }
+
+        fun resumeAll(context: Context) {
+            val intent = Intent(context, DownloadForegroundService::class.java).apply {
+                action = ACTION_RESUME_ALL
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun cancelAll(context: Context) {
+            val intent = Intent(context, DownloadForegroundService::class.java).apply {
+                action = ACTION_CANCEL_ALL
             }
             context.startService(intent)
         }
