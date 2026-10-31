@@ -627,6 +627,13 @@ class DownloadForegroundService : Service() {
             context.startService(intent)
         }
 
+        fun pauseAll(context: Context) {
+            val intent = Intent(context, DownloadForegroundService::class.java).apply {
+                action = ACTION_PAUSE_ALL
+            }
+            context.startService(intent)
+        }
+
         fun resumeAll(context: Context) {
             val intent = Intent(context, DownloadForegroundService::class.java).apply {
                 action = ACTION_RESUME_ALL

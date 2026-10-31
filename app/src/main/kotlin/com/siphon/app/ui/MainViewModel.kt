@@ -523,6 +523,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         DownloadForegroundService.cancel(getApplication(), downloadId)
     }
 
+    fun pauseAll() {
+        DownloadForegroundService.pauseAll(getApplication())
+    }
+
+    fun resumeAll() {
+        DownloadForegroundService.resumeAll(getApplication())
+    }
+
+    fun clearCompleted() {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.clearCompletedDownloads()
+        }
+    }
+
+    fun retryDownload(downloadId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val download = dao.getDownload(downloadId) ?: return@launch
+            if (download.type == DownloadType.HLS) {
+                val workDir = File(getApplication<Application>().cacheDir, "hls_$downloadId")
+                workDir.deleteRecursively()
+            }
+            dao.resetChunksToStart(downloadId)
+            dao.updateDownloadState(downloadId, DownloadState.QUEUED)
+            DownloadForegroundService.startOrResume(
+                context = getApplication(),
+                downloadId = downloadId,
+                maxConcurrent = _maxConcurrentDownloads.value,
+                workers = _workersPerDownload.value
+            )
+        }
+    }
+
+    fun renameDownload(downloadId: Long, newName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val entity = dao.getDownload(downloadId) ?: return@launch
+            val safeName = DownloadStorageProvider.sanitizeDisplayName(newName)
+            storage.rename(entity.destinationUri, safeName)
+            dao.updateDisplayName(downloadId, safeName)
+        }
+    }
+
     fun deleteDownload(downloadId: Long, deleteFile: Boolean = true) {
         viewModelScope.launch(Dispatchers.IO) {
             val entity = dao.getDownload(downloadId)

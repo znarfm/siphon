@@ -173,6 +173,27 @@ class DownloadStorageProvider(context: Context) {
         }
     }
 
+    /**
+     * Renames a completed or existing file in MediaStore or SAF document tree.
+     */
+    fun rename(uriString: String?, newDisplayName: String): Boolean {
+        if (uriString.isNullOrBlank()) return false
+        val uri = Uri.parse(uriString)
+        val safeName = sanitizeDisplayName(newDisplayName)
+        return runCatching {
+            if (isMediaStoreUri(uri)) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, safeName)
+                }
+                resolver.update(uri, values, null, null) > 0
+            } else if (DocumentsContract.isDocumentUri(appContext, uri)) {
+                DocumentsContract.renameDocument(resolver, uri, safeName) != null
+            } else {
+                false
+            }
+        }.getOrDefault(false)
+    }
+
     private fun createSafDocument(treeUri: Uri, displayName: String, mimeType: String): Uri {
         val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
         val parentDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId)

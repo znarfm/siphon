@@ -158,4 +158,19 @@ interface DownloadDao {
 
     @Query("DELETE FROM downloads WHERE id = :id")
     suspend fun deleteDownload(id: Long)
+
+    @Query("UPDATE downloads SET displayName = :newName WHERE id = :id")
+    suspend fun updateDisplayName(id: Long, newName: String)
+
+    @Query("DELETE FROM downloads WHERE state = 'COMPLETED'")
+    suspend fun clearCompletedDownloads()
+
+    @Query(
+        """
+        UPDATE download_chunks
+        SET currentOffset = startOffset, state = 'PENDING'
+        WHERE downloadId = :id
+        """
+    )
+    suspend fun resetChunksToStart(id: Long)
 }

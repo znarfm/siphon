@@ -249,7 +249,14 @@ fun MainContent(viewModel: MainViewModel) {
                         onCancel = { viewModel.cancelDownload(it) },
                         onDelete = { id, deleteFile -> viewModel.deleteDownload(id, deleteFile) },
                         onRebind = { viewModel.startRebindFlow(it) },
-                        onSaveSettings = { maxD, w, limit, wifi -> viewModel.setConcurrency(maxD, w, limit, wifi) }
+                        onSaveSettings = { maxD, w, limit, wifi -> viewModel.setConcurrency(maxD, w, limit, wifi) },
+                        onClearCompleted = { viewModel.clearCompleted() },
+                        onPauseAll = { viewModel.pauseAll() },
+                        onResumeAll = { viewModel.resumeAll() },
+                        onRetry = { viewModel.retryDownload(it) },
+                        onRename = { id, name -> viewModel.renameDownload(id, name) },
+                        onBulkDelete = { ids, deleteFiles -> ids.forEach { viewModel.deleteDownload(it, deleteFiles) } },
+                        onBulkCancel = { ids -> ids.forEach { viewModel.cancelDownload(it) } }
                     )
                 }
             }
