@@ -241,7 +241,7 @@ fun DownloadItemCard(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Segmented Chunk Progress Bar
-                if (download.state == DownloadState.MERGING) {
+                if (download.state == DownloadState.MERGING || (download.state == DownloadState.ACTIVE && chunks.isEmpty())) {
                     LinearProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -373,21 +373,37 @@ fun SegmentedChunkBar(
         }
 
         val totalW = size.width
-        val gapW = if (chunkCount > 1) 1.5.dp.toPx() else 0f
+        val rawGapW = 1.5.dp.toPx()
+        val gapW = if (chunkCount in 2..60 && (rawGapW * (chunkCount - 1)) <= totalW * 0.35f) rawGapW else 0f
         val totalGaps = gapW * (chunkCount - 1)
         val usableW = (totalW - totalGaps).coerceAtLeast(1f)
 
         if (isHls || totalBytes <= 0L) {
             val segW = usableW / chunkCount
-            for (i in 0 until chunkCount) {
-                val chunk = chunks[i]
-                val color = when (chunk.state) {
-                    ChunkState.MERGED, ChunkState.DONE -> doneColor
-                    ChunkState.IN_FLIGHT -> inFlightColor
-                    else -> pendingColor
+            if (segW < 1.5f) {
+                // Segments too dense to draw individually; render continuous bar
+                drawRect(color = pendingColor, size = Size(totalW, size.height))
+                val completedCount = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
+                val inFlightCount = chunks.count { it.state == ChunkState.IN_FLIGHT }
+                val completedW = totalW * (completedCount.toFloat() / chunkCount).coerceIn(0f, 1f)
+                val inFlightW = totalW * (inFlightCount.toFloat() / chunkCount).coerceIn(0f, (1f - completedCount.toFloat() / chunkCount).coerceAtLeast(0f))
+                if (completedW > 0f) {
+                    drawRect(color = doneColor, topLeft = Offset(0f, 0f), size = Size(completedW, size.height))
                 }
-                val startX = i * (segW + gapW)
-                drawRect(color = color, topLeft = Offset(startX, 0f), size = Size(segW, size.height))
+                if (inFlightW > 0f) {
+                    drawRect(color = inFlightColor, topLeft = Offset(completedW, 0f), size = Size(inFlightW, size.height))
+                }
+            } else {
+                for (i in 0 until chunkCount) {
+                    val chunk = chunks[i]
+                    val color = when (chunk.state) {
+                        ChunkState.MERGED, ChunkState.DONE -> doneColor
+                        ChunkState.IN_FLIGHT -> inFlightColor
+                        else -> pendingColor
+                    }
+                    val startX = i * (segW + gapW)
+                    drawRect(color = color, topLeft = Offset(startX, 0f), size = Size(segW, size.height))
+                }
             }
         } else {
             var currentX = 0f
