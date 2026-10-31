@@ -374,11 +374,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         DownloadForegroundService.cancel(getApplication(), downloadId)
     }
 
-    fun deleteDownload(downloadId: Long) {
+    fun deleteDownload(downloadId: Long, deleteFile: Boolean = true) {
         viewModelScope.launch(Dispatchers.IO) {
             val entity = dao.getDownload(downloadId)
             cancelDownload(downloadId)
-            if (entity?.destinationUri != null) {
+            if (deleteFile && entity?.destinationUri != null) {
                 storage.delete(entity.destinationUri)
             }
             if (entity?.type == DownloadType.HLS) {

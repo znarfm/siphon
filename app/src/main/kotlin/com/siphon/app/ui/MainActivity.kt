@@ -206,26 +206,33 @@ fun MainContent(viewModel: MainViewModel) {
                         onPause = { viewModel.pauseDownload(it) },
                         onResume = { viewModel.resumeDownload(it) },
                         onCancel = { viewModel.cancelDownload(it) },
-                        onDelete = { viewModel.deleteDownload(it) },
+                        onDelete = { id, deleteFile -> viewModel.deleteDownload(id, deleteFile) },
                         onRebind = { viewModel.startRebindFlow(it) },
                         onSaveConcurrency = { maxD, w -> viewModel.setConcurrency(maxD, w) }
                     )
                 }
             }
 
+            val activeTabTitle = browserTabs.firstOrNull { it.id == activeTabId }?.title
+
             SnifferSheet(
                 isOpen = isSnifferSheetOpen,
                 detectedMedia = detectedMedia,
                 rebindTarget = rebindTarget,
+                activeTabTitle = activeTabTitle,
                 onDismiss = { viewModel.closeSnifferSheet() },
                 onClearMedia = { viewModel.clearDetectedMedia() },
                 onRefreshMedia = { viewModel.refreshDetectedMedia() },
-                onDownloadMedia = { media, variantUrl ->
+                onDownloadMedia = { media, variantUrl, customFilename ->
                     val target = rebindTarget
                     if (target != null) {
                         viewModel.rebindDownload(target, media, variantUrl)
                     } else {
-                        viewModel.startDownload(media = media, selectedVariantUrl = variantUrl)
+                        viewModel.startDownload(
+                            media = media,
+                            customDisplayName = customFilename,
+                            selectedVariantUrl = variantUrl
+                        )
                     }
                 },
                 onRebindMedia = { target, media, variantUrl ->

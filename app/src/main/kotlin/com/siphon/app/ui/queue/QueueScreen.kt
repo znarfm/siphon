@@ -1,5 +1,9 @@
 package com.siphon.app.ui.queue
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -69,13 +73,14 @@ fun QueueScreen(
     onPause: (Long) -> Unit,
     onResume: (Long) -> Unit,
     onCancel: (Long) -> Unit,
-    onDelete: (Long) -> Unit,
+    onDelete: (downloadId: Long, deleteFile: Boolean) -> Unit,
     onRebind: (DownloadEntity) -> Unit,
     onSaveConcurrency: (maxDownloads: Int, workers: Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedFilter by remember { mutableStateOf(QueueFilter.ALL) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var pendingDeleteDownload by remember { mutableStateOf<DownloadEntity?>(null) }
 
     val filteredList = when (selectedFilter) {
         QueueFilter.ALL -> downloads
@@ -167,12 +172,49 @@ fun QueueScreen(
                         onPause = { onPause(item.id) },
                         onResume = { onResume(item.id) },
                         onCancel = { onCancel(item.id) },
-                        onDelete = { onDelete(item.id) },
+                        onDelete = { pendingDeleteDownload = item },
                         onRebind = { onRebind(item) }
                     )
                 }
             }
         }
+    }
+
+    if (pendingDeleteDownload != null) {
+        val target = pendingDeleteDownload!!
+        AlertDialog(
+            onDismissRequest = { pendingDeleteDownload = null },
+            title = { Text("Delete Download") },
+            text = {
+                Text("Delete '${target.displayName}'? Choose whether to delete only the history record or also delete the downloaded file from storage.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDelete(target.id, true)
+                        pendingDeleteDownload = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete File & Record")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { pendingDeleteDownload = null }) {
+                        Text("Cancel")
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            onDelete(target.id, false)
+                            pendingDeleteDownload = null
+                        }
+                    ) {
+                        Text("Record Only")
+                    }
+                }
+            }
+        )
     }
 
     if (showSettingsDialog) {
@@ -205,10 +247,36 @@ private fun DownloadItemCard(
     onDelete: () -> Unit,
     onRebind: () -> Unit
 ) {
+    val context = LocalContext.current
+    val isCompleted = download.state == DownloadState.COMPLETED
+
+    val openFile = {
+        val uriStr = download.destinationUri
+        if (!uriStr.isNullOrBlank()) {
+            val uri = Uri.parse(uriStr)
+            val mime = if (download.mimeType.contains("mpegurl")) "video/mp4" else download.mimeType.ifBlank { "video/*" }
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            try {
+                context.startActivity(Intent.createChooser(intent, "Open with"))
+            } catch (_: Exception) {
+                val fallback = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "*/*")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                runCatching { context.startActivity(Intent.createChooser(fallback, "Open with")) }
+            }
+        }
+    }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (isCompleted) Modifier.clickable { openFile() } else Modifier)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             // Header: Display Name & State Badge
@@ -337,7 +405,16 @@ private fun DownloadItemCard(
                             Text("Update Link", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-                    DownloadState.COMPLETED, DownloadState.CANCELLED -> {}
+                    DownloadState.COMPLETED -> {
+                        Button(
+                            onClick = openFile,
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                        ) {
+                            Text("Open", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    DownloadState.CANCELLED -> {}
                 }
 
                 Spacer(modifier = Modifier.width(8.dp))

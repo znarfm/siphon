@@ -196,27 +196,62 @@ class MediaSnifferClient(
 
         var durationSec = 0.0
         val isMaster = rawVariants.isNotEmpty()
+        var sampledBitrate: Long = 0L
 
-        if (isMaster) {
+        val targetPlaylist = if (isMaster) {
             val probeVariantUrl = rawVariants.firstOrNull()?.url
             if (!probeVariantUrl.isNullOrBlank()) {
                 val variantReq = Request.Builder().url(probeVariantUrl).headers(okHeaders).get().build()
-                val variantBody = runCatching {
+                runCatching {
                     NetworkClients.defaultClient.newCall(variantReq).execute().use { resp ->
-                        if (resp.isSuccessful) resp.body?.string() else null
+                        if (resp.isSuccessful) Pair(probeVariantUrl, resp.body?.string().orEmpty()) else null
                     }
                 }.getOrNull()
-                if (!variantBody.isNullOrBlank()) {
-                    durationSec = extractHlsDuration(variantBody)
-                }
-            }
+            } else null
         } else {
-            durationSec = extractHlsDuration(bodyText)
+            Pair(url, bodyText)
         }
 
-        val enrichedVariants = rawVariants.map { variant ->
+        if (targetPlaylist != null) {
+            durationSec = extractHlsDuration(targetPlaylist.second)
+            val firstSeg = extractFirstSegment(targetPlaylist.first, targetPlaylist.second)
+            if (firstSeg != null && firstSeg.second > 0.0) {
+                val segReq = Request.Builder()
+                    .url(firstSeg.first)
+                    .headers(okHeaders)
+                    .header("Range", "bytes=0-0")
+                    .get()
+                    .build()
+                val sampledBytes = runCatching {
+                    NetworkClients.defaultClient.newCall(segReq).execute().use { resp ->
+                        val contentRange = resp.header("Content-Range")
+                        val rangeTotal = contentRange?.substringAfterLast('/')?.trim()?.toLongOrNull()
+                        rangeTotal ?: resp.header("Content-Length")?.toLongOrNull()
+                    }
+                }.getOrNull()
+                if (sampledBytes != null && sampledBytes > 1000L) {
+                    val rate = (sampledBytes * 8.0 / firstSeg.second).toLong()
+                    if (rate in 50_000L..50_000_000L) {
+                        sampledBitrate = rate
+                    }
+                }
+            }
+        }
+
+        val enrichedVariants = rawVariants.mapIndexed { idx, variant ->
             val estBytes = if (durationSec > 0.0) {
-                val bw = if (variant.bandwidth > 0) variant.bandwidth else 1_800_000L
+                val bw = if (idx == 0 && sampledBitrate > 0L) {
+                    sampledBitrate
+                } else if (variant.bandwidth > 0) {
+                    val firstBw = rawVariants.firstOrNull()?.bandwidth ?: 0L
+                    if (sampledBitrate > 0L && firstBw > 0L) {
+                        (sampledBitrate.toDouble() * variant.bandwidth / firstBw).toLong()
+                    } else {
+                        variant.bandwidth
+                    }
+                } else {
+                    if (sampledBitrate > 0L) sampledBitrate else 1_500_000L
+                }
                 (bw * durationSec / 8.0).toLong()
             } else -1L
             variant.copy(estimatedBytes = estBytes)
@@ -225,7 +260,8 @@ class MediaSnifferClient(
         val estimatedTotalBytes = if (enrichedVariants.isNotEmpty()) {
             enrichedVariants.firstOrNull()?.estimatedBytes ?: -1L
         } else if (durationSec > 0.0) {
-            (1_800_000L * durationSec / 8.0).toLong()
+            val bw = if (sampledBitrate > 0L) sampledBitrate else 1_500_000L
+            (bw * durationSec / 8.0).toLong()
         } else {
             -1L
         }
@@ -401,7 +437,9 @@ class MediaSnifferClient(
             for (line in lines) {
                 val trimmed = line.trim()
                 if (trimmed.startsWith("#EXT-X-STREAM-INF:")) {
-                    currentBandwidth = com.siphon.app.core.hls.HlsPlaylistParser.extractAttribute(trimmed, "BANDWIDTH")?.toLongOrNull() ?: 0L
+                    val avgBw = com.siphon.app.core.hls.HlsPlaylistParser.extractAttribute(trimmed, "AVERAGE-BANDWIDTH")?.toLongOrNull()
+                    val peakBw = com.siphon.app.core.hls.HlsPlaylistParser.extractAttribute(trimmed, "BANDWIDTH")?.toLongOrNull() ?: 0L
+                    currentBandwidth = if (avgBw != null && avgBw > 0L) avgBw else if (peakBw > 0L) (peakBw * 4L / 10L).coerceAtLeast(500_000L) else 0L
                     currentResolution = com.siphon.app.core.hls.HlsPlaylistParser.extractAttribute(trimmed, "RESOLUTION")
                     currentCodecs = com.siphon.app.core.hls.HlsPlaylistParser.extractAttribute(trimmed, "CODECS")
                 } else if (!trimmed.startsWith("#") && trimmed.isNotEmpty() && currentBandwidth > 0L) {
@@ -440,6 +478,21 @@ class MediaSnifferClient(
                 }
             }
             return total
+        }
+
+        fun extractFirstSegment(baseUrl: String, manifestText: String): Pair<String, Double>? {
+            var dur = 0.0
+            for (line in manifestText.lineSequence()) {
+                val trimmed = line.trim()
+                if (trimmed.startsWith("#EXTINF:")) {
+                    val durStr = trimmed.substringAfter(':').substringBefore(',').trim()
+                    dur = durStr.toDoubleOrNull() ?: 0.0
+                } else if (!trimmed.startsWith("#") && trimmed.isNotBlank() && dur > 0.0) {
+                    val resolved = resolveUrl(baseUrl, trimmed)
+                    return Pair(resolved, dur)
+                }
+            }
+            return null
         }
 
         fun extractDisplayNameFromUrl(url: String, fallback: String): String {

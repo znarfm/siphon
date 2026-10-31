@@ -17,12 +17,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -51,14 +53,17 @@ fun SnifferSheet(
     isOpen: Boolean,
     detectedMedia: List<SniffedMedia>,
     rebindTarget: DownloadEntity?,
+    activeTabTitle: String? = null,
     onDismiss: () -> Unit,
-    onDownloadMedia: (media: SniffedMedia, selectedVariantUrl: String?) -> Unit,
+    onDownloadMedia: (media: SniffedMedia, selectedVariantUrl: String?, customFileName: String) -> Unit,
     onClearMedia: () -> Unit,
     onRefreshMedia: () -> Unit,
     onRebindMedia: ((target: DownloadEntity, media: SniffedMedia, selectedVariantUrl: String?) -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState()
 ) {
     if (!isOpen) return
+
+    var useTabTitleAsFilename by remember { mutableStateOf(true) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -106,7 +111,27 @@ fun SnifferSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { useTabTitleAsFilename = !useTabTitleAsFilename }
+                    .padding(vertical = 4.dp)
+            ) {
+                Checkbox(
+                    checked = useTabTitleAsFilename,
+                    onCheckedChange = { useTabTitleAsFilename = it }
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Use tab title as filename by default",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             if (detectedMedia.isEmpty()) {
                 Box(
@@ -132,14 +157,16 @@ fun SnifferSheet(
                         SniffedMediaItemCard(
                             media = media,
                             rebindTarget = rebindTarget,
-                            onDownload = { variantUrl ->
-                                onDownloadMedia(media, variantUrl)
+                            activeTabTitle = activeTabTitle,
+                            useTabTitle = useTabTitleAsFilename,
+                            onDownload = { variantUrl, fileName ->
+                                onDownloadMedia(media, variantUrl, fileName)
                             },
                             onRebind = { target, variantUrl ->
                                 if (onRebindMedia != null) {
                                     onRebindMedia(target, media, variantUrl)
                                 } else {
-                                    onDownloadMedia(media, variantUrl)
+                                    onDownloadMedia(media, variantUrl, media.displayName)
                                 }
                             }
                         )
@@ -154,13 +181,27 @@ fun SnifferSheet(
 private fun SniffedMediaItemCard(
     media: SniffedMedia,
     rebindTarget: DownloadEntity?,
-    onDownload: (selectedVariantUrl: String?) -> Unit,
+    activeTabTitle: String?,
+    useTabTitle: Boolean,
+    onDownload: (selectedVariantUrl: String?, customFileName: String) -> Unit,
     onRebind: ((target: DownloadEntity, selectedVariantUrl: String?) -> Unit)? = null
 ) {
     var selectedVariant by remember(media) {
         mutableStateOf(media.variants.firstOrNull())
     }
     var variantDropdownExpanded by remember { mutableStateOf(false) }
+
+    val defaultExt = if (media.mediaType == DownloadType.HLS) "mp4" else media.displayName.substringAfterLast('.', "mp4")
+    val defaultName = remember(media, useTabTitle, activeTabTitle) {
+        val cleanTab = activeTabTitle?.trim()?.takeIf { it.isNotBlank() && it != "New Tab" && it != "Tab" }
+        if (useTabTitle && cleanTab != null) {
+            val sanitized = cleanTab.replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001F]"), "_").trim()
+            "$sanitized.$defaultExt"
+        } else {
+            media.displayName
+        }
+    }
+    var fileName by remember(defaultName) { mutableStateOf(defaultName) }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -266,6 +307,18 @@ private fun SniffedMediaItemCard(
                 }
             }
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Editable filename
+            OutlinedTextField(
+                value = fileName,
+                onValueChange = { fileName = it },
+                label = { Text("Save filename", fontSize = 11.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
             Spacer(modifier = Modifier.height(12.dp))
 
             Button(
@@ -273,7 +326,7 @@ private fun SniffedMediaItemCard(
                     if (rebindTarget != null && onRebind != null) {
                         onRebind(rebindTarget, selectedVariant?.url)
                     } else {
-                        onDownload(selectedVariant?.url)
+                        onDownload(selectedVariant?.url, fileName.ifBlank { media.displayName })
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
