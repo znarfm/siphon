@@ -78,6 +78,10 @@ class MediaSnifferClient(
         pageManifests.clear()
     }
 
+    fun inspectCandidate(url: String, requestHeaders: Map<String, String> = emptyMap()) {
+        inspectCandidateAsync(url, requestHeaders)
+    }
+
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
         if (!url.isNullOrBlank()) {
@@ -187,8 +191,44 @@ class MediaSnifferClient(
             }
         }.getOrNull() ?: return
 
-        val variants = parseHlsMasterVariants(url, bodyText)
+        val rawVariants = parseHlsMasterVariants(url, bodyText)
         val displayName = extractDisplayNameFromUrl(url, "stream.m3u8")
+
+        var durationSec = 0.0
+        val isMaster = rawVariants.isNotEmpty()
+
+        if (isMaster) {
+            val probeVariantUrl = rawVariants.firstOrNull()?.url
+            if (!probeVariantUrl.isNullOrBlank()) {
+                val variantReq = Request.Builder().url(probeVariantUrl).headers(okHeaders).get().build()
+                val variantBody = runCatching {
+                    NetworkClients.defaultClient.newCall(variantReq).execute().use { resp ->
+                        if (resp.isSuccessful) resp.body?.string() else null
+                    }
+                }.getOrNull()
+                if (!variantBody.isNullOrBlank()) {
+                    durationSec = extractHlsDuration(variantBody)
+                }
+            }
+        } else {
+            durationSec = extractHlsDuration(bodyText)
+        }
+
+        val enrichedVariants = rawVariants.map { variant ->
+            val estBytes = if (durationSec > 0.0) {
+                val bw = if (variant.bandwidth > 0) variant.bandwidth else 1_800_000L
+                (bw * durationSec / 8.0).toLong()
+            } else -1L
+            variant.copy(estimatedBytes = estBytes)
+        }
+
+        val estimatedTotalBytes = if (enrichedVariants.isNotEmpty()) {
+            enrichedVariants.firstOrNull()?.estimatedBytes ?: -1L
+        } else if (durationSec > 0.0) {
+            (1_800_000L * durationSec / 8.0).toLong()
+        } else {
+            -1L
+        }
 
         val media = SniffedMedia(
             url = url,
@@ -196,9 +236,10 @@ class MediaSnifferClient(
             mediaType = DownloadType.HLS,
             mimeType = "application/vnd.apple.mpegurl",
             displayName = displayName,
-            totalBytes = -1L,
+            totalBytes = estimatedTotalBytes,
             headers = headersMap,
-            variants = variants
+            variants = enrichedVariants,
+            durationSec = durationSec
         )
 
         _detectedMedia.update { list ->
@@ -387,6 +428,18 @@ class MediaSnifferClient(
             } catch (e: Exception) {
                 relativeOrAbsolute
             }
+        }
+
+        fun extractHlsDuration(manifestText: String): Double {
+            var total = 0.0
+            for (line in manifestText.lineSequence()) {
+                val trimmed = line.trim()
+                if (trimmed.startsWith("#EXTINF:")) {
+                    val durStr = trimmed.substringAfter(':').substringBefore(',').trim()
+                    total += durStr.toDoubleOrNull() ?: 0.0
+                }
+            }
+            return total
         }
 
         fun extractDisplayNameFromUrl(url: String, fallback: String): String {

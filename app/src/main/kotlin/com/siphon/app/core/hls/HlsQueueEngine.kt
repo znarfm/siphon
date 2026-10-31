@@ -15,6 +15,7 @@ import com.siphon.app.data.db.ChunkState
 import com.siphon.app.data.db.DownloadDao
 import com.siphon.app.data.db.DownloadEntity
 import com.siphon.app.data.db.DownloadState
+import com.siphon.app.data.db.DownloadType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -60,12 +61,23 @@ class HlsQueueEngine(
         val download = dao.getDownload(downloadId)
             ?: return@withContext DownloadState.FAILED
 
+        val targetMime = if (download.type == DownloadType.HLS || download.displayName.endsWith(".mp4", ignoreCase = true)) {
+            "video/mp4"
+        } else {
+            download.mimeType
+        }
+        val targetName = if (targetMime == "video/mp4" && !download.displayName.endsWith(".mp4", ignoreCase = true)) {
+            "${download.displayName.substringBeforeLast('.')}.mp4"
+        } else {
+            download.displayName
+        }
+
         val destUri = if (!download.destinationUri.isNullOrBlank()) {
             Uri.parse(download.destinationUri).also { storage.refreshPendingExpiry(it) }
         } else {
             storage.createDestination(
-                displayName = download.displayName,
-                mimeType = download.mimeType,
+                displayName = targetName,
+                mimeType = targetMime,
                 customTreeUri = customTreeUri
             ).also { created ->
                 dao.updateDestinationUri(downloadId, created.toString())
@@ -100,6 +112,7 @@ class HlsQueueEngine(
             }
 
             val totalSegmentsCount = segmentsByTrack.values.sumOf { it.size }
+            var currentMergedCount = 0
 
             // 2. Process each track with sliding-window assembly
             for ((trackIndex, trackSegments) in segmentsByTrack) {
@@ -109,11 +122,16 @@ class HlsQueueEngine(
                     segments = trackSegments,
                     headers = headers,
                     workDir = workDir,
-                    onSegmentMerged = {
-                        val merged = runCatching {
-                            dao.getAllChunks(downloadId).count { it.state == ChunkState.MERGED }
-                        }.getOrDefault(0)
-                        onProgress?.invoke(merged.toLong(), totalSegmentsCount.toLong())
+                    onSegmentMerged = { bytesMerged ->
+                        currentMergedCount++
+                        val estTotal = if (download.totalBytes > 0L) {
+                            download.totalBytes
+                        } else if (currentMergedCount > 0 && totalSegmentsCount > 0) {
+                            (bytesMerged.toDouble() / currentMergedCount * totalSegmentsCount).toLong()
+                        } else {
+                            -1L
+                        }
+                        onProgress?.invoke(bytesMerged, estTotal)
                     }
                 )
             }
@@ -133,18 +151,17 @@ class HlsQueueEngine(
                 trackFiles.firstOrNull() ?: throw IOException("No track files produced")
             }
 
-            // Copy to target destination URI
+            // Copy to target destination URI using robust ByteBuffer loop
             storage.openWriteSession(destUri, totalBytes = finalSourceFile.length()).use { session ->
                 val destChannel = session.channel
                 destChannel.truncate(0)
                 destChannel.position(0)
                 FileInputStream(finalSourceFile).channel.use { srcChannel ->
-                    val size = srcChannel.size()
-                    var transferred = 0L
-                    while (transferred < size) {
-                        val count = srcChannel.transferTo(transferred, size - transferred, destChannel)
-                        if (count <= 0) break
-                        transferred += count
+                    val buffer = ByteBuffer.allocateDirect(128 * 1024)
+                    while (srcChannel.read(buffer) > 0) {
+                        buffer.flip()
+                        destChannel.write(buffer)
+                        buffer.clear()
                     }
                 }
                 destChannel.force(true)
@@ -160,6 +177,7 @@ class HlsQueueEngine(
             }
             DownloadState.PAUSED
         } catch (e: Exception) {
+            android.util.Log.e("HlsQueueEngine", "HLS download failed for id $downloadId: ${e.message}", e)
             val httpEx = findHttpStatusException(e)
             val targetState = if (httpEx?.code == 403 || httpEx?.code == 410) {
                 DownloadState.AUTH_EXPIRED
@@ -245,6 +263,7 @@ class HlsQueueEngine(
         return try {
             parseAndPopulateTracks(download, headers, workDir)
         } catch (e: Exception) {
+            android.util.Log.e("HlsQueueEngine", "HLS refresh failed for id ${download.id}: ${e.message}", e)
             val httpEx = findHttpStatusException(e)
             if (httpEx != null && (httpEx.code == 403 || httpEx.code == 410)) {
                 throw e
@@ -276,7 +295,7 @@ class HlsQueueEngine(
         segments: List<ParsedHlsSegment>,
         headers: Headers,
         workDir: File,
-        onSegmentMerged: suspend () -> Unit
+        onSegmentMerged: suspend (cumulativeBytes: Long) -> Unit
     ) = coroutineScope {
         val trackFile = File(workDir, "track_${trackIndex}.tmp")
         val lastMergedOffset = dao.getLastMergedOffset(downloadId, trackIndex)
@@ -320,14 +339,12 @@ class HlsQueueEngine(
                             if (!nextSegFile.exists() || nextSegFile.length() == 0L) break
 
                             FileInputStream(nextSegFile).channel.use { inChannel ->
-                                val segSize = inChannel.size()
-                                var pos = 0L
-                                while (pos < segSize) {
-                                    val transferred = inChannel.transferTo(pos, segSize - pos, trackChannel)
-                                    if (transferred <= 0) break
-                                    pos += transferred
+                                val buffer = ByteBuffer.allocateDirect(64 * 1024)
+                                while (inChannel.read(buffer) > 0) {
+                                    buffer.flip()
+                                    cumulativeBytes += trackChannel.write(buffer)
+                                    buffer.clear()
                                 }
-                                cumulativeBytes += segSize
                             }
 
                             nextSegFile.delete()
@@ -341,7 +358,7 @@ class HlsQueueEngine(
                                 dao.markChunkMerged(downloadId, trackIndex, nextMergeChunkIndex - 1, cumulativeBytes)
                                 uncommittedSegments = 0
                             }
-                            onSegmentMerged()
+                            onSegmentMerged(cumulativeBytes)
                         }
                     }
 

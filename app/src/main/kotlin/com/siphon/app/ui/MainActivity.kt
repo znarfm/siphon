@@ -187,7 +187,8 @@ fun MainContent(viewModel: MainViewModel) {
                     onNewTab = { viewModel.openNewBrowserTab(it) },
                     onSelectTab = { viewModel.switchBrowserTab(it) },
                     onCloseTab = { viewModel.closeBrowserTab(it) },
-                    onUpdateTabMeta = { url, title -> viewModel.updateActiveTabMeta(url, title) }
+                    onUpdateTabMeta = { url, title -> viewModel.updateActiveTabMeta(url, title) },
+                    onRegisterDomScan = { scanner -> viewModel.onRequestDomScan = scanner }
                 )
             }
 
@@ -217,6 +218,8 @@ fun MainContent(viewModel: MainViewModel) {
                 detectedMedia = detectedMedia,
                 rebindTarget = rebindTarget,
                 onDismiss = { viewModel.closeSnifferSheet() },
+                onClearMedia = { viewModel.clearDetectedMedia() },
+                onRefreshMedia = { viewModel.refreshDetectedMedia() },
                 onDownloadMedia = { media, variantUrl ->
                     val target = rebindTarget
                     if (target != null) {

@@ -202,6 +202,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         hostFilter.isEnabled = next
     }
 
+    var onRequestDomScan: (() -> Unit)? = null
+
+    fun clearDetectedMedia() {
+        snifferClient.clearDetectedMedia()
+    }
+
+    fun refreshDetectedMedia() {
+        snifferClient.clearDetectedMedia()
+        onRequestDomScan?.invoke()
+        val curUrl = _browserUrl.value
+        if (curUrl.isNotBlank()) {
+            snifferClient.inspectCandidate(curUrl)
+        }
+    }
+
     fun openSnifferSheet() {
         _isSnifferSheetOpen.value = true
     }

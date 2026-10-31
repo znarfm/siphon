@@ -26,6 +26,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,6 +53,8 @@ fun SnifferSheet(
     rebindTarget: DownloadEntity?,
     onDismiss: () -> Unit,
     onDownloadMedia: (media: SniffedMedia, selectedVariantUrl: String?) -> Unit,
+    onClearMedia: () -> Unit,
+    onRefreshMedia: () -> Unit,
     onRebindMedia: ((target: DownloadEntity, media: SniffedMedia, selectedVariantUrl: String?) -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState()
 ) {
@@ -72,15 +75,34 @@ fun SnifferSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Detected Media Streams (${detectedMedia.size})",
+                    text = "Detected Media (${detectedMedia.size})",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                if (rebindTarget != null) {
-                    SuggestionChip(
-                        onClick = { },
-                        label = { Text("Rebind Mode Active", fontSize = 11.sp) }
-                    )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (detectedMedia.isNotEmpty()) {
+                        TextButton(
+                            onClick = onClearMedia,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("Clear", fontSize = 12.sp)
+                        }
+                    }
+                    TextButton(
+                        onClick = onRefreshMedia,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("Refresh", fontSize = 12.sp)
+                    }
+                    if (rebindTarget != null) {
+                        SuggestionChip(
+                            onClick = { },
+                            label = { Text("Rebind", fontSize = 11.sp) }
+                        )
+                    }
                 }
             }
 
@@ -94,7 +116,7 @@ fun SnifferSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No audio or video streams detected yet.\nPlay media in the browser to sniff.",
+                        text = "No audio or video streams detected yet.\nPlay media in the browser or tap Refresh to sniff.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -184,15 +206,23 @@ private fun SniffedMediaItemCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
+            val currentEstimatedBytes = selectedVariant?.estimatedBytes?.takeIf { it > 0 } ?: media.totalBytes
+            val durationLabel = if (media.durationSec > 0.0) {
+                val totalSec = media.durationSec.toInt()
+                val mins = totalSec / 60
+                val secs = totalSec % 60
+                String.format(Locale.US, " • %02d:%02d", mins, secs)
+            } else ""
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = formatFileSize(media.totalBytes),
+                    text = formatFileSize(currentEstimatedBytes, isEstimate = media.mediaType == DownloadType.HLS),
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = " • " + media.mimeType,
+                    text = "$durationLabel • " + (if (media.mediaType == DownloadType.HLS) "video/mp4" else media.mimeType),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -208,8 +238,10 @@ private fun SniffedMediaItemCard(
                         onClick = { variantDropdownExpanded = true },
                         shape = RoundedCornerShape(14.dp)
                     ) {
+                        val variantSize = selectedVariant?.estimatedBytes?.takeIf { it > 0 }
+                        val sizeSuffix = if (variantSize != null) " (${formatFileSize(variantSize, true)})" else ""
                         Text(
-                            text = "Quality: " + (selectedVariant?.resolution ?: "${selectedVariant?.bandwidth ?: 0} bps"),
+                            text = "Quality: " + (selectedVariant?.resolution ?: "${(selectedVariant?.bandwidth ?: 0) / 1000} kbps") + sizeSuffix,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -219,10 +251,11 @@ private fun SniffedMediaItemCard(
                         onDismissRequest = { variantDropdownExpanded = false }
                     ) {
                         media.variants.forEach { variant ->
+                            val vSize = variant.estimatedBytes.takeIf { it > 0 }
+                            val label = (variant.resolution ?: "${variant.bandwidth / 1000} kbps") +
+                                (if (vSize != null) " (${formatFileSize(vSize, true)})" else "")
                             DropdownMenuItem(
-                                text = {
-                                    Text(variant.resolution ?: "${variant.bandwidth / 1000} kbps")
-                                },
+                                text = { Text(label) },
                                 onClick = {
                                     selectedVariant = variant
                                     variantDropdownExpanded = false
@@ -257,12 +290,16 @@ private fun SniffedMediaItemCard(
     }
 }
 
-private fun formatFileSize(bytes: Long): String {
+private fun formatFileSize(bytes: Long, isEstimate: Boolean = false): String {
     if (bytes <= 0L) return "Stream (Adaptive)"
+    val prefix = if (isEstimate) "~" else ""
     val mb = bytes.toDouble() / (1024 * 1024)
     return if (mb >= 1000) {
-        String.format(Locale.US, "%.2f GB", mb / 1024)
+        String.format(Locale.US, "%s%.2f GB", prefix, mb / 1024)
+    } else if (mb < 0.1) {
+        val kb = bytes.toDouble() / 1024
+        String.format(Locale.US, "%s%.0f KB", prefix, kb)
     } else {
-        String.format(Locale.US, "%.1f MB", mb)
+        String.format(Locale.US, "%s%.1f MB", prefix, mb)
     }
 }

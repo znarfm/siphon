@@ -7,7 +7,8 @@ data class HlsVariantInfo(
     val url: String,
     val bandwidth: Long = 0,
     val resolution: String? = null,
-    val codecs: String? = null
+    val codecs: String? = null,
+    val estimatedBytes: Long = -1L
 )
 
 data class SniffedMedia(
@@ -21,5 +22,6 @@ data class SniffedMedia(
     val headers: Map<String, String>,
     val resolution: String? = null,
     val variants: List<HlsVariantInfo> = emptyList(),
-    val detectedAt: Long = System.currentTimeMillis()
+    val detectedAt: Long = System.currentTimeMillis(),
+    val durationSec: Double = 0.0
 )

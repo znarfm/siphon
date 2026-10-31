@@ -95,6 +95,7 @@ fun BrowserScreen(
     onSelectTab: (String) -> Unit,
     onCloseTab: (String) -> Unit,
     onUpdateTabMeta: (url: String, title: String) -> Unit,
+    onRegisterDomScan: (((() -> Unit) -> Unit))? = null,
     modifier: Modifier = Modifier
 ) {
     val webViewMap = remember { mutableMapOf<String, WebView>() }
@@ -107,6 +108,45 @@ fun BrowserScreen(
     val focusManager = LocalFocusManager.current
 
     val activeWebView = webViewMap[activeTabId]
+
+    LaunchedEffect(activeTabId, activeWebView) {
+        onRegisterDomScan?.invoke {
+            val webView = webViewMap[activeTabId] ?: return@invoke
+            val js = """
+                (function() {
+                    var urls = [];
+                    document.querySelectorAll('video, audio, source').forEach(function(el) {
+                        if (el.src) urls.push(el.src);
+                        if (el.currentSrc) urls.push(el.currentSrc);
+                    });
+                    if (window.performance && window.performance.getEntriesByType) {
+                        window.performance.getEntriesByType('resource').forEach(function(r) {
+                            if (r.name && (r.name.includes('.m3u8') || r.name.includes('.mp4') || r.initiatorType === 'video' || r.initiatorType === 'audio')) {
+                                urls.push(r.name);
+                            }
+                        });
+                    }
+                    return JSON.stringify(Array.from(new Set(urls)));
+                })()
+            """.trimIndent()
+            webView.evaluateJavascript(js) { json ->
+                if (!json.isNullOrBlank() && json != "null" && json != "[]") {
+                    val cleanJson = if (json.startsWith("\"") && json.endsWith("\"")) {
+                        org.json.JSONTokener(json).nextValue().toString()
+                    } else json
+                    runCatching {
+                        val array = org.json.JSONArray(cleanJson)
+                        for (i in 0 until array.length()) {
+                            val mediaUrl = array.getString(i)
+                            if (mediaUrl.isNotBlank()) {
+                                snifferClient.inspectCandidate(mediaUrl)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     LaunchedEffect(activeTabId, currentUrl) {
         val currentActiveUrl = activeWebView?.url ?: currentUrl

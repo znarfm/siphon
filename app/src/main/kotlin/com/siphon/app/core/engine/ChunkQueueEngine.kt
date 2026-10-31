@@ -209,7 +209,8 @@ class ChunkQueueEngine(
                         onProgress = onProgress
                     )
                 }
-            } catch (_: IOException) {
+            } catch (e: Exception) {
+                android.util.Log.e("ChunkQueueEngine", "Chunk download failed for id $downloadId: ${e.message}", e)
                 dao.updateDownloadState(downloadId, DownloadState.FAILED)
                 DownloadState.FAILED
             }
