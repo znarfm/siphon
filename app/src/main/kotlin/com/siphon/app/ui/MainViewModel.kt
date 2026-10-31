@@ -124,6 +124,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean("pref_web_dark_mode", next).apply()
     }
 
+    private val _isDesktopMode = MutableStateFlow(
+        prefs.getBoolean("pref_desktop_mode", false)
+    )
+    val isDesktopMode: StateFlow<Boolean> = _isDesktopMode.asStateFlow()
+
+    fun toggleDesktopMode() {
+        val next = !_isDesktopMode.value
+        _isDesktopMode.value = next
+        prefs.edit().putBoolean("pref_desktop_mode", next).apply()
+    }
+
+    private val _bandwidthLimitBytes = MutableStateFlow(
+        prefs.getLong(DownloadForegroundService.PREF_BANDWIDTH_LIMIT_BYTES, 0L).coerceAtLeast(0L)
+    )
+    val bandwidthLimitBytes: StateFlow<Long> = _bandwidthLimitBytes.asStateFlow()
+
+    private val _isWifiOnly = MutableStateFlow(
+        prefs.getBoolean(DownloadForegroundService.PREF_WIFI_ONLY, false)
+    )
+    val isWifiOnly: StateFlow<Boolean> = _isWifiOnly.asStateFlow()
+
     private val _maxConcurrentDownloads = MutableStateFlow(
         prefs.getInt(DownloadForegroundService.PREF_MAX_CONCURRENT_DOWNLOADS, 2).coerceIn(1, 4)
     )
@@ -266,16 +287,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isSnifferSheetOpen.value = false
     }
 
-    fun setConcurrency(maxDownloads: Int, workers: Int) {
+    fun setConcurrency(maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean) {
         val maxD = maxDownloads.coerceIn(1, 4)
         val w = workers.coerceIn(1, 8)
+        val limit = bandwidthLimit.coerceAtLeast(0L)
         _maxConcurrentDownloads.value = maxD
         _workersPerDownload.value = w
+        _bandwidthLimitBytes.value = limit
+        _isWifiOnly.value = wifiOnly
         prefs.edit()
             .putInt(DownloadForegroundService.PREF_MAX_CONCURRENT_DOWNLOADS, maxD)
             .putInt(DownloadForegroundService.PREF_WORKERS_PER_DOWNLOAD, w)
+            .putLong(DownloadForegroundService.PREF_BANDWIDTH_LIMIT_BYTES, limit)
+            .putBoolean(DownloadForegroundService.PREF_WIFI_ONLY, wifiOnly)
             .apply()
-        DownloadForegroundService.updateConcurrency(getApplication(), maxD, w)
+        DownloadForegroundService.updateConcurrency(getApplication(), maxD, w, limit, wifiOnly)
     }
 
     fun startDownload(

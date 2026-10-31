@@ -199,10 +199,12 @@ fun BrowserScreen(
     rebindTarget: DownloadEntity?,
     isBarsVisible: Boolean = true,
     isWebDarkMode: Boolean = false,
+    isDesktopMode: Boolean = false,
     themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     colorSeed: AppColorSeed = AppColorSeed.DYNAMIC,
     onToggleBars: (Boolean) -> Unit = {},
     onToggleWebDarkMode: () -> Unit = {},
+    onToggleDesktopMode: () -> Unit = {},
     onSetThemeMode: (AppThemeMode) -> Unit = {},
     onSetColorSeed: (AppColorSeed) -> Unit = {},
     onNavigateUrl: (String) -> Unit,
@@ -230,6 +232,19 @@ fun BrowserScreen(
     val currentActiveTabId = rememberUpdatedState(activeTabId)
     val currentBarsVisible = rememberUpdatedState(isBarsVisible)
     val currentWebDarkMode = rememberUpdatedState(isWebDarkMode)
+    val defaultUserAgent = remember { mutableStateOf<String?>(null) }
+    val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+    LaunchedEffect(isDesktopMode) {
+        webViewMap.values.forEach { webView ->
+            if (defaultUserAgent.value == null) {
+                defaultUserAgent.value = webView.settings.userAgentString
+            }
+            webView.settings.userAgentString = if (isDesktopMode) desktopUserAgent else defaultUserAgent.value
+            webView.settings.useWideViewPort = isDesktopMode
+            webView.settings.loadWithOverviewMode = isDesktopMode
+        }
+    }
 
     val isSystemDark = isSystemInDarkTheme()
     val isAppDark = when (themeMode) {
@@ -595,6 +610,24 @@ fun BrowserScreen(
                                     onClick = onToggleWebDarkMode
                                 )
 
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("🖥 Desktop Site", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                            Switch(
+                                                checked = isDesktopMode,
+                                                onCheckedChange = { onToggleDesktopMode() },
+                                                modifier = Modifier.scale(0.8f)
+                                            )
+                                        }
+                                    },
+                                    onClick = onToggleDesktopMode
+                                )
+
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                                 Text(
@@ -825,7 +858,7 @@ fun BrowserScreen(
                                                 if (isTrackingTouch) {
                                                     val deltaY = ev.rawY - lastTouchY
                                                     lastTouchY = ev.rawY
-                                                    val maxScroll = (contentHeight * scale).toInt() - height
+                                                    val maxScroll = (contentHeight * density).toInt() - height
                                                     if (maxScroll > minScrollablePx) {
                                                         // deltaY < 0 means finger dragging up (scrolling down)
                                                         if ((deltaY < 0 && touchAccumDy > 0) || (deltaY > 0 && touchAccumDy < 0)) {
@@ -861,13 +894,16 @@ fun BrowserScreen(
                                     settings.apply {
                                         javaScriptEnabled = true
                                         domStorageEnabled = true
-                                        databaseEnabled = true
-                                        useWideViewPort = true
-                                        loadWithOverviewMode = true
+                                        useWideViewPort = isDesktopMode
+                                        loadWithOverviewMode = isDesktopMode
                                         mediaPlaybackRequiresUserGesture = false
                                         mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                                         setSupportMultipleWindows(true)
                                         javaScriptCanOpenWindowsAutomatically = true
+                                        if (defaultUserAgent.value == null) {
+                                            defaultUserAgent.value = userAgentString
+                                        }
+                                        userAgentString = if (isDesktopMode) desktopUserAgent else defaultUserAgent.value
                                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                                             @Suppress("DEPRECATION")
                                             forceDark = if (currentWebDarkMode.value) WebSettings.FORCE_DARK_ON else WebSettings.FORCE_DARK_OFF

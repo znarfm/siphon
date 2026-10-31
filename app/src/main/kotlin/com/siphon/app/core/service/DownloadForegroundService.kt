@@ -59,16 +59,39 @@ class DownloadForegroundService : Service() {
     private lateinit var notificationManager: NotificationManager
     private lateinit var connectivityManager: ConnectivityManager
     private var currentWorkers: Int = 6
+    private var isWifiOnly: Boolean = false
+
+    private fun pauseActiveJobsForNetwork() {
+        serviceScope.launch(Dispatchers.IO) {
+            val running = activeJobs.keys.toList()
+            for (id in running) {
+                pauseDownload(id)
+                dao.updateDownloadState(id, DownloadState.WAITING_FOR_NETWORK)
+            }
+        }
+    }
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-            if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+            val hasValidated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            val isUnmetered = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+
+            if (isWifiOnly && !isUnmetered) {
+                pauseActiveJobsForNetwork()
+            } else if (hasValidated && (!isWifiOnly || isUnmetered)) {
                 serviceScope.launch(Dispatchers.IO) {
                     val waiting = dao.getDownloadsByState(DownloadState.WAITING_FOR_NETWORK)
                     for (item in waiting) {
                         startOrResumeDownload(item.id)
                     }
                 }
+            }
+        }
+
+        override fun onLost(network: Network) {
+            if (isWifiOnly) {
+                pauseActiveJobsForNetwork()
             }
         }
     }
@@ -78,11 +101,21 @@ class DownloadForegroundService : Service() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val initialMaxConcurrent = prefs.getInt(PREF_MAX_CONCURRENT_DOWNLOADS, 2).coerceIn(1, 4)
         currentWorkers = prefs.getInt(PREF_WORKERS_PER_DOWNLOAD, 6).coerceIn(1, 8)
+        val initialBandwidthLimit = prefs.getLong(PREF_BANDWIDTH_LIMIT_BYTES, 0L).coerceAtLeast(0L)
+        isWifiOnly = prefs.getBoolean(PREF_WIFI_ONLY, false)
 
         dao = SiphonDatabase.get(this).downloadDao()
         storage = DownloadStorageProvider(this)
-        engine = ChunkQueueEngine(dao = dao, maxConcurrentDownloads = initialMaxConcurrent)
-        hlsEngine = HlsQueueEngine(context = this, dao = dao)
+        engine = ChunkQueueEngine(
+            dao = dao,
+            maxConcurrentDownloads = initialMaxConcurrent,
+            rateBytesPerSec = initialBandwidthLimit
+        )
+        hlsEngine = HlsQueueEngine(
+            context = this,
+            dao = dao,
+            rateBytesPerSec = initialBandwidthLimit
+        )
         notificationManager = getSystemService(NotificationManager::class.java)
         connectivityManager = getSystemService(ConnectivityManager::class.java)
 
@@ -117,6 +150,14 @@ class DownloadForegroundService : Service() {
         }
         if (intent?.hasExtra(EXTRA_WORKERS) == true) {
             currentWorkers = intent.getIntExtra(EXTRA_WORKERS, 6).coerceIn(1, 8)
+        }
+        if (intent?.hasExtra(EXTRA_BANDWIDTH_LIMIT) == true) {
+            val limit = intent.getLongExtra(EXTRA_BANDWIDTH_LIMIT, 0L).coerceAtLeast(0L)
+            engine.updateRateLimit(limit)
+            hlsEngine.updateRateLimit(limit)
+        }
+        if (intent?.hasExtra(EXTRA_WIFI_ONLY) == true) {
+            isWifiOnly = intent.getBooleanExtra(EXTRA_WIFI_ONLY, false)
         }
 
         when (action) {
@@ -453,6 +494,8 @@ class DownloadForegroundService : Service() {
         const val PREFS_NAME = "siphon_prefs"
         const val PREF_MAX_CONCURRENT_DOWNLOADS = "max_concurrent_downloads"
         const val PREF_WORKERS_PER_DOWNLOAD = "workers_per_download"
+        const val PREF_BANDWIDTH_LIMIT_BYTES = "bandwidth_limit_bytes"
+        const val PREF_WIFI_ONLY = "wifi_only"
 
         const val ACTION_START_OR_RESUME = "com.siphon.app.action.START_OR_RESUME"
         const val ACTION_PAUSE = "com.siphon.app.action.PAUSE"
@@ -463,17 +506,27 @@ class DownloadForegroundService : Service() {
         const val EXTRA_DOWNLOAD_ID = "extra_download_id"
         const val EXTRA_MAX_CONCURRENT = "extra_max_concurrent"
         const val EXTRA_WORKERS = "extra_workers"
+        const val EXTRA_BANDWIDTH_LIMIT = "extra_bandwidth_limit"
+        const val EXTRA_WIFI_ONLY = "extra_wifi_only"
 
         private const val CHANNEL_ACTIVE = "siphon_active_downloads"
         private const val CHANNEL_STATUS = "siphon_download_status"
         private const val FOREGROUND_NOTIFICATION_ID = 1001
         private const val STATUS_NOTIFICATION_BASE_ID = 2000
 
-        fun updateConcurrency(context: Context, maxConcurrent: Int, workers: Int) {
+        fun updateConcurrency(
+            context: Context,
+            maxConcurrent: Int,
+            workers: Int,
+            bandwidthLimit: Long = 0L,
+            wifiOnly: Boolean = false
+        ) {
             val intent = Intent(context, DownloadForegroundService::class.java).apply {
                 action = ACTION_UPDATE_CONCURRENCY
                 putExtra(EXTRA_MAX_CONCURRENT, maxConcurrent.coerceIn(1, 4))
                 putExtra(EXTRA_WORKERS, workers.coerceIn(1, 8))
+                putExtra(EXTRA_BANDWIDTH_LIMIT, bandwidthLimit.coerceAtLeast(0L))
+                putExtra(EXTRA_WIFI_ONLY, wifiOnly)
             }
             context.startService(intent)
         }

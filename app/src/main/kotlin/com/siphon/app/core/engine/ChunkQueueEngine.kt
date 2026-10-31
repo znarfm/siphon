@@ -124,13 +124,19 @@ class DynamicSemaphore(initialPermits: Int) {
 class ChunkQueueEngine(
     private val dao: DownloadDao,
     private val chunkClient: OkHttpClient = NetworkClients.chunkClient,
-    maxConcurrentDownloads: Int = 2
+    maxConcurrentDownloads: Int = 2,
+    rateBytesPerSec: Long = 0L
 ) {
 
     private val downloadSemaphore = DynamicSemaphore(maxConcurrentDownloads.coerceIn(1, 4))
+    val rateLimiter = com.siphon.app.core.network.TokenBucket(rateBytesPerSec)
 
     fun updateMaxConcurrent(maxConcurrent: Int) {
         downloadSemaphore.updateMaxPermits(maxConcurrent)
+    }
+
+    fun updateRateLimit(bytesPerSecond: Long) {
+        rateLimiter.updateRate(bytesPerSecond)
     }
 
     suspend fun <T> withDownloadPermit(action: suspend () -> T): T {
@@ -436,6 +442,7 @@ class ChunkQueueEngine(
                                     ).toInt()
                                     val read = stream.read(byteArray, 0, toRead)
                                     if (read == -1) break
+                                    rateLimiter.consume(read)
 
                                     buffer.clear()
                                     buffer.put(byteArray, 0, read)
@@ -559,6 +566,7 @@ class ChunkQueueEngine(
                 while (isActive) {
                     val read = stream.read(byteArray)
                     if (read == -1) break
+                    rateLimiter.consume(read)
                     buffer.clear()
                     buffer.put(byteArray, 0, read)
                     buffer.flip()

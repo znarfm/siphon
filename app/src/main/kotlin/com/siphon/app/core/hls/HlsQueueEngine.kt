@@ -47,10 +47,16 @@ class HlsQueueEngine(
     private val context: Context,
     private val dao: DownloadDao,
     private val client: OkHttpClient = NetworkClients.defaultClient,
-    private val maxParallelSegments: Int = 4
+    private val maxParallelSegments: Int = 4,
+    rateBytesPerSec: Long = 0L
 ) {
 
     private val keyCache = ConcurrentHashMap<String, ByteArray>()
+    val rateLimiter = com.siphon.app.core.network.TokenBucket(rateBytesPerSec)
+
+    fun updateRateLimit(bytesPerSecond: Long) {
+        rateLimiter.updateRate(bytesPerSecond)
+    }
 
     suspend fun executeWithStorage(
         downloadId: Long,
@@ -423,6 +429,7 @@ class HlsQueueEngine(
                     val buffer = ByteArray(64 * 1024)
                     var bytes = rawIn.read(buffer)
                     while (bytes >= 0) {
+                        rateLimiter.consume(bytes)
                         fileOut.write(buffer, 0, bytes)
                         bytes = rawIn.read(buffer)
                     }

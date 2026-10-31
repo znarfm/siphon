@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -70,12 +71,14 @@ fun QueueScreen(
     chunksMap: Map<Long, List<ChunkEntity>>,
     maxConcurrentDownloads: Int,
     workersPerDownload: Int,
+    bandwidthLimitBytes: Long = 0L,
+    isWifiOnly: Boolean = false,
     onPause: (Long) -> Unit,
     onResume: (Long) -> Unit,
     onCancel: (Long) -> Unit,
     onDelete: (downloadId: Long, deleteFile: Boolean) -> Unit,
     onRebind: (DownloadEntity) -> Unit,
-    onSaveConcurrency: (maxDownloads: Int, workers: Int) -> Unit,
+    onSaveSettings: (maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedFilter by remember { mutableStateOf(QueueFilter.ALL) }
@@ -111,7 +114,9 @@ fun QueueScreen(
                         fontSize = 18.sp
                     )
                     Text(
-                        text = "${downloads.count { it.state == DownloadState.ACTIVE }} active • $maxConcurrentDownloads tasks max • $workersPerDownload workers/task",
+                        text = "${downloads.count { it.state == DownloadState.ACTIVE }} active • $maxConcurrentDownloads tasks max • $workersPerDownload workers/task" +
+                            (if (bandwidthLimitBytes > 0) " • ${bandwidthLimitBytes / (1024 * 1024)} MB/s" else "") +
+                            (if (isWifiOnly) " • Wi-Fi Only" else ""),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -222,9 +227,11 @@ fun QueueScreen(
         ConcurrencySettingsDialog(
             currentMaxDownloads = maxConcurrentDownloads,
             currentWorkers = workersPerDownload,
+            currentBandwidthLimit = bandwidthLimitBytes,
+            currentWifiOnly = isWifiOnly,
             onDismiss = { showSettingsDialog = false },
-            onConfirm = { maxD, w ->
-                onSaveConcurrency(maxD, w)
+            onConfirm = { maxD, w, limit, wifi ->
+                onSaveSettings(maxD, w, limit, wifi)
                 showSettingsDialog = false
             }
         )
@@ -551,36 +558,70 @@ private fun StateBadge(state: DownloadState) {
 private fun ConcurrencySettingsDialog(
     currentMaxDownloads: Int,
     currentWorkers: Int,
+    currentBandwidthLimit: Long,
+    currentWifiOnly: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (maxDownloads: Int, workers: Int) -> Unit
+    onConfirm: (maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean) -> Unit
 ) {
     var maxDownloads by remember { mutableIntStateOf(currentMaxDownloads) }
     var workers by remember { mutableIntStateOf(currentWorkers) }
+    var bandwidthMb by remember { mutableIntStateOf((currentBandwidthLimit / (1024 * 1024)).toInt().coerceIn(0, 50)) }
+    var wifiOnly by remember { mutableStateOf(currentWifiOnly) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Concurrency Settings") },
+        title = { Text("Download Settings") },
         text = {
             Column {
-                Text("Max Concurrent Active Downloads: $maxDownloads (1–4)")
+                Text("Max Concurrent Active Downloads: $maxDownloads (1–4)", fontSize = 13.sp)
                 Slider(
                     value = maxDownloads.toFloat(),
                     onValueChange = { maxDownloads = it.toInt() },
                     valueRange = 1f..4f,
                     steps = 2
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Workers per Download: $workers (1–8)")
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("Workers per Download: $workers (1–8)", fontSize = 13.sp)
                 Slider(
                     value = workers.toFloat(),
                     onValueChange = { workers = it.toInt() },
                     valueRange = 1f..8f,
                     steps = 6
                 )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = if (bandwidthMb <= 0) "Speed Limit: Unlimited" else "Speed Limit: $bandwidthMb MB/s",
+                    fontSize = 13.sp
+                )
+                Slider(
+                    value = bandwidthMb.toFloat(),
+                    onValueChange = { bandwidthMb = it.toInt() },
+                    valueRange = 0f..50f,
+                    steps = 49
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { wifiOnly = !wifiOnly }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Wi-Fi Only (pause on metered data)", fontSize = 13.sp)
+                    androidx.compose.material3.Switch(
+                        checked = wifiOnly,
+                        onCheckedChange = { wifiOnly = it },
+                        modifier = Modifier.scale(0.85f)
+                    )
+                }
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(maxDownloads, workers) }) {
+            Button(onClick = {
+                val limitBytes = if (bandwidthMb <= 0) 0L else bandwidthMb * 1024L * 1024L
+                onConfirm(maxDownloads, workers, limitBytes, wifiOnly)
+            }) {
                 Text("Save")
             }
         },

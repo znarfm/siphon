@@ -122,6 +122,7 @@ fun MainContent(viewModel: MainViewModel) {
     val rebindTarget by viewModel.rebindTarget.collectAsState()
     val isAdBlockEnabled by viewModel.isAdBlockEnabled.collectAsState()
     val isWebDarkMode by viewModel.isWebDarkMode.collectAsState()
+    val isDesktopMode by viewModel.isDesktopMode.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
     val colorSeed by viewModel.colorSeed.collectAsState()
     val isSnifferSheetOpen by viewModel.isSnifferSheetOpen.collectAsState()
@@ -129,6 +130,8 @@ fun MainContent(viewModel: MainViewModel) {
     val chunksMap by viewModel.chunksMap.collectAsState()
     val maxConcurrentDownloads by viewModel.maxConcurrentDownloads.collectAsState()
     val workersPerDownload by viewModel.workersPerDownload.collectAsState()
+    val bandwidthLimitBytes by viewModel.bandwidthLimitBytes.collectAsState()
+    val isWifiOnly by viewModel.isWifiOnly.collectAsState()
 
     val activeDownloadsCount = downloads.count {
         it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED
@@ -158,10 +161,12 @@ fun MainContent(viewModel: MainViewModel) {
                     rebindTarget = rebindTarget,
                     isBarsVisible = isBarsVisible,
                     isWebDarkMode = isWebDarkMode,
+                    isDesktopMode = isDesktopMode,
                     themeMode = themeMode,
                     colorSeed = colorSeed,
                     onToggleBars = { isBarsVisible = it },
                     onToggleWebDarkMode = { viewModel.toggleWebDarkMode() },
+                    onToggleDesktopMode = { viewModel.toggleDesktopMode() },
                     onSetThemeMode = { viewModel.setThemeMode(it) },
                     onSetColorSeed = { viewModel.setColorSeed(it) },
                     onNavigateUrl = { viewModel.setBrowserUrl(it) },
@@ -187,12 +192,14 @@ fun MainContent(viewModel: MainViewModel) {
                         chunksMap = chunksMap,
                         maxConcurrentDownloads = maxConcurrentDownloads,
                         workersPerDownload = workersPerDownload,
+                        bandwidthLimitBytes = bandwidthLimitBytes,
+                        isWifiOnly = isWifiOnly,
                         onPause = { viewModel.pauseDownload(it) },
                         onResume = { viewModel.resumeDownload(it) },
                         onCancel = { viewModel.cancelDownload(it) },
                         onDelete = { id, deleteFile -> viewModel.deleteDownload(id, deleteFile) },
                         onRebind = { viewModel.startRebindFlow(it) },
-                        onSaveConcurrency = { maxD, w -> viewModel.setConcurrency(maxD, w) }
+                        onSaveSettings = { maxD, w, limit, wifi -> viewModel.setConcurrency(maxD, w, limit, wifi) }
                     )
                 }
             }
