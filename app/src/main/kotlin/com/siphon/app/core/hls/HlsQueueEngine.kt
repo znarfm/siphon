@@ -356,6 +356,7 @@ class HlsQueueEngine(
                             if (uncommittedSegments >= 8 || nextMergeChunkIndex >= segments.size) {
                                 trackChannel.force(false)
                                 dao.markChunkMerged(downloadId, trackIndex, nextMergeChunkIndex - 1, cumulativeBytes)
+                                dao.markChunksMergedUpTo(downloadId, trackIndex, nextMergeChunkIndex - 1)
                                 uncommittedSegments = 0
                             }
                             onSegmentMerged(cumulativeBytes)
@@ -373,6 +374,7 @@ class HlsQueueEngine(
                 if (uncommittedSegments > 0) {
                     trackChannel.force(false)
                     dao.markChunkMerged(downloadId, trackIndex, nextMergeChunkIndex - 1, cumulativeBytes)
+                    dao.markChunksMergedUpTo(downloadId, trackIndex, nextMergeChunkIndex - 1)
                 }
             }
 
@@ -382,10 +384,12 @@ class HlsQueueEngine(
                 launch(Dispatchers.IO) {
                     while (isActive) {
                         val segment = segmentQueue.poll() ?: break
+                        dao.updateChunkProgress(downloadId, trackIndex, segment.chunkIndex, 0L, ChunkState.IN_FLIGHT)
                         val segFile = File(workDir, "seg_${trackIndex}_${segment.chunkIndex}.tmp")
                         if (!segFile.exists() || segFile.length() == 0L) {
                             downloadSegment(segment, headers, segFile)
                         }
+                        dao.updateChunkProgress(downloadId, trackIndex, segment.chunkIndex, 0L, ChunkState.DONE)
                         completionSignal.trySend(Unit)
                     }
                 }

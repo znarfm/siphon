@@ -107,6 +107,19 @@ interface DownloadDao {
     @Query(
         """
         UPDATE download_chunks
+        SET state = 'MERGED'
+        WHERE downloadId = :downloadId AND trackIndex = :trackIndex AND chunkIndex <= :maxChunkIndex
+        """
+    )
+    suspend fun markChunksMergedUpTo(
+        downloadId: Long,
+        trackIndex: Int,
+        maxChunkIndex: Int
+    )
+
+    @Query(
+        """
+        UPDATE download_chunks
         SET endOffset = :mergedOffset, currentOffset = :mergedOffset, state = 'MERGED'
         WHERE downloadId = :downloadId AND trackIndex = :trackIndex AND chunkIndex = :chunkIndex
         """

@@ -234,16 +234,52 @@ private fun DownloadItemCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Subtitle: Type & Size
+            val isHls = download.type == DownloadType.HLS
+            val totalSegments = chunks.size
+            val completedSegments = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
+            val progressFraction = if (isHls && totalSegments > 0) {
+                completedSegments.toFloat() / totalSegments
+            } else if (!isHls && download.totalBytes > 0L) {
+                (chunks.sumOf { (it.currentOffset - it.startOffset).coerceAtLeast(0L) }.toFloat() / download.totalBytes).coerceIn(0f, 1f)
+            } else if (download.state == DownloadState.COMPLETED) {
+                1f
+            } else {
+                0f
+            }
+            val progressPercent = (progressFraction * 100).toInt()
+
+            val downloadedBytes = if (isHls) {
+                if (download.totalBytes > 0) (download.totalBytes * progressFraction).toLong() else 0L
+            } else {
+                chunks.sumOf { (it.currentOffset - it.startOffset).coerceAtLeast(0L) }
+            }
+
+            // Subtitle: Type & Size / Progress
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (download.type == DownloadType.HLS) "HLS Stream" else "Multi-Chunk HTTP",
+                    text = if (isHls) "HLS Stream" else "Multi-Chunk HTTP",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
+
+                val progressDetail = when {
+                    download.state == DownloadState.COMPLETED -> {
+                        " • ${formatFileSize(if (download.totalBytes > 0) download.totalBytes else downloadedBytes)} (100%)"
+                    }
+                    download.totalBytes > 0L -> {
+                        " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%)"
+                    }
+                    isHls && totalSegments > 0 -> {
+                        " • $completedSegments / $totalSegments segments ($progressPercent%)"
+                    }
+                    else -> {
+                        " • " + formatFileSize(download.totalBytes)
+                    }
+                }
+
                 Text(
-                    text = " • " + formatFileSize(download.totalBytes),
+                    text = progressDetail,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -253,10 +289,10 @@ private fun DownloadItemCard(
 
             // Segmented Chunk Progress Bar
             if (chunks.isNotEmpty()) {
-                SegmentedChunkBar(chunks = chunks, totalBytes = download.totalBytes)
+                SegmentedChunkBar(chunks = chunks, totalBytes = download.totalBytes, isHls = isHls)
             } else {
                 LinearProgressIndicator(
-                    progress = { if (download.state == DownloadState.COMPLETED) 1f else 0f },
+                    progress = { progressFraction },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(10.dp)
@@ -326,6 +362,7 @@ private fun DownloadItemCard(
 fun SegmentedChunkBar(
     chunks: List<ChunkEntity>,
     totalBytes: Long,
+    isHls: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val chunkCount = chunks.size
@@ -344,7 +381,7 @@ fun SegmentedChunkBar(
         val totalWidth = size.width
         val barHeight = size.height
 
-        if (totalBytes > 0L) {
+        if (!isHls && totalBytes > 0L) {
             // Proportional byte chunks
             for (chunk in chunks) {
                 val startX = (chunk.startOffset.toFloat() / totalBytes) * totalWidth
@@ -398,7 +435,7 @@ fun SegmentedChunkBar(
                 drawRect(
                     color = color,
                     topLeft = Offset(idx * chunkWidth, 0f),
-                    size = Size((chunkWidth - 1f).coerceAtLeast(1f), barHeight)
+                    size = Size(chunkWidth.coerceAtLeast(1f), barHeight)
                 )
             }
         }
