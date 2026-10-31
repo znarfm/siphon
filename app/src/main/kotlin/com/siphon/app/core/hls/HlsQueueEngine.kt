@@ -168,6 +168,7 @@ class HlsQueueEngine(
 
             // 3. Remux track files into final destination (or keep raw concatenated track for subtitle playlists)
             dao.updateDownloadState(downloadId, DownloadState.MERGING)
+            onProgress?.invoke(0L, -1L)
 
             val trackFiles = segmentsByTrack.keys.sorted().map { trackIdx ->
                 File(workDir, "track_${trackIdx}.tmp")

@@ -415,7 +415,7 @@ class DownloadForegroundService : Service() {
             builder.setContentText("$pct% • ${formatBytes(totalDownloaded)} / ${formatBytes(totalSize)}")
         } else {
             builder.setProgress(0, 0, true)
-            builder.setContentText(formatBytes(totalDownloaded))
+            builder.setContentText(if (totalDownloaded > 0L) formatBytes(totalDownloaded) else "Remuxing & saving to storage…")
         }
 
         if (items.size == 1) {

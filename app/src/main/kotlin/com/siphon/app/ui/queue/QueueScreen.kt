@@ -763,7 +763,7 @@ private fun DownloadItemCard(
                     )
 
                     val progressDetail = when {
-                        download.state == DownloadState.MERGING -> " • Processing & saving to disk…"
+                        download.state == DownloadState.MERGING -> " • Remuxing MP4… Saving to storage…"
                         download.state == DownloadState.COMPLETED -> {
                             " • ${formatFileSize(if (download.totalBytes > 0) download.totalBytes else downloadedBytes)} (100%)"
                         }
