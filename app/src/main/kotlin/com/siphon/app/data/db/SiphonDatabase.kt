@@ -6,13 +6,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [DownloadEntity::class, ChunkEntity::class],
-    version = 1,
+    entities = [DownloadEntity::class, ChunkEntity::class, BookmarkEntity::class, HistoryEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class SiphonDatabase : RoomDatabase() {
 
     abstract fun downloadDao(): DownloadDao
+    abstract fun browserDao(): BrowserDao
 
     companion object {
         @Volatile
@@ -24,7 +25,9 @@ abstract class SiphonDatabase : RoomDatabase() {
                     context.applicationContext,
                     SiphonDatabase::class.java,
                     "siphon.db"
-                ).build().also { instance = it }
+                )
+                .fallbackToDestructiveMigration()
+                .build().also { instance = it }
             }
     }
 }

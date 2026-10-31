@@ -1,7 +1,9 @@
 package com.siphon.app.core.adblock
 
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -75,6 +77,21 @@ class FastHostFilterTest {
         assertTrue(filter.shouldBlockUrl("https://doubleclick.net:8080/path?query=1"))
         assertTrue(filter.shouldBlockUrl("https://user@sub.doubleclick.net:443/"))
         assertFalse(filter.shouldBlockUrl("https://user:password@example.com:8080/good.js"))
+    }
+
+    @Test
+    fun testExtractHostFromRule() {
+        assertEquals("adservice.google.com", FastHostFilter.extractHostFromRule("||adservice.google.com^"))
+        assertEquals("tracking.domain.net", FastHostFilter.extractHostFromRule("||tracking.domain.net^${'$'}third-party"))
+        assertEquals("ads.example.com", FastHostFilter.extractHostFromRule("0.0.0.0 ads.example.com"))
+        assertEquals("ads.example.com", FastHostFilter.extractHostFromRule("127.0.0.1 ads.example.com # comment"))
+        assertEquals("popunder.org", FastHostFilter.extractHostFromRule("popunder.org"))
+
+        assertNull(FastHostFilter.extractHostFromRule("! Title: EasyList"))
+        assertNull(FastHostFilter.extractHostFromRule("# Comment"))
+        assertNull(FastHostFilter.extractHostFromRule("##.ad-banner"))
+        assertNull(FastHostFilter.extractHostFromRule("@@||goodsite.com^"))
+        assertNull(FastHostFilter.extractHostFromRule("[Adblock Plus 2.0]"))
     }
 
     @Test

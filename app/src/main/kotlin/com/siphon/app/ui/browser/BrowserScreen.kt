@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -70,8 +71,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import com.siphon.app.data.db.BookmarkEntity
+import com.siphon.app.data.db.HistoryEntity
+import com.siphon.app.core.adblock.FastHostFilter
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.onFocusChanged
@@ -187,6 +194,10 @@ private fun applyWebDarkModeToWebView(webView: WebView, enabled: Boolean) {
     webView.evaluateJavascript(if (enabled) DARK_MODE_INJECT_JS else DARK_MODE_REMOVE_JS, null)
 }
 
+enum class QuickSearchFilter {
+    ALL, BOOKMARKS, HISTORY
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun BrowserScreen(
@@ -202,6 +213,10 @@ fun BrowserScreen(
     isDesktopMode: Boolean = false,
     themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     colorSeed: AppColorSeed = AppColorSeed.DYNAMIC,
+    isCurrentBookmarked: Boolean = false,
+    bookmarks: List<BookmarkEntity> = emptyList(),
+    history: List<HistoryEntity> = emptyList(),
+    adblockRuleCount: Int = 0,
     onToggleBars: (Boolean) -> Unit = {},
     onToggleWebDarkMode: () -> Unit = {},
     onToggleDesktopMode: () -> Unit = {},
@@ -211,9 +226,14 @@ fun BrowserScreen(
     onToggleAdBlock: () -> Unit,
     onOpenSniffer: () -> Unit,
     onCancelRebind: () -> Unit,
-    onNewTab: (url: String) -> Unit,
+    onNewTab: (url: String, isIncognito: Boolean) -> Unit,
     onSelectTab: (String) -> Unit,
     onCloseTab: (String) -> Unit,
+    onToggleBookmark: () -> Unit = {},
+    onDeleteBookmark: (Long) -> Unit = {},
+    onDeleteHistory: (Long) -> Unit = {},
+    onClearHistory: () -> Unit = {},
+    onRefreshAdblock: (String) -> Unit = {},
     onUpdateTabMeta: (url: String, title: String) -> Unit,
     onRegisterDomScan: (((() -> Unit) -> Unit))? = null,
     modifier: Modifier = Modifier
@@ -223,6 +243,8 @@ fun BrowserScreen(
     var urlTextFieldValue by remember { mutableStateOf(TextFieldValue(currentUrl)) }
     var isUrlBarFocused by remember { mutableStateOf(false) }
     var isMenuOpen by remember { mutableStateOf(false) }
+    var showAdblockDialog by remember { mutableStateOf(false) }
+    var searchFilter by remember { mutableStateOf(QuickSearchFilter.ALL) }
     var pageProgress by remember { mutableIntStateOf(100) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
@@ -528,6 +550,18 @@ fun BrowserScreen(
                                 }
                             )
 
+                            IconButton(
+                                onClick = onToggleBookmark,
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Text(
+                                    text = if (isCurrentBookmarked) "★" else "☆",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isCurrentBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+
                             if (isUrlBarFocused) {
                                 IconButton(
                                     onClick = { urlTextFieldValue = TextFieldValue("") },
@@ -596,6 +630,41 @@ fun BrowserScreen(
                                 expanded = isMenuOpen,
                                 onDismissRequest = { isMenuOpen = false }
                             ) {
+                                DropdownMenuItem(
+                                    text = { Text("🕶 New Incognito Tab", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
+                                    onClick = {
+                                        isMenuOpen = false
+                                        onNewTab("https://google.com", true)
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    text = { Text("⭐ Bookmarks & History", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
+                                    onClick = {
+                                        isMenuOpen = false
+                                        isUrlBarFocused = true
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("🛡 Adblock Rules", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                            Text("$adblockRuleCount", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                        }
+                                    },
+                                    onClick = {
+                                        isMenuOpen = false
+                                        showAdblockDialog = true
+                                    }
+                                )
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
                                 DropdownMenuItem(
                                     text = {
                                         Row(
@@ -732,6 +801,8 @@ fun BrowserScreen(
                                     onClick = onToggleAdBlock
                                 )
 
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
                                 DropdownMenuItem(
                                     text = { Text("📋 Copy Link", fontSize = 13.sp) },
                                     onClick = {
@@ -754,6 +825,109 @@ fun BrowserScreen(
                     )
                 }
 
+                // Fast Search & Filter Panel (Bookmarks + History)
+                if (isUrlBarFocused) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        val query = urlTextFieldValue.text.trim().lowercase()
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(
+                                    selected = searchFilter == QuickSearchFilter.ALL,
+                                    onClick = { searchFilter = QuickSearchFilter.ALL },
+                                    label = { Text("All", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = searchFilter == QuickSearchFilter.BOOKMARKS,
+                                    onClick = { searchFilter = QuickSearchFilter.BOOKMARKS },
+                                    label = { Text("⭐ Bookmarks (${bookmarks.size})", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = searchFilter == QuickSearchFilter.HISTORY,
+                                    onClick = { searchFilter = QuickSearchFilter.HISTORY },
+                                    label = { Text("🕒 History (${history.size})", fontSize = 11.sp) }
+                                )
+                            }
+                            if (searchFilter == QuickSearchFilter.HISTORY && history.isNotEmpty()) {
+                                TextButton(
+                                    onClick = onClearHistory,
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp)
+                                ) {
+                                    Text("Clear All", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+
+                        val matchedBookmarks = if (searchFilter != QuickSearchFilter.HISTORY) {
+                            bookmarks.filter { query.isEmpty() || it.title.lowercase().contains(query) || it.url.lowercase().contains(query) }
+                        } else emptyList()
+
+                        val matchedHistory = if (searchFilter != QuickSearchFilter.BOOKMARKS) {
+                            history.filter { query.isEmpty() || it.title.lowercase().contains(query) || it.url.lowercase().contains(query) }
+                        } else emptyList()
+
+                        if (matchedBookmarks.isEmpty() && matchedHistory.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("No matching bookmarks or history", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 260.dp)
+                            ) {
+                                if (matchedBookmarks.isNotEmpty()) {
+                                    items(matchedBookmarks, key = { "bm_${it.id}" }) { bm ->
+                                        SearchResultItemRow(
+                                            icon = "⭐",
+                                            title = bm.title,
+                                            url = bm.url,
+                                            onSelect = {
+                                                focusManager.clearFocus()
+                                                urlTextFieldValue = TextFieldValue(bm.url)
+                                                onNavigateUrl(bm.url)
+                                                activeWebView?.loadUrl(bm.url)
+                                            },
+                                            onDelete = { onDeleteBookmark(bm.id) }
+                                        )
+                                    }
+                                }
+
+                                if (matchedHistory.isNotEmpty()) {
+                                    items(matchedHistory, key = { "hi_${it.id}" }) { hi ->
+                                        SearchResultItemRow(
+                                            icon = "🕒",
+                                            title = hi.title,
+                                            url = hi.url,
+                                            onSelect = {
+                                                focusManager.clearFocus()
+                                                urlTextFieldValue = TextFieldValue(hi.url)
+                                                onNavigateUrl(hi.url)
+                                                activeWebView?.loadUrl(hi.url)
+                                            },
+                                            onDelete = { onDeleteHistory(hi.id) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Horizontal Tab Bar Strip (sleek, compact)
                 if (!isUrlBarFocused) {
                     LazyRow(
@@ -765,9 +939,20 @@ fun BrowserScreen(
                     ) {
                         items(tabs, key = { it.id }) { tab ->
                             val isSelected = tab.id == activeTabId
+                            val tabBg = when {
+                                tab.isIncognito && isSelected -> Color(0xFF333333)
+                                tab.isIncognito -> Color(0xFF222222)
+                                isSelected -> MaterialTheme.colorScheme.primaryContainer
+                                else -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
+                            }
+                            val tabFg = when {
+                                tab.isIncognito -> Color.White
+                                isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                             Surface(
                                 shape = CircleShape,
-                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                                color = tabBg,
                                 modifier = Modifier
                                     .clip(CircleShape)
                                     .clickable { onSelectTab(tab.id) }
@@ -778,11 +963,11 @@ fun BrowserScreen(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Text(
-                                        text = tab.title.ifBlank { "New Tab" },
+                                        text = (if (tab.isIncognito) "🕶 " else "") + tab.title.ifBlank { if (tab.isIncognito) "Private" else "New Tab" },
                                         maxLines = 1,
                                         fontSize = 11.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = tabFg,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.widthIn(max = 110.dp)
                                     )
@@ -791,7 +976,7 @@ fun BrowserScreen(
                                             text = "✕",
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            color = tabFg,
                                             modifier = Modifier
                                                 .clip(CircleShape)
                                                 .clickable { onCloseTab(tab.id) }
@@ -809,10 +994,25 @@ fun BrowserScreen(
                                 modifier = Modifier
                                     .size(26.dp)
                                     .clip(CircleShape)
-                                    .clickable { onNewTab("https://google.com") }
+                                    .clickable { onNewTab("https://google.com", false) }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Text("+", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+
+                        item {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .clickable { onNewTab("https://google.com", true) }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("🕶", fontSize = 11.sp)
                                 }
                             }
                         }
@@ -915,6 +1115,13 @@ fun BrowserScreen(
                                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                             isAlgorithmicDarkeningAllowed = currentWebDarkMode.value
                                         }
+                                        if (tab.isIncognito) {
+                                            cacheMode = WebSettings.LOAD_NO_CACHE
+                                        }
+                                    }
+                                    if (tab.isIncognito) {
+                                        clearCache(true)
+                                        clearHistory()
                                     }
                                     addJavascriptInterface(
                                         com.siphon.app.core.sniffer.SiphonSnifferBridge(snifferClient),
@@ -1043,7 +1250,7 @@ fun BrowserScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            onNewTab(urlToOpen)
+                            onNewTab(urlToOpen, false)
                             pendingPopupUrl = null
                         }
                     ) {
@@ -1067,7 +1274,98 @@ fun BrowserScreen(
                 }
             )
         }
+
+        if (showAdblockDialog) {
+            AdblockSubscriptionDialog(
+                currentRuleCount = adblockRuleCount,
+                onDismiss = { showAdblockDialog = false },
+                onRefresh = { url ->
+                    onRefreshAdblock(url)
+                    showAdblockDialog = false
+                }
+            )
+        }
     }
+}
+
+@Composable
+private fun AdblockSubscriptionDialog(
+    currentRuleCount: Int,
+    onDismiss: () -> Unit,
+    onRefresh: (String) -> Unit
+) {
+    val presets = listOf(
+        "AdAway Hosts (Recommended)" to FastHostFilter.DEFAULT_SUBSCRIPTION_URL,
+        "AdGuard Mobile Filter" to "https://filters.adtidy.org/extension/chromium/filters/11.txt",
+        "EasyList Standard" to "https://easylist.to/easylist/easylist.txt"
+    )
+    var selectedUrl by remember { mutableStateOf(presets.first().second) }
+    var customUrl by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Adblock Subscriptions", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text(
+                    text = "Active Rules: $currentRuleCount hosts blocked",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("Select Subscription Source:", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                presets.forEach { (name, url) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedUrl = url
+                                customUrl = ""
+                            }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selectedUrl == url && customUrl.isEmpty(),
+                            onClick = {
+                                selectedUrl = url
+                                customUrl = ""
+                            }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(name, fontSize = 12.sp)
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = customUrl,
+                    onValueChange = {
+                        customUrl = it
+                        selectedUrl = it
+                    },
+                    label = { Text("Custom Filter / Hosts URL", fontSize = 11.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val target = customUrl.ifBlank { selectedUrl }
+                    onRefresh(target)
+                }
+            ) {
+                Text("Refresh & Apply")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }
 
 private fun sanitizeUrl(input: String): String {
@@ -1076,5 +1374,53 @@ private fun sanitizeUrl(input: String): String {
         trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
         trimmed.contains(".") && !trimmed.contains(" ") -> "https://$trimmed"
         else -> "https://www.google.com/search?q=" + Uri.encode(trimmed)
+    }
+}
+
+@Composable
+private fun SearchResultItemRow(
+    icon: String,
+    title: String,
+    url: String,
+    onSelect: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelect() }
+            .padding(vertical = 6.dp, horizontal = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(icon, fontSize = 12.sp)
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = title.ifBlank { url },
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = url,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier.size(22.dp)
+        ) {
+            Text("✕", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }

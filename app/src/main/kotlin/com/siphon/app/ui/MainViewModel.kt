@@ -11,11 +11,13 @@ import com.siphon.app.core.service.DownloadForegroundService
 import com.siphon.app.core.sniffer.MediaSnifferClient
 import com.siphon.app.core.sniffer.SniffedMedia
 import com.siphon.app.core.storage.DownloadStorageProvider
+import com.siphon.app.data.db.BookmarkEntity
 import com.siphon.app.data.db.ChunkEntity
 import com.siphon.app.data.db.DownloadDao
 import com.siphon.app.data.db.DownloadEntity
 import com.siphon.app.data.db.DownloadState
 import com.siphon.app.data.db.DownloadType
+import com.siphon.app.data.db.HistoryEntity
 import com.siphon.app.data.db.SiphonDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -41,6 +43,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = SiphonDatabase.get(application)
     val dao: DownloadDao = db.downloadDao()
+    val browserDao = db.browserDao()
     val storage = DownloadStorageProvider(application)
 
     val hostFilter = FastHostFilter().apply {
@@ -54,6 +57,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     val downloads: StateFlow<List<DownloadEntity>> = dao.observeDownloads()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val bookmarks: StateFlow<List<BookmarkEntity>> = browserDao.observeBookmarks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val history: StateFlow<List<HistoryEntity>> = browserDao.observeHistory()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val detectedMedia: StateFlow<List<SniffedMedia>> = snifferClient.detectedMedia
@@ -71,6 +80,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _browserUrl = MutableStateFlow("https://google.com")
     val browserUrl = _browserUrl.asStateFlow()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val isCurrentUrlBookmarked: StateFlow<Boolean> = _browserUrl.flatMapLatest { url ->
+        browserDao.observeIsBookmarked(url)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    private val _adblockRuleCount = MutableStateFlow(hostFilter.ruleCount)
+    val adblockRuleCount: StateFlow<Int> = _adblockRuleCount.asStateFlow()
 
     private val _isSnifferSheetOpen = MutableStateFlow(false)
     val isSnifferSheetOpen = _isSnifferSheetOpen.asStateFlow()
@@ -198,8 +215,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun openNewBrowserTab(url: String = "https://google.com") {
-        val newTab = com.siphon.app.ui.browser.BrowserTab(url = url)
+    fun openNewBrowserTab(url: String = "https://google.com", isIncognito: Boolean = false) {
+        val newTab = com.siphon.app.ui.browser.BrowserTab(url = url, isIncognito = isIncognito)
         _browserTabs.value = _browserTabs.value + newTab
         _activeTabId.value = newTab.id
         _browserUrl.value = url
@@ -235,8 +252,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateActiveTabMeta(url: String, title: String) {
         val curId = _activeTabId.value
         _browserUrl.value = url
+        var currentTabIsIncognito = false
         _browserTabs.value = _browserTabs.value.map {
             if (it.id == curId) {
+                currentTabIsIncognito = it.isIncognito
                 // Only replace title if the new title is non-blank; otherwise preserve existing title
                 val cleanTitle = title.trim()
                 val finalTitle = if (cleanTitle.isNotEmpty()) {
@@ -248,6 +267,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 it.copy(url = url, title = finalTitle)
             } else it
+        }
+
+        if (!currentTabIsIncognito && url.isNotBlank() && !url.startsWith("about:") && !url.startsWith("chrome:")) {
+            viewModelScope.launch(Dispatchers.IO) {
+                browserDao.insertHistory(
+                    HistoryEntity(
+                        title = title.ifBlank { deriveTitleFromUrl(url) },
+                        url = url,
+                        visitedAt = System.currentTimeMillis()
+                    )
+                )
+            }
+        }
+    }
+
+    fun toggleBookmark(url: String, title: String) {
+        if (url.isBlank() || url.startsWith("about:")) return
+        viewModelScope.launch(Dispatchers.IO) {
+            if (isCurrentUrlBookmarked.value) {
+                browserDao.deleteBookmarkByUrl(url)
+            } else {
+                browserDao.insertBookmark(
+                    BookmarkEntity(
+                        title = title.ifBlank { deriveTitleFromUrl(url) },
+                        url = url
+                    )
+                )
+            }
+        }
+    }
+
+    fun deleteBookmark(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            browserDao.deleteBookmarkById(id)
+        }
+    }
+
+    fun deleteHistory(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            browserDao.deleteHistoryById(id)
+        }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            browserDao.clearHistory()
+        }
+    }
+
+    fun refreshAdblockSubscription(url: String = FastHostFilter.DEFAULT_SUBSCRIPTION_URL) {
+        viewModelScope.launch {
+            val result = hostFilter.refreshSubscription(getApplication(), url)
+            if (result.isSuccess) {
+                _adblockRuleCount.value = hostFilter.ruleCount
+            }
         }
     }
 

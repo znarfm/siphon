@@ -132,6 +132,10 @@ fun MainContent(viewModel: MainViewModel) {
     val workersPerDownload by viewModel.workersPerDownload.collectAsState()
     val bandwidthLimitBytes by viewModel.bandwidthLimitBytes.collectAsState()
     val isWifiOnly by viewModel.isWifiOnly.collectAsState()
+    val bookmarks by viewModel.bookmarks.collectAsState()
+    val history by viewModel.history.collectAsState()
+    val isCurrentBookmarked by viewModel.isCurrentUrlBookmarked.collectAsState()
+    val adblockRuleCount by viewModel.adblockRuleCount.collectAsState()
 
     val activeDownloadsCount = downloads.count {
         it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED
@@ -164,6 +168,10 @@ fun MainContent(viewModel: MainViewModel) {
                     isDesktopMode = isDesktopMode,
                     themeMode = themeMode,
                     colorSeed = colorSeed,
+                    isCurrentBookmarked = isCurrentBookmarked,
+                    bookmarks = bookmarks,
+                    history = history,
+                    adblockRuleCount = adblockRuleCount,
                     onToggleBars = { isBarsVisible = it },
                     onToggleWebDarkMode = { viewModel.toggleWebDarkMode() },
                     onToggleDesktopMode = { viewModel.toggleDesktopMode() },
@@ -173,9 +181,18 @@ fun MainContent(viewModel: MainViewModel) {
                     onToggleAdBlock = { viewModel.toggleAdBlock() },
                     onOpenSniffer = { viewModel.openSnifferSheet() },
                     onCancelRebind = { viewModel.cancelRebindFlow() },
-                    onNewTab = { viewModel.openNewBrowserTab(it) },
+                    onNewTab = { url, isIncognito -> viewModel.openNewBrowserTab(url, isIncognito) },
                     onSelectTab = { viewModel.switchBrowserTab(it) },
                     onCloseTab = { viewModel.closeBrowserTab(it) },
+                    onToggleBookmark = {
+                        val activeTab = browserTabs.firstOrNull { it.id == activeTabId }
+                        val title = activeTab?.title.orEmpty()
+                        viewModel.toggleBookmark(browserUrl, title)
+                    },
+                    onDeleteBookmark = { viewModel.deleteBookmark(it) },
+                    onDeleteHistory = { viewModel.deleteHistory(it) },
+                    onClearHistory = { viewModel.clearHistory() },
+                    onRefreshAdblock = { viewModel.refreshAdblockSubscription(it) },
                     onUpdateTabMeta = { url, title -> viewModel.updateActiveTabMeta(url, title) },
                     onRegisterDomScan = { scanner -> viewModel.onRequestDomScan = scanner }
                 )
