@@ -174,8 +174,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val curId = _activeTabId.value
         _browserUrl.value = url
         _browserTabs.value = _browserTabs.value.map {
-            if (it.id == curId) it.copy(url = url, title = title.ifBlank { "Tab" }) else it
+            if (it.id == curId) {
+                // Only replace title if the new title is non-blank; otherwise preserve existing title
+                val cleanTitle = title.trim()
+                val finalTitle = if (cleanTitle.isNotEmpty()) {
+                    cleanTitle
+                } else if (it.title.isNotEmpty() && it.title != "New Tab") {
+                    it.title
+                } else {
+                    deriveTitleFromUrl(url)
+                }
+                it.copy(url = url, title = finalTitle)
+            } else it
         }
+    }
+
+    private fun deriveTitleFromUrl(url: String): String {
+        return runCatching {
+            val uri = Uri.parse(url)
+            uri.host?.removePrefix("www.")?.ifBlank { null }
+        }.getOrNull() ?: "Tab"
     }
 
     fun toggleAdBlock() {

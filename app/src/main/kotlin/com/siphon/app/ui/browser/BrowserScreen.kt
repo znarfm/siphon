@@ -110,13 +110,15 @@ fun BrowserScreen(
         }
     }
 
-    LaunchedEffect(snifferClient) {
+    LaunchedEffect(snifferClient, activeTabId) {
         snifferClient.onUrlChanged = { newUrl ->
             if (!isUrlBarFocused) {
                 urlTextFieldValue = TextFieldValue(newUrl)
             }
             val title = activeWebView?.title.orEmpty()
-            onUpdateTabMeta(newUrl, title)
+            if (title.isNotBlank()) {
+                onUpdateTabMeta(newUrl, title)
+            }
         }
         snifferClient.onNavigationStateChanged = { back, forward ->
             canGoBack = back
@@ -230,7 +232,18 @@ fun BrowserScreen(
                     // Address bar (Expressive extra-large rounded pill)
                     OutlinedTextField(
                         value = urlTextFieldValue,
-                        onValueChange = { urlTextFieldValue = it },
+                        onValueChange = { newValue ->
+                            if (!isUrlBarFocused) {
+                                // Tapping unselected field: select all text immediately
+                                isUrlBarFocused = true
+                                val text = newValue.text
+                                urlTextFieldValue = newValue.copy(
+                                    selection = TextRange(0, text.length)
+                                )
+                            } else {
+                                urlTextFieldValue = newValue
+                            }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .onFocusChanged { focusState ->
