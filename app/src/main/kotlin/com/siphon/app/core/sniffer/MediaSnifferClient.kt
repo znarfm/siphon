@@ -84,9 +84,10 @@ class MediaSnifferClient(
         url: String,
         requestHeaders: Map<String, String> = emptyMap(),
         hintLang: String? = null,
-        hintLabel: String? = null
+        hintLabel: String? = null,
+        forceInspect: Boolean = false
     ) {
-        inspectCandidateAsync(url, requestHeaders, hintLang, hintLabel)
+        inspectCandidateAsync(url, requestHeaders, hintLang, hintLabel, forceInspect)
     }
 
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -140,12 +141,13 @@ class MediaSnifferClient(
         url: String,
         requestHeaders: Map<String, String>,
         hintLang: String? = null,
-        hintLabel: String? = null
+        hintLabel: String? = null,
+        forceInspect: Boolean = false
     ) {
-        if (!isCandidateMediaUrl(url, requestHeaders)) return
+        if (!forceInspect && !isCandidateMediaUrl(url, requestHeaders)) return
 
         // 3. Skip segment probing (.ts / .m4s) if a parent manifest is already captured for this page
-        if (isSegmentUrl(url)) {
+        if (!forceInspect && isSegmentUrl(url)) {
             val manifests = pageManifests[currentPageUrl]
             if (!manifests.isNullOrEmpty()) {
                 return
@@ -178,7 +180,7 @@ class MediaSnifferClient(
             if (isHlsUrl(url)) {
                 processHlsCandidate(url, headersBuilder, hintLang, hintLabel)
             } else {
-                processProgressiveCandidate(url, headersBuilder, hintLang, hintLabel)
+                processProgressiveCandidate(url, headersBuilder, hintLang, hintLabel, forceInspect)
             }
         }
     }
@@ -362,7 +364,8 @@ class MediaSnifferClient(
         url: String,
         headersMap: Map<String, String>,
         hintLang: String? = null,
-        hintLabel: String? = null
+        hintLabel: String? = null,
+        forceInspect: Boolean = false
     ) {
         val okHeadersBuilder = Headers.Builder()
         headersMap.forEach { (k, v) -> okHeadersBuilder.add(k, v) }
@@ -380,7 +383,7 @@ class MediaSnifferClient(
 
         val isSub = isSubtitleUrl(probeResult.finalUrl) || isSubtitleUrl(url) || isSubtitleMime(mime)
         val isMediaMime = mime.startsWith("video/") || mime.startsWith("audio/") ||
-            mime == "application/octet-stream" || isSub
+            mime == "application/octet-stream" || isSub || forceInspect
 
         if (probeResult.totalBytes <= 0 && !isMediaMime) {
             return

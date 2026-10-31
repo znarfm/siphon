@@ -953,6 +953,11 @@ fun BrowserScreen(
                                             onToggleBars(true)
                                         }
                                     }
+                                    setDownloadListener { downloadUrl, userAgent, _, _, _ ->
+                                        val headers = if (!userAgent.isNullOrBlank()) mapOf("User-Agent" to userAgent) else emptyMap()
+                                        snifferClient.inspectCandidate(downloadUrl, headers, forceInspect = true)
+                                        onOpenSniffer()
+                                    }
                                     loadUrl(tab.url)
                                 }
                                 webViewMap[tab.id] = webView
