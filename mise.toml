@@ -1,0 +1,4 @@
+[tools]
+android-sdk = "latest"
+gradle = "latest"
+java = "temurin-21"
