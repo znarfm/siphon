@@ -16,9 +16,11 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.siphon.app.core.engine.ChunkQueueEngine
+import com.siphon.app.core.hls.HlsQueueEngine
 import com.siphon.app.core.storage.DownloadStorageProvider
 import com.siphon.app.data.db.DownloadDao
 import com.siphon.app.data.db.DownloadState
+import com.siphon.app.data.db.DownloadType
 import com.siphon.app.data.db.SiphonDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,8 +55,10 @@ class DownloadForegroundService : Service() {
     private lateinit var dao: DownloadDao
     private lateinit var storage: DownloadStorageProvider
     private lateinit var engine: ChunkQueueEngine
+    private lateinit var hlsEngine: HlsQueueEngine
     private lateinit var notificationManager: NotificationManager
     private lateinit var connectivityManager: ConnectivityManager
+    private var currentWorkers: Int = 6
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
@@ -71,9 +75,14 @@ class DownloadForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val initialMaxConcurrent = prefs.getInt(PREF_MAX_CONCURRENT_DOWNLOADS, 2).coerceIn(1, 4)
+        currentWorkers = prefs.getInt(PREF_WORKERS_PER_DOWNLOAD, 6).coerceIn(1, 8)
+
         dao = SiphonDatabase.get(this).downloadDao()
         storage = DownloadStorageProvider(this)
-        engine = ChunkQueueEngine(dao = dao)
+        engine = ChunkQueueEngine(dao = dao, maxConcurrentDownloads = initialMaxConcurrent)
+        hlsEngine = HlsQueueEngine(context = this, dao = dao)
         notificationManager = getSystemService(NotificationManager::class.java)
         connectivityManager = getSystemService(ConnectivityManager::class.java)
 
@@ -102,7 +111,18 @@ class DownloadForegroundService : Service() {
         val action = intent?.action
         val downloadId = intent?.getLongExtra(EXTRA_DOWNLOAD_ID, -1L) ?: -1L
 
+        if (intent?.hasExtra(EXTRA_MAX_CONCURRENT) == true) {
+            val maxD = intent.getIntExtra(EXTRA_MAX_CONCURRENT, 2).coerceIn(1, 4)
+            engine.updateMaxConcurrent(maxD)
+        }
+        if (intent?.hasExtra(EXTRA_WORKERS) == true) {
+            currentWorkers = intent.getIntExtra(EXTRA_WORKERS, 6).coerceIn(1, 8)
+        }
+
         when (action) {
+            ACTION_UPDATE_CONCURRENCY -> {
+                // Settings applied via extras above
+            }
             ACTION_START_OR_RESUME -> {
                 promoteToForeground()
                 if (downloadId > 0L) {
@@ -174,16 +194,32 @@ class DownloadForegroundService : Service() {
             }
 
             try {
-                val finalState = engine.executeWithStorage(
-                    downloadId = downloadId,
-                    storage = storage,
-                    onProgress = { downloaded, total ->
-                        progressState.update { map ->
-                            val current = map[downloadId] ?: return@update map
-                            map + (downloadId to current.copy(downloadedBytes = downloaded, totalBytes = total))
-                        }
+                val finalState = if (entity.type == DownloadType.HLS) {
+                    engine.withDownloadPermit {
+                        hlsEngine.executeWithStorage(
+                            downloadId = downloadId,
+                            storage = storage,
+                            onProgress = { downloaded, total ->
+                                progressState.update { map ->
+                                    val current = map[downloadId] ?: return@update map
+                                    map + (downloadId to current.copy(downloadedBytes = downloaded, totalBytes = total))
+                                }
+                            }
+                        )
                     }
-                )
+                } else {
+                    engine.executeWithStorage(
+                        downloadId = downloadId,
+                        storage = storage,
+                        requestedWorkers = currentWorkers,
+                        onProgress = { downloaded, total ->
+                            progressState.update { map ->
+                                val current = map[downloadId] ?: return@update map
+                                map + (downloadId to current.copy(downloadedBytes = downloaded, totalBytes = total))
+                            }
+                        }
+                    )
+                }
                 postTerminalStatusNotification(entity.id, entity.displayName, finalState)
             } finally {
                 withContext(NonCancellable) {
@@ -214,7 +250,12 @@ class DownloadForegroundService : Service() {
         serviceScope.launch(Dispatchers.IO) {
             withContext(NonCancellable) {
                 activeJobs.remove(downloadId)?.cancelAndJoin()
-                engine.cancelAndDelete(downloadId, storage)
+                val entity = dao.getDownload(downloadId)
+                if (entity?.type == DownloadType.HLS) {
+                    hlsEngine.cancelAndDelete(downloadId, storage)
+                } else {
+                    engine.cancelAndDelete(downloadId, storage)
+                }
                 notificationManager.cancel(statusNotificationId(downloadId))
                 stopForegroundIfIdle()
             }
@@ -409,21 +450,45 @@ class DownloadForegroundService : Service() {
     }
 
     companion object {
+        const val PREFS_NAME = "siphon_prefs"
+        const val PREF_MAX_CONCURRENT_DOWNLOADS = "max_concurrent_downloads"
+        const val PREF_WORKERS_PER_DOWNLOAD = "workers_per_download"
+
         const val ACTION_START_OR_RESUME = "com.siphon.app.action.START_OR_RESUME"
         const val ACTION_PAUSE = "com.siphon.app.action.PAUSE"
         const val ACTION_CANCEL = "com.siphon.app.action.CANCEL"
         const val ACTION_PAUSE_ALL = "com.siphon.app.action.PAUSE_ALL"
+        const val ACTION_UPDATE_CONCURRENCY = "com.siphon.app.action.UPDATE_CONCURRENCY"
+
         const val EXTRA_DOWNLOAD_ID = "extra_download_id"
+        const val EXTRA_MAX_CONCURRENT = "extra_max_concurrent"
+        const val EXTRA_WORKERS = "extra_workers"
 
         private const val CHANNEL_ACTIVE = "siphon_active_downloads"
         private const val CHANNEL_STATUS = "siphon_download_status"
         private const val FOREGROUND_NOTIFICATION_ID = 1001
         private const val STATUS_NOTIFICATION_BASE_ID = 2000
 
-        fun startOrResume(context: Context, downloadId: Long) {
+        fun updateConcurrency(context: Context, maxConcurrent: Int, workers: Int) {
+            val intent = Intent(context, DownloadForegroundService::class.java).apply {
+                action = ACTION_UPDATE_CONCURRENCY
+                putExtra(EXTRA_MAX_CONCURRENT, maxConcurrent.coerceIn(1, 4))
+                putExtra(EXTRA_WORKERS, workers.coerceIn(1, 8))
+            }
+            context.startService(intent)
+        }
+
+        fun startOrResume(
+            context: Context,
+            downloadId: Long,
+            maxConcurrent: Int? = null,
+            workers: Int? = null
+        ) {
             val intent = Intent(context, DownloadForegroundService::class.java).apply {
                 action = ACTION_START_OR_RESUME
                 putExtra(EXTRA_DOWNLOAD_ID, downloadId)
+                if (maxConcurrent != null) putExtra(EXTRA_MAX_CONCURRENT, maxConcurrent.coerceIn(1, 4))
+                if (workers != null) putExtra(EXTRA_WORKERS, workers.coerceIn(1, 8))
             }
             context.startForegroundService(intent)
         }

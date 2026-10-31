@@ -73,58 +73,58 @@
 ## Milestone 4: Fast In-Memory Ad-Blocker (P1)
 *Goal: Drop trackers and ad networks without JVM object bloat or WebView lag.*
 
-- [ ] Implement `FastHostFilter`:
-  - [ ] Package pre-stripped lowercase domain list in assets (1 domain per line, comments/IPs stripped).
-  - [ ] Lazily initialize pre-sized `HashSet<String>` on `Dispatchers.Default`.
-  - [ ] Implement suffix-slicing matcher: test `sub.ads.domain.com` -> `ads.domain.com` -> `domain.com` ($O(k)$ domain depth).
-- [ ] Integrate Blocker into WebView:
-  - [ ] Block ad network subresources inside `shouldInterceptRequest` (return empty `WebResourceResponse`).
-  - [ ] Block redirect chains and popups inside `shouldOverrideUrlLoading`.
+- [x] Implement `FastHostFilter`:
+  - [x] Package pre-stripped lowercase domain list in assets (1 domain per line, comments/IPs stripped).
+  - [x] Lazily initialize pre-sized `HashSet<String>` on `Dispatchers.Default`.
+  - [x] Implement suffix-slicing matcher: test `sub.ads.domain.com` -> `ads.domain.com` -> `domain.com` ($O(k)$ domain depth).
+- [x] Integrate Blocker into WebView:
+  - [x] Block ad network subresources inside `shouldInterceptRequest` (return empty `WebResourceResponse`).
+  - [x] Block redirect chains and popups inside `shouldOverrideUrlLoading`.
 
 ---
 
 ## Milestone 5: WebView Media Interceptor & Sniffer (P1)
 *Goal: Cleanly extract media without injected JavaScript bridges or segment probe storms.*
 
-- [ ] Implement `MediaSnifferClient`:
-  - [ ] Hook `shouldInterceptRequest` passively (always return `null` for non-ad requests so Chromium loads normally).
-  - [ ] Dedup candidate URLs (normalized by stripping byte-range query params) in an LRU set.
-  - [ ] Skip probing `.ts`/`.m4s` segment URLs when a parent `.m3u8`/`.mpd` manifest is already captured for the current page.
-  - [ ] Capture `CookieManager.getInstance().getCookie(url)`, `Referer`, and `User-Agent`.
-- [ ] Implement Async Probe & Manifest Fetch:
-  - [ ] For `.m3u8` candidates, fetch playlist directly via background OkHttp client to extract variant streams/resolutions.
-  - [ ] For progressive candidates (`.mp4`, `.webm`, `Sec-Fetch-Dest: video/audio`), fire background `Range: bytes=0-0` via OkHttp to confirm `Content-Type` and extract `totalBytes`.
-- [ ] Implement Explicit "Update Link" Rebind Flow:
-  - [ ] When a paused download fails with HTTP 403/410, tapping Resume opens `sourcePageUrl` in WebView in "Update Link" rebind mode.
-  - [ ] Verify candidate replacement URL via `Content-Length == totalBytes` AND a 4KB `Range: bytes=0-4095` byte-comparison against local disk before updating `url`, `etag`, and `headersJson`.
+- [x] Implement `MediaSnifferClient`:
+  - [x] Hook `shouldInterceptRequest` passively (always return `null` for non-ad requests so Chromium loads normally).
+  - [x] Dedup candidate URLs (normalized by stripping byte-range query params) in an LRU set.
+  - [x] Skip probing `.ts`/`.m4s` segment URLs when a parent `.m3u8`/`.mpd` manifest is already captured for the current page.
+  - [x] Capture `CookieManager.getInstance().getCookie(url)`, `Referer`, and `User-Agent`.
+- [x] Implement Async Probe & Manifest Fetch:
+  - [x] For `.m3u8` candidates, fetch playlist directly via background OkHttp client to extract variant streams/resolutions.
+  - [x] For progressive candidates (`.mp4`, `.webm`, `Sec-Fetch-Dest: video/audio`), fire background `Range: bytes=0-0` via OkHttp to confirm `Content-Type` and extract `totalBytes`.
+- [x] Implement Explicit "Update Link" Rebind Flow:
+  - [x] When a paused download fails with HTTP 403/410, tapping Resume opens `sourcePageUrl` in WebView in "Update Link" rebind mode.
+  - [x] Verify candidate replacement URL via `Content-Length == totalBytes` AND a 4KB `Range: bytes=0-4095` byte-comparison against local disk before updating `url`, `etag`, and `headersJson`.
 
 ---
 
 ## Milestone 6: Native HLS / .m3u8 Downloader & Remuxer (P2)
 *Goal: Full stream extraction and crash-safe muxing with zero FFmpeg dependencies.*
 
-- [ ] Implement HLS Playlist Parser:
-  - [ ] Parse master playlists (`#EXT-X-STREAM-INF`, `#EXT-X-MEDIA:TYPE=AUDIO`) and cache selected media playlist(s) to disk.
-  - [ ] Populate `download_chunks` keyed by `(downloadId, trackIndex, chunkIndex)` (`trackIndex = 0` for video/muxed, `1` for separate audio).
-- [ ] Implement AES-128 Segment Decryption & Sliding-Window Assembly:
-  - [ ] Fetch decryption keys using captured session headers and decrypt segments via `CipherInputStream` (`AES/CBC/PKCS5Padding`, sequence-number big-endian IV fallback) to `seg_<track>_<idx>.tmp`.
-  - [ ] As contiguous segments complete, append directly into `track_<trackIndex>.tmp`, store cumulative byte length in `chunk.endOffset`, `channel.force(false)`, mark chunk `MERGED` in Room, and delete `seg_<track>_<idx>.tmp` immediately.
-  - [ ] On crash resume, truncate `track_<trackIndex>.tmp` to the last `MERGED` chunk's `endOffset`.
-- [ ] Implement Native Media Muxing:
-  - [ ] Run a single `MediaExtractor` -> `MediaMuxer` pass per completed `track_<trackIndex>.tmp` file to interleave audio/video samples by `sampleTime` into the final `MediaStore` `.mp4` container (fallback to copying raw `.ts` if `MediaExtractor`/`MediaMuxer` rejects codec).
-  - [ ] Purge `headersJson` and temporary track files upon completion.
+- [x] Implement HLS Playlist Parser:
+  - [x] Parse master playlists (`#EXT-X-STREAM-INF`, `#EXT-X-MEDIA:TYPE=AUDIO`) and cache selected media playlist(s) to disk.
+  - [x] Populate `download_chunks` keyed by `(downloadId, trackIndex, chunkIndex)` (`trackIndex = 0` for video/muxed, `1` for separate audio).
+- [x] Implement AES-128 Segment Decryption & Sliding-Window Assembly:
+  - [x] Fetch decryption keys using captured session headers and decrypt segments via `CipherInputStream` (`AES/CBC/PKCS5Padding`, sequence-number big-endian IV fallback) to `seg_<track>_<idx>.tmp`.
+  - [x] As contiguous segments complete, append directly into `track_<trackIndex>.tmp`, store cumulative byte length in `chunk.endOffset`, `channel.force(false)`, mark chunk `MERGED` in Room, and delete `seg_<track>_<idx>.tmp` immediately.
+  - [x] On crash resume, truncate `track_<trackIndex>.tmp` to the last `MERGED` chunk's `endOffset`.
+- [x] Implement Native Media Muxing:
+  - [x] Run a single `MediaExtractor` -> `MediaMuxer` pass per completed `track_<trackIndex>.tmp` file to interleave audio/video samples by `sampleTime` into the final `MediaStore` `.mp4` container (fallback to copying raw `.ts` if `MediaExtractor`/`MediaMuxer` rejects codec).
+  - [x] Purge `headersJson` and temporary track files upon completion.
 
 ---
 
 ## Milestone 7: Jetpack Compose UI & Controls (P2)
 *Goal: Fast, modern user interface.*
 
-- [ ] Design App Theme:
-  - [ ] Material You dynamic color scheme + adaptive launcher icon.
-- [ ] Screens & Components:
-  - [ ] **Browser Tab**: Address bar, navigation controls, ad-block toggle, "Update Link" banner when rebinding a 403 task.
-  - [ ] **Sniffer Sheet**: Bottom sheet listing detected streams, resolutions, sizes, and "Download" / "Rebind" triggers.
-  - [ ] **Queue Screen**: Active/paused/completed downloads, segmented chunk progress bar, pause/resume/cancel/refresh-link actions, concurrency settings.
+- [x] Design App Theme:
+  - [x] Material You dynamic color scheme + adaptive launcher icon.
+- [x] Screens & Components:
+  - [x] **Browser Tab**: Address bar, navigation controls, ad-block toggle, "Update Link" banner when rebinding a 403 task.
+  - [x] **Sniffer Sheet**: Bottom sheet listing detected streams, resolutions, sizes, and "Download" / "Rebind" triggers.
+  - [x] **Queue Screen**: Active/paused/completed downloads, segmented chunk progress bar, pause/resume/cancel/refresh-link actions, concurrency settings.
 
 ---
 

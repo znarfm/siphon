@@ -36,6 +36,9 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 private const val MB = 1024L * 1024L
 private const val BUFFER_SIZE = 64 * 1024
@@ -43,13 +46,101 @@ private const val PROGRESS_TICK_MS = 250L
 private const val CHECKPOINT_TICKS = 10 // 10 * 250ms = 2500ms
 private const val MAX_CHUNK_RETRIES = 3
 
+class DynamicSemaphore(initialPermits: Int) {
+    private val lock = Any()
+    private var maxPermits = initialPermits.coerceIn(1, 4)
+    private var availablePermits = maxPermits
+    private val waiters = ArrayDeque<CancellableContinuation<Unit>>()
+
+    suspend fun acquire() {
+        suspendCancellableCoroutine<Unit> { cont ->
+            synchronized(lock) {
+                if (availablePermits > 0) {
+                    availablePermits--
+                    cont.resume(Unit)
+                } else {
+                    waiters.addLast(cont)
+                    cont.invokeOnCancellation {
+                        synchronized(lock) {
+                            waiters.remove(cont)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun release() {
+        var toResume: CancellableContinuation<Unit>? = null
+        synchronized(lock) {
+            while (waiters.isNotEmpty()) {
+                val candidate = waiters.removeFirst()
+                if (candidate.isActive) {
+                    toResume = candidate
+                    break
+                }
+            }
+            if (toResume == null) {
+                if (availablePermits < maxPermits) {
+                    availablePermits++
+                }
+            }
+        }
+        toResume?.resume(Unit)
+    }
+
+    fun updateMaxPermits(newMax: Int) {
+        val toResume = mutableListOf<CancellableContinuation<Unit>>()
+        synchronized(lock) {
+            val clamped = newMax.coerceIn(1, 4)
+            val delta = clamped - maxPermits
+            maxPermits = clamped
+            if (delta > 0) {
+                availablePermits += delta
+                while (availablePermits > 0 && waiters.isNotEmpty()) {
+                    val candidate = waiters.removeFirst()
+                    if (candidate.isActive) {
+                        availablePermits--
+                        toResume.add(candidate)
+                    }
+                }
+            }
+        }
+        for (cont in toResume) {
+            cont.resume(Unit)
+        }
+    }
+
+    suspend inline fun <T> withPermit(action: suspend () -> T): T {
+        acquire()
+        try {
+            return action()
+        } finally {
+            release()
+        }
+    }
+}
+
 class ChunkQueueEngine(
     private val dao: DownloadDao,
     private val chunkClient: OkHttpClient = NetworkClients.chunkClient,
     maxConcurrentDownloads: Int = 2
 ) {
 
-    private val downloadSemaphore = Semaphore(maxConcurrentDownloads.coerceIn(1, 4))
+    private val downloadSemaphore = DynamicSemaphore(maxConcurrentDownloads.coerceIn(1, 4))
+
+    fun updateMaxConcurrent(maxConcurrent: Int) {
+        downloadSemaphore.updateMaxPermits(maxConcurrent)
+    }
+
+    suspend fun <T> withDownloadPermit(action: suspend () -> T): T {
+        downloadSemaphore.acquire()
+        try {
+            return action()
+        } finally {
+            downloadSemaphore.release()
+        }
+    }
 
     private class ActiveChunk(
         val downloadId: Long,
@@ -83,49 +174,51 @@ class ChunkQueueEngine(
         customTreeUri: Uri? = null,
         requestedWorkers: Int = 6,
         onProgress: ((downloadedBytes: Long, totalBytes: Long) -> Unit)? = null
-    ): DownloadState = withContext(Dispatchers.IO) {
-        val download = dao.getDownload(downloadId)
-            ?: return@withContext DownloadState.FAILED
+    ): DownloadState = downloadSemaphore.withPermit {
+        withContext(Dispatchers.IO) {
+            val download = dao.getDownload(downloadId)
+                ?: return@withContext DownloadState.FAILED
 
-        val destUri = if (!download.destinationUri.isNullOrBlank()) {
-            Uri.parse(download.destinationUri).also { storage.refreshPendingExpiry(it) }
-        } else {
-            storage.createDestination(
-                displayName = download.displayName,
-                mimeType = download.mimeType,
-                customTreeUri = customTreeUri
-            ).also { created ->
-                dao.updateDestinationUri(downloadId, created.toString())
+            val destUri = if (!download.destinationUri.isNullOrBlank()) {
+                Uri.parse(download.destinationUri).also { storage.refreshPendingExpiry(it) }
+            } else {
+                storage.createDestination(
+                    displayName = download.displayName,
+                    mimeType = download.mimeType,
+                    customTreeUri = customTreeUri
+                ).also { created ->
+                    dao.updateDestinationUri(downloadId, created.toString())
+                }
             }
-        }
 
-        val alreadyDownloaded = dao.getAllChunks(downloadId).sumOf {
-            (it.currentOffset - it.startOffset).coerceAtLeast(0L)
-        }
-
-        val state = try {
-            storage.openWriteSession(
-                uri = destUri,
-                totalBytes = download.totalBytes,
-                alreadyDownloadedBytes = alreadyDownloaded,
-                requestedWorkers = requestedWorkers
-            ).use { session ->
-                execute(
-                    downloadId = downloadId,
-                    channel = session.channel,
-                    workerCount = session.preflight.recommendedWorkers,
-                    onProgress = onProgress
-                )
+            val alreadyDownloaded = dao.getAllChunks(downloadId).sumOf {
+                (it.currentOffset - it.startOffset).coerceAtLeast(0L)
             }
-        } catch (_: IOException) {
-            dao.updateDownloadState(downloadId, DownloadState.FAILED)
-            DownloadState.FAILED
-        }
 
-        if (state == DownloadState.COMPLETED) {
-            storage.finalizePending(destUri)
+            val state = try {
+                storage.openWriteSession(
+                    uri = destUri,
+                    totalBytes = download.totalBytes,
+                    alreadyDownloadedBytes = alreadyDownloaded,
+                    requestedWorkers = requestedWorkers
+                ).use { session ->
+                    executeInternal(
+                        downloadId = downloadId,
+                        channel = session.channel,
+                        workerCount = session.preflight.recommendedWorkers,
+                        onProgress = onProgress
+                    )
+                }
+            } catch (_: IOException) {
+                dao.updateDownloadState(downloadId, DownloadState.FAILED)
+                DownloadState.FAILED
+            }
+
+            if (state == DownloadState.COMPLETED) {
+                storage.finalizePending(destUri)
+            }
+            state
         }
-        state
     }
 
     /**
@@ -158,7 +251,15 @@ class ChunkQueueEngine(
         workerCount: Int = 6,
         onProgress: ((downloadedBytes: Long, totalBytes: Long) -> Unit)? = null
     ): DownloadState = downloadSemaphore.withPermit {
-        withContext(Dispatchers.IO) {
+        executeInternal(downloadId, channel, workerCount, onProgress)
+    }
+
+    private suspend fun executeInternal(
+        downloadId: Long,
+        channel: FileChannel,
+        workerCount: Int = 6,
+        onProgress: ((downloadedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): DownloadState = withContext(Dispatchers.IO) {
             val download = dao.getDownload(downloadId)
                 ?: return@withContext DownloadState.FAILED
             val headers = HeadersCodec.decode(download.headersJson)
@@ -269,7 +370,6 @@ class ChunkQueueEngine(
             }
             finalState
         }
-    }
 
     private suspend fun runWorker(
         download: DownloadEntity,

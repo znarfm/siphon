@@ -19,10 +19,15 @@
 - **Background Execution**: Single `dataSync` Foreground Service for v1 implementing Android 15's two-arg `onTimeout(int, int)` to `force(false)`, checkpoint DB to `PAUSED`, and post a tap-to-resume notification. Defer UIDT `JobService` and `full`/`slim` Torrent flavors (`libtorrent4j`) to post-MVP (Milestone 8, YAGNI).
 
 ## 3. Current State & Artifacts
-- **Status**: Milestones 0, 1, 2, and 3 completed:
+- **Status**: Milestones 0, 1, 2, 3, 4, 5, 6, and 7 completed:
   - Dual-protocol OkHttp factory & header serializer: `NetworkClients`, `HeadersCodec`
   - Range/HEAD metadata prober + 4KB overlap URL rebind verifier: `MetadataProber`
   - Multi-worker positional `FileChannel` downloader with pre-force snapshot checkpointer, 206 offset validation, 403/410 auth expiry handling, and single-stream fallback: `ChunkQueueEngine`
   - `MediaStore.Downloads` (`IS_PENDING = 1`, `+30d` `DATE_EXPIRES`) + SAF document tree provider & `Os.fstatvfs` / `/proc/mounts` FAT32/non-sparse pre-flight check: `DownloadStorageProvider`, `FilesystemPreflight`
   - Foreground execution service with `sample(250ms)` progress notification, Pause/Resume/Cancel `PendingIntent` actions, `ConnectivityManager.NetworkCallback` auto-resume, and Android 14/15 `onTimeout` checkpointing: `DownloadForegroundService`
-  - Ready for Milestone 4 (`FastHostFilter` in-memory ad-blocker) or minimal test UI activity.
+  - Fast in-memory suffix-slicing ad & tracker blocker: `FastHostFilter` loaded from `adblock_hosts.txt` asset
+  - Passive media sniffer with LRU dedup, segment suppression, cookie/referer capture, background probe, and 4KB overlap rebind verification: `MediaSnifferClient`, `SnifferModels`
+  - Pure-native zero-FFmpeg HLS parser, AES-128 decryptor with RFC 8216 sequence-number IV fallback, crash-resilient sliding-window segment assembly, and `MediaExtractor` + `MediaMuxer` pass: `HlsPlaylistParser`, `HlsModels`, `HlsQueueEngine`
+  - Material You Jetpack Compose UI: `BrowserScreen` with address bar and shield toggle, `SnifferSheet` with quality selectors, `QueueScreen` with segmented chunk progress bar and concurrency dialog, and `MainActivity` + `MainViewModel` with edge-to-edge layout and `VIEW` intent handling
+  - Comprehensive unit test suite covering `FastHostFilterTest`, `MediaSnifferClientTest`, `HlsPlaylistParserTest`, and `HlsQueueEngineTest`.
+- **Next Up**: Milestone 8 (Optional Torrent Engine with isolated `full`/`slim` flavors post-MVP).

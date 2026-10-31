@@ -24,7 +24,7 @@ class MetadataProber(
     private val client: OkHttpClient = NetworkClients.defaultClient
 ) {
 
-    suspend fun probe(url: String, headers: Headers = Headers.EMPTY): ProbeResult =
+    suspend fun probe(url: String, headers: Headers = Headers.Builder().build()): ProbeResult =
         withContext(Dispatchers.IO) {
             val rangeReq = Request.Builder()
                 .url(url)
@@ -57,12 +57,12 @@ class MetadataProber(
         sampleSize: Int = 4096
     ): ProbeResult = withContext(Dispatchers.IO) {
         val checkLen = minOf(expectedTotalBytes, sampleSize.toLong(), localChannel.size()).toInt()
-        require(checkLen > 0) { "Local file has no bytes to compare" }
+        val reqLen = if (checkLen > 0) checkLen else 1
 
         val req = Request.Builder()
             .url(newUrl)
             .headers(headers)
-            .header("Range", "bytes=0-${checkLen - 1}")
+            .header("Range", "bytes=0-${reqLen - 1}")
             .get()
             .build()
 
@@ -76,23 +76,26 @@ class MetadataProber(
                     "Size mismatch: expected $expectedTotalBytes, got ${parsed.totalBytes}"
                 )
             }
-            val remoteBytes = resp.body?.bytes()
-                ?: throw IOException("Empty body on verification probe")
-            if (remoteBytes.size < checkLen) {
-                throw IOException("Short read on verification probe: ${remoteBytes.size} < $checkLen")
-            }
 
-            val localBuf = ByteBuffer.allocate(checkLen)
-            var pos = 0L
-            while (localBuf.hasRemaining()) {
-                val r = localChannel.read(localBuf, pos)
-                if (r <= 0) break
-                pos += r
-            }
-            localBuf.flip()
-            for (i in 0 until checkLen) {
-                if (localBuf.get(i) != remoteBytes[i]) {
-                    throw IOException("Byte mismatch at offset $i; remote file differs from local copy")
+            if (checkLen > 0) {
+                val remoteBytes = resp.body?.bytes()
+                    ?: throw IOException("Empty body on verification probe")
+                if (remoteBytes.size < checkLen) {
+                    throw IOException("Short read on verification probe: ${remoteBytes.size} < $checkLen")
+                }
+
+                val localBuf = ByteBuffer.allocate(checkLen)
+                var pos = 0L
+                while (localBuf.hasRemaining()) {
+                    val r = localChannel.read(localBuf, pos)
+                    if (r <= 0) break
+                    pos += r
+                }
+                localBuf.flip()
+                for (i in 0 until checkLen) {
+                    if (localBuf.get(i) != remoteBytes[i]) {
+                        throw IOException("Byte mismatch at offset $i; remote file differs from local copy")
+                    }
                 }
             }
             parsed

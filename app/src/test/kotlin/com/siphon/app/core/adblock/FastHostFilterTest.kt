@@ -1,0 +1,87 @@
+package com.siphon.app.core.adblock
+
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import java.io.ByteArrayInputStream
+
+class FastHostFilterTest {
+
+    private lateinit var filter: FastHostFilter
+
+    @Before
+    fun setup() {
+        filter = FastHostFilter()
+        val hostsContent = """
+            # Test blocklist
+            doubleclick.net
+            googleadservices.com
+            adservice.google.com
+            ads.example.com
+            popads.net
+        """.trimIndent()
+        runBlocking {
+            filter.loadFromStream(ByteArrayInputStream(hostsContent.toByteArray()))
+        }
+    }
+
+    @Test
+    fun testExactDomainMatches() {
+        assertTrue(filter.shouldBlockHost("doubleclick.net"))
+        assertTrue(filter.shouldBlockHost("popads.net"))
+        assertTrue(filter.shouldBlockHost("googleadservices.com"))
+    }
+
+    @Test
+    fun testSubdomainSuffixSlicing() {
+        // Any subdomains of blocked domain should match
+        assertTrue(filter.shouldBlockHost("sub.doubleclick.net"))
+        assertTrue(filter.shouldBlockHost("deep.nested.sub.doubleclick.net"))
+        assertTrue(filter.shouldBlockHost("tracker.ads.example.com"))
+    }
+
+    @Test
+    fun testNonBlockedDomains() {
+        assertFalse(filter.shouldBlockHost("example.com"))
+        assertFalse(filter.shouldBlockHost("google.com"))
+        assertFalse(filter.shouldBlockHost("wikipedia.org"))
+    }
+
+    @Test
+    fun testDomainBoundarySafety() {
+        // notdoubleclick.net ends with "doubleclick.net" as a substring, but NOT as a subdomain suffix!
+        assertFalse(filter.shouldBlockHost("notdoubleclick.net"))
+        assertFalse(filter.shouldBlockHost("fakepopads.net"))
+    }
+
+    @Test
+    fun testCaseInsensitiveAndWhitespace() {
+        assertTrue(filter.shouldBlockHost("DOUBLECLICK.NET"))
+        assertTrue(filter.shouldBlockHost("  Sub.DoubleClick.Net.  "))
+    }
+
+    @Test
+    fun testToggleDisabled() {
+        filter.isEnabled = false
+        assertFalse(filter.shouldBlockHost("doubleclick.net"))
+        assertFalse(filter.shouldBlockHost("sub.doubleclick.net"))
+    }
+
+    @Test
+    fun testShouldBlockUrlWithUserinfoAndPort() {
+        assertTrue(filter.shouldBlockUrl("http://user:password@doubleclick.net/ad.js"))
+        assertTrue(filter.shouldBlockUrl("https://doubleclick.net:8080/path?query=1"))
+        assertTrue(filter.shouldBlockUrl("https://user@sub.doubleclick.net:443/"))
+        assertFalse(filter.shouldBlockUrl("https://user:password@example.com:8080/good.js"))
+    }
+
+    @Test
+    fun testEdgeCases() {
+        assertFalse(filter.shouldBlockHost(""))
+        assertFalse(filter.shouldBlockHost(null))
+        assertFalse(filter.shouldBlockHost("com"))
+        assertFalse(filter.shouldBlockHost("localhost"))
+    }
+}
