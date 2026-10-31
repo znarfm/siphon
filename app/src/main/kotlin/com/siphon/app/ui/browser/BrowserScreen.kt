@@ -58,6 +58,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
@@ -188,14 +190,15 @@ fun BrowserScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (!isUrlBarFocused) {
-                        // Navigation controls
+                        // Navigation controls (M3 Expressive Pill buttons)
                         FilledTonalButton(
                             onClick = { activeWebView?.goBack() },
                             enabled = canGoBack,
-                            modifier = Modifier.size(36.dp),
+                            modifier = Modifier.size(38.dp),
+                            shape = CircleShape,
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                         ) {
-                            Text("<", fontWeight = FontWeight.Bold)
+                            Text("‹", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(modifier = Modifier.width(4.dp))
@@ -203,26 +206,28 @@ fun BrowserScreen(
                         FilledTonalButton(
                             onClick = { activeWebView?.goForward() },
                             enabled = canGoForward,
-                            modifier = Modifier.size(36.dp),
+                            modifier = Modifier.size(38.dp),
+                            shape = CircleShape,
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                         ) {
-                            Text(">", fontWeight = FontWeight.Bold)
+                            Text("›", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(modifier = Modifier.width(4.dp))
 
                         FilledTonalButton(
                             onClick = { activeWebView?.reload() },
-                            modifier = Modifier.size(36.dp),
+                            modifier = Modifier.size(38.dp),
+                            shape = CircleShape,
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                         ) {
-                            Text("⟳", fontWeight = FontWeight.Bold)
+                            Text("⟳", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(modifier = Modifier.width(8.dp))
                     }
 
-                    // Address bar (expands to full width when focused)
+                    // Address bar (Expressive extra-large rounded pill)
                     OutlinedTextField(
                         value = urlTextFieldValue,
                         onValueChange = { urlTextFieldValue = it },
@@ -231,15 +236,15 @@ fun BrowserScreen(
                             .onFocusChanged { focusState ->
                                 isUrlBarFocused = focusState.isFocused
                                 if (focusState.isFocused) {
-                                    // Highlight/select all text upon focus
                                     val text = urlTextFieldValue.text
                                     urlTextFieldValue = urlTextFieldValue.copy(
                                         selection = TextRange(0, text.length)
                                     )
                                 }
                             },
+                        shape = RoundedCornerShape(24.dp),
                         singleLine = true,
-                        placeholder = { Text("Search or type URL", maxLines = 1, fontSize = 12.sp) },
+                        placeholder = { Text("Search or type URL", maxLines = 1, fontSize = 13.sp) },
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Uri,
                             imeAction = ImeAction.Go
@@ -263,12 +268,12 @@ fun BrowserScreen(
                                 urlTextFieldValue = TextFieldValue(cur)
                             }
                         ) {
-                            Text("Cancel", fontSize = 12.sp)
+                            Text("Cancel", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     } else {
                         Spacer(modifier = Modifier.width(6.dp))
 
-                        // Ad-Block Toggle
+                        // Ad-Block Toggle Pill
                         Button(
                             onClick = onToggleAdBlock,
                             colors = ButtonDefaults.buttonColors(
@@ -283,19 +288,19 @@ fun BrowserScreen(
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 }
                             ),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = if (isAdBlockEnabled) "Shield ON" else "Shield OFF",
+                                text = if (isAdBlockEnabled) "🛡 Shield" else "🛡 Off",
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Bold
                             )
                         }
 
                         Spacer(modifier = Modifier.width(6.dp))
 
-                        // Sniffer Sheet Trigger Badge
+                        // Sniffer Sheet Trigger (Expressive Action Pill)
                         BadgedBox(
                             badge = {
                                 if (detectedMediaCount > 0) {
@@ -303,7 +308,7 @@ fun BrowserScreen(
                                         containerColor = MaterialTheme.colorScheme.error,
                                         contentColor = Color.White
                                     ) {
-                                        Text(detectedMediaCount.toString())
+                                        Text(detectedMediaCount.toString(), fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -315,13 +320,18 @@ fun BrowserScreen(
                                         MaterialTheme.colorScheme.primary
                                     } else {
                                         MaterialTheme.colorScheme.surfaceVariant
+                                    },
+                                    contentColor = if (detectedMediaCount > 0) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
                                     }
                                 ),
-                                shape = CircleShape,
-                                modifier = Modifier.size(38.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.height(38.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
                             ) {
-                                Text("↓", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text("↓ Catch", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -362,15 +372,18 @@ fun BrowserScreen(
                                 trailingIcon = {
                                     Text(
                                         text = "✕",
-                                        fontSize = 10.sp,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
                                         modifier = Modifier
-                                            .padding(start = 2.dp)
+                                            .padding(horizontal = 4.dp, vertical = 2.dp)
                                             .clickable { onCloseTab(tab.id) }
                                     )
                                 },
+                                shape = RoundedCornerShape(14.dp),
                                 colors = InputChipDefaults.inputChipColors(
                                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                                 )
                             )
                         }
@@ -378,10 +391,11 @@ fun BrowserScreen(
                         item {
                             FilledTonalButton(
                                 onClick = onNewTab,
-                                modifier = Modifier.size(30.dp),
+                                shape = CircleShape,
+                                modifier = Modifier.size(32.dp),
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                             ) {
-                                Text("+", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }

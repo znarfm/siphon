@@ -86,11 +86,15 @@ fun QueueScreen(
 
     Column(modifier = modifier.fillMaxSize()) {
         // Top Header
-        Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+        Surface(
+            tonalElevation = 3.dp,
+            shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -98,7 +102,8 @@ fun QueueScreen(
                     Text(
                         text = "Download Queue",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
                     )
                     Text(
                         text = "${downloads.count { it.state == DownloadState.ACTIVE }} active • $maxConcurrentDownloads tasks max • $workersPerDownload workers/task",
@@ -108,10 +113,10 @@ fun QueueScreen(
                 }
                 FilledTonalButton(
                     onClick = { showSettingsDialog = true },
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                 ) {
-                    Text("Settings", fontSize = 12.sp)
+                    Text("Settings", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -120,14 +125,15 @@ fun QueueScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             QueueFilter.entries.forEach { filter ->
                 FilterChip(
                     selected = selectedFilter == filter,
                     onClick = { selectedFilter = filter },
-                    label = { Text(filter.label) }
+                    shape = RoundedCornerShape(16.dp),
+                    label = { Text(filter.label, fontWeight = FontWeight.SemiBold) }
                 )
             }
         }
@@ -201,10 +207,10 @@ private fun DownloadItemCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(20.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             // Header: Display Name & State Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -214,7 +220,8 @@ private fun DownloadItemCard(
                 Text(
                     text = download.displayName,
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -225,13 +232,14 @@ private fun DownloadItemCard(
                 StateBadge(state = download.state)
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Subtitle: Type & Size
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = if (download.type == DownloadType.HLS) "HLS Stream" else "Multi-Chunk HTTP",
                     style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
@@ -241,7 +249,7 @@ private fun DownloadItemCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Segmented Chunk Progress Bar
             if (chunks.isNotEmpty()) {
@@ -251,14 +259,14 @@ private fun DownloadItemCard(
                     progress = { if (download.state == DownloadState.COMPLETED) 1f else 0f },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(5.dp))
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Action Buttons
+            // Action Buttons (M3 Expressive Pill buttons)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -268,29 +276,29 @@ private fun DownloadItemCard(
                     DownloadState.ACTIVE, DownloadState.QUEUED -> {
                         Button(
                             onClick = onPause,
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                         ) {
-                            Text("Pause", fontSize = 12.sp)
+                            Text("Pause", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK, DownloadState.FAILED -> {
                         Button(
                             onClick = onResume,
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                         ) {
-                            Text("Resume", fontSize = 12.sp)
+                            Text("Resume", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     DownloadState.AUTH_EXPIRED -> {
                         Button(
                             onClick = onRebind,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                         ) {
-                            Text("Update Link", fontSize = 12.sp)
+                            Text("Update Link", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     DownloadState.COMPLETED, DownloadState.CANCELLED -> {}
@@ -300,12 +308,13 @@ private fun DownloadItemCard(
 
                 OutlinedButton(
                     onClick = if (download.state == DownloadState.COMPLETED || download.state == DownloadState.CANCELLED) onDelete else onCancel,
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                 ) {
                     Text(
                         text = if (download.state == DownloadState.COMPLETED || download.state == DownloadState.CANCELLED) "Delete" else "Cancel",
-                        fontSize = 12.sp
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }

@@ -142,10 +142,10 @@ private fun SniffedMediaItemCard(
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(20.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -154,7 +154,8 @@ private fun SniffedMediaItemCard(
                 Text(
                     text = media.displayName,
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -167,9 +168,9 @@ private fun SniffedMediaItemCard(
                         .background(
                             if (media.mediaType == DownloadType.HLS) MaterialTheme.colorScheme.primaryContainer
                             else MaterialTheme.colorScheme.secondaryContainer,
-                            RoundedCornerShape(6.dp)
+                            RoundedCornerShape(12.dp)
                         )
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
                         text = if (media.mediaType == DownloadType.HLS) "HLS" else "DIRECT",
@@ -181,12 +182,13 @@ private fun SniffedMediaItemCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = formatFileSize(media.totalBytes),
                     style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
@@ -200,15 +202,16 @@ private fun SniffedMediaItemCard(
 
             // HLS Variant Selector
             if (media.variants.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Box {
                     OutlinedButton(
                         onClick = { variantDropdownExpanded = true },
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(14.dp)
                     ) {
                         Text(
                             text = "Quality: " + (selectedVariant?.resolution ?: "${selectedVariant?.bandwidth ?: 0} bps"),
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                     DropdownMenu(
@@ -230,7 +233,7 @@ private fun SniffedMediaItemCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Button(
                 onClick = {
@@ -241,11 +244,13 @@ private fun SniffedMediaItemCard(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)
             ) {
                 Text(
                     text = if (rebindTarget != null) "Rebind to Paused Task" else "Download Stream",
-                    fontWeight = FontWeight.SemiBold
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }

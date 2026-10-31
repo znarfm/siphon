@@ -61,6 +61,7 @@ fun SiphonTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
+        shapes = ExpressiveShapes,
         content = content
     )
 }
