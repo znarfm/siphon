@@ -150,16 +150,18 @@ class HlsQueueEngine(
                     workDir = workDir,
                     onSegmentMerged = { bytesMerged ->
                         currentMergedCount++
-                        val estTotal = if (download.totalBytes > 0L) {
-                            if (bytesMerged >= download.totalBytes && currentMergedCount > 0 && totalSegmentsCount > 0) {
-                                (bytesMerged.toDouble() / currentMergedCount * totalSegmentsCount).toLong()
+                        val estTotal = if (currentMergedCount > 0 && totalSegmentsCount > 0) {
+                            val projected = (bytesMerged.toDouble() / currentMergedCount * totalSegmentsCount).toLong()
+                            if (download.totalBytes > 0L) {
+                                maxOf(download.totalBytes, projected)
                             } else {
-                                download.totalBytes
+                                projected
                             }
-                        } else if (currentMergedCount > 0 && totalSegmentsCount > 0) {
-                            (bytesMerged.toDouble() / currentMergedCount * totalSegmentsCount).toLong()
                         } else {
-                            -1L
+                            download.totalBytes
+                        }
+                        if (estTotal > 0L) {
+                            dao.updateTotalBytes(downloadId, estTotal)
                         }
                         onProgress?.invoke(bytesMerged, estTotal)
                     }
@@ -207,6 +209,7 @@ class HlsQueueEngine(
             }
 
             storage.finalizePending(destUri)
+            dao.updateTotalBytes(downloadId, totalBytes)
             dao.markTerminalAndPurgeCredentials(downloadId, DownloadState.COMPLETED)
             workDir.deleteRecursively()
             DownloadState.COMPLETED
@@ -413,7 +416,8 @@ class HlsQueueEngine(
                         if (!segFile.exists() || segFile.length() == 0L) {
                             downloadSegment(segment, headers, segFile)
                         }
-                        dao.updateChunkProgress(downloadId, trackIndex, segment.chunkIndex, 0L, ChunkState.DONE)
+                        val segSize = segFile.length()
+                        dao.updateChunkProgress(downloadId, trackIndex, segment.chunkIndex, segSize, ChunkState.DONE)
                         completionSignal.trySend(Unit)
                     }
                 }

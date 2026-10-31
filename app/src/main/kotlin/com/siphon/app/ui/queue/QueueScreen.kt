@@ -747,8 +747,9 @@ private fun DownloadItemCard(
                 val progressPercent = (progressFraction * 100).toInt()
                 val downloadedBytes = computeDownloadedBytes(download, chunks)
 
-                val estTotal = if (completedSegments > 0 && totalSegments > 0 && (downloadedBytes >= download.totalBytes || download.totalBytes <= 0L)) {
-                    (downloadedBytes.toDouble() / completedSegments * totalSegments).toLong()
+                val estTotal = if (completedSegments > 0 && totalSegments > 0 && downloadedBytes > 0L) {
+                    val projected = (downloadedBytes.toDouble() / completedSegments * totalSegments).toLong()
+                    if (download.totalBytes > 0L) maxOf(download.totalBytes, projected) else projected
                 } else {
                     download.totalBytes
                 }
@@ -1116,8 +1117,10 @@ private fun computeDownloadedBytes(download: DownloadEntity, chunks: List<ChunkE
     val isHls = download.type == DownloadType.HLS
     return if (isHls) {
         val mergedBytes = chunks.filter { it.state == ChunkState.MERGED }.maxOfOrNull { it.endOffset } ?: 0L
-        if (mergedBytes > 0L) {
-            mergedBytes
+        val doneBytes = chunks.filter { it.state == ChunkState.DONE || it.state == ChunkState.MERGED }.sumOf { it.currentOffset }
+        val actualBytes = maxOf(mergedBytes, doneBytes)
+        if (actualBytes > 0L) {
+            actualBytes
         } else {
             val totalSegments = chunks.size
             val completedSegments = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }

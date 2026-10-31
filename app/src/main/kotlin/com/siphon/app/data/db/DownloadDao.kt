@@ -133,6 +133,9 @@ interface DownloadDao {
     @Query("UPDATE downloads SET state = :state WHERE id = :id")
     suspend fun updateDownloadState(id: Long, state: DownloadState)
 
+    @Query("UPDATE downloads SET totalBytes = :totalBytes WHERE id = :id")
+    suspend fun updateTotalBytes(id: Long, totalBytes: Long)
+
     @Transaction
     suspend fun markTerminalAndPurgeCredentials(id: Long, terminalState: DownloadState) {
         updateDownloadState(id, terminalState)

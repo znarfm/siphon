@@ -201,6 +201,7 @@ class ChunkQueueEngine(
                 (it.currentOffset - it.startOffset).coerceAtLeast(0L)
             }
 
+            var finishedSize = 0L
             val state = try {
                 storage.openWriteSession(
                     uri = destUri,
@@ -208,12 +209,16 @@ class ChunkQueueEngine(
                     alreadyDownloadedBytes = alreadyDownloaded,
                     requestedWorkers = requestedWorkers
                 ).use { session ->
-                    executeInternal(
+                    val s = executeInternal(
                         downloadId = downloadId,
                         channel = session.channel,
                         workerCount = session.preflight.recommendedWorkers,
                         onProgress = onProgress
                     )
+                    if (s == DownloadState.COMPLETED) {
+                        finishedSize = runCatching { session.channel.size() }.getOrDefault(0L)
+                    }
+                    s
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ChunkQueueEngine", "Chunk download failed for id $downloadId: ${e.message}", e)
@@ -223,6 +228,9 @@ class ChunkQueueEngine(
 
             if (state == DownloadState.COMPLETED) {
                 storage.finalizePending(destUri)
+                if (finishedSize > 0L) {
+                    dao.updateTotalBytes(downloadId, finishedSize)
+                }
             }
             state
         }
