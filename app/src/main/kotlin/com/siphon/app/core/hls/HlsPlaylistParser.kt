@@ -119,6 +119,10 @@ object HlsPlaylistParser {
         var nextDuration = 0.0
         var chunkIndex = 0
 
+        var nextByteRangeOffset: Long? = null
+        var nextByteRangeLength: Long? = null
+        var lastByteRangeEndOffset: Long = 0L
+
         val lines = content.lines()
         for (rawLine in lines) {
             val line = rawLine.trim()
@@ -148,6 +152,14 @@ object HlsPlaylistParser {
                     val rawUri = extractAttribute(line, "URI")
                     if (!rawUri.isNullOrBlank()) {
                         val initUrl = resolveUri(playlistUrl, rawUri)
+                        val byteRangeAttr = extractAttribute(line, "BYTERANGE")
+                        var mapOffset: Long? = null
+                        var mapLength: Long? = null
+                        if (!byteRangeAttr.isNullOrBlank()) {
+                            val parts = byteRangeAttr.split('@')
+                            mapLength = parts[0].trim().toLongOrNull()
+                            mapOffset = if (parts.size > 1) parts[1].trim().toLongOrNull() ?: 0L else 0L
+                        }
                         segments.add(
                             ParsedHlsSegment(
                                 trackIndex = trackIndex,
@@ -157,11 +169,21 @@ object HlsPlaylistParser {
                                 durationSec = 0.0,
                                 keyMethod = currentKeyMethod,
                                 keyUrl = currentKeyUrl,
-                                ivHex = currentIvHex
+                                ivHex = currentIvHex,
+                                byteRangeOffset = mapOffset,
+                                byteRangeLength = mapLength
                             )
                         )
                         chunkIndex++
                     }
+                }
+                line.startsWith("#EXT-X-BYTERANGE:") -> {
+                    val value = line.substringAfter(':').trim()
+                    val parts = value.split('@')
+                    val length = parts[0].trim().toLongOrNull()
+                    val offset = if (parts.size > 1) parts[1].trim().toLongOrNull() else null
+                    nextByteRangeLength = length
+                    nextByteRangeOffset = offset ?: lastByteRangeEndOffset
                 }
                 line.startsWith("#EXTINF:") -> {
                     val durStr = line.substringAfter(':').substringBefore(',').trim()
@@ -169,6 +191,8 @@ object HlsPlaylistParser {
                 }
                 !line.startsWith("#") -> {
                     val segmentUrl = resolveUri(playlistUrl, line)
+                    val segOffset = nextByteRangeOffset
+                    val segLength = nextByteRangeLength
                     segments.add(
                         ParsedHlsSegment(
                             trackIndex = trackIndex,
@@ -178,9 +202,16 @@ object HlsPlaylistParser {
                             durationSec = nextDuration,
                             keyMethod = currentKeyMethod,
                             keyUrl = currentKeyUrl,
-                            ivHex = currentIvHex
+                            ivHex = currentIvHex,
+                            byteRangeOffset = segOffset,
+                            byteRangeLength = segLength
                         )
                     )
+                    if (segLength != null) {
+                        lastByteRangeEndOffset = (segOffset ?: 0L) + segLength
+                    }
+                    nextByteRangeOffset = null
+                    nextByteRangeLength = null
                     chunkIndex++
                     currentSeqNum++
                     nextDuration = 0.0

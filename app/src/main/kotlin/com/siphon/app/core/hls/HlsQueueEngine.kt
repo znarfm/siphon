@@ -117,13 +117,17 @@ class HlsQueueEngine(
             val segmentsByTrack: Map<Int, List<ParsedHlsSegment>> = if (existingChunks.isEmpty()) {
                 val parsed = parseAndPopulateTracks(download, headers, workDir)
                 val allChunks = parsed.values.flatten().map { seg ->
+                    val start = seg.byteRangeOffset ?: 0L
+                    val end = if (seg.byteRangeLength != null && seg.byteRangeLength > 0L) {
+                        start + seg.byteRangeLength - 1L
+                    } else 0L
                     ChunkEntity(
                         downloadId = downloadId,
                         trackIndex = seg.trackIndex,
                         chunkIndex = seg.chunkIndex,
-                        startOffset = 0L,
-                        currentOffset = 0L,
-                        endOffset = 0L,
+                        startOffset = start,
+                        currentOffset = start,
+                        endOffset = end,
                         state = ChunkState.PENDING
                     )
                 }
@@ -159,31 +163,39 @@ class HlsQueueEngine(
             }
 
             // 3. Remux track files into final destination (or keep raw concatenated track for subtitle playlists)
+            dao.updateDownloadState(downloadId, DownloadState.MERGING)
+
             val trackFiles = segmentsByTrack.keys.sorted().map { trackIdx ->
                 File(workDir, "track_${trackIdx}.tmp")
             }
 
+            val singleFile = trackFiles.firstOrNull()
+            val alreadyMp4 = trackFiles.size == 1 && singleFile != null && isAlreadyMp4(singleFile)
+
             val remuxOutputFile = File(workDir, "remux_output.mp4")
-            val remuxSuccess = if (isSubDownload) false else remuxToMp4(trackFiles, remuxOutputFile)
+            val remuxSuccess = if (isSubDownload || alreadyMp4) false else remuxToMp4(trackFiles, remuxOutputFile)
 
             val finalSourceFile = if (remuxSuccess && remuxOutputFile.exists() && remuxOutputFile.length() > 0) {
+                trackFiles.forEach { it.delete() }
                 remuxOutputFile
             } else {
-                // Fallback to copying raw track 0 (.ts or .vtt)
-                trackFiles.firstOrNull() ?: throw IOException("No track files produced")
+                // Fallback to copying raw track 0 (.ts or .vtt or already MP4)
+                singleFile ?: throw IOException("No track files produced")
             }
 
-            // Copy to target destination URI using robust ByteBuffer loop
-            storage.openWriteSession(destUri, totalBytes = finalSourceFile.length()).use { session ->
+            val totalBytes = finalSourceFile.length()
+            storage.openWriteSession(destUri, totalBytes = totalBytes).use { session ->
                 val destChannel = session.channel
                 destChannel.truncate(0)
                 destChannel.position(0)
+                var copiedBytes = 0L
                 FileInputStream(finalSourceFile).channel.use { srcChannel ->
                     val buffer = ByteBuffer.allocateDirect(128 * 1024)
                     while (srcChannel.read(buffer) > 0) {
                         buffer.flip()
-                        destChannel.write(buffer)
+                        copiedBytes += destChannel.write(buffer)
                         buffer.clear()
+                        onProgress?.invoke(copiedBytes, totalBytes)
                     }
                 }
                 destChannel.force(true)
@@ -243,7 +255,8 @@ class HlsQueueEngine(
             result[0] = HlsPlaylistParser.parseMediaPlaylist(selectedVariant.url, videoContent, trackIndex = 0).segments
 
             if (selectedVariant.audioGroupId != null) {
-                val audioTrack = master.audioTracks.firstOrNull { it.groupId == selectedVariant.audioGroupId }
+                val audioTrack = master.audioTracks.firstOrNull { it.groupId == selectedVariant.audioGroupId && it.isDefault }
+                    ?: master.audioTracks.firstOrNull { it.groupId == selectedVariant.audioGroupId }
                 if (audioTrack != null && audioTrack.url.isNotBlank() && audioTrack.url != selectedVariant.url) {
                     val audioContent = fetchPlaylistText(audioTrack.url, headers)
                     File(workDir, "media_track_1.m3u8").writeText(audioContent)
@@ -417,7 +430,13 @@ class HlsQueueEngine(
         destinationFile: File
     ) = withContext(Dispatchers.IO) {
         val partFile = File(destinationFile.parentFile, "${destinationFile.name}.part")
-        val req = Request.Builder().url(segment.url).headers(headers).get().build()
+        val reqBuilder = Request.Builder().url(segment.url).headers(headers)
+        if (segment.byteRangeLength != null && segment.byteRangeLength > 0L) {
+            val start = segment.byteRangeOffset ?: 0L
+            val end = start + segment.byteRangeLength - 1L
+            reqBuilder.header("Range", "bytes=$start-$end")
+        }
+        val req = reqBuilder.get().build()
         client.newCall(req).execute().use { resp ->
             if (resp.code == 403 || resp.code == 410) {
                 throw HttpStatusException(resp.code, "Segment download failed HTTP ${resp.code}: ${segment.url}")
@@ -500,10 +519,20 @@ class HlsQueueEngine(
 
             if (trackMap.isEmpty()) return false
 
+            var maxInputSize = 4 * 1024 * 1024
+            for (extractor in extractors) {
+                for (t in 0 until extractor.trackCount) {
+                    val format = extractor.getTrackFormat(t)
+                    if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                        maxInputSize = maxOf(maxInputSize, format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
+                    }
+                }
+            }
+
             muxer.start()
-            val buffer = ByteBuffer.allocate(1024 * 1024)
+            val buffer = ByteBuffer.allocate(maxInputSize)
             val bufferInfo = MediaCodec.BufferInfo()
-            val lastPtsMap = mutableMapOf<Int, Long>()
+            val initialPts = extractors.mapNotNull { if (it.sampleTime >= 0L) it.sampleTime else null }.minOrNull() ?: 0L
 
             while (true) {
                 var bestExtIdx = -1
@@ -529,12 +558,13 @@ class HlsQueueEngine(
 
                 buffer.clear()
                 val sampleSize = extractor.readSampleData(buffer, 0)
-                if (sampleSize < 0) break
-
                 val rawPts = extractor.sampleTime
-                val lastPts = lastPtsMap[muxerTrack] ?: -1L
-                val adjustedPts = if (rawPts <= lastPts) lastPts + 1L else rawPts
-                lastPtsMap[muxerTrack] = adjustedPts
+                if (sampleSize < 0 || rawPts < 0L) {
+                    extractor.advance()
+                    continue
+                }
+
+                val adjustedPts = (rawPts - initialPts).coerceAtLeast(0L)
 
                 bufferInfo.offset = 0
                 bufferInfo.size = sampleSize
@@ -555,6 +585,22 @@ class HlsQueueEngine(
                 try { extractor.release() } catch (_: Throwable) {}
             }
             try { muxer?.release() } catch (_: Throwable) {}
+        }
+    }
+
+    private fun isAlreadyMp4(file: File): Boolean {
+        if (!file.exists() || file.length() < 12L) return false
+        return try {
+            FileInputStream(file).use { fis ->
+                val header = ByteArray(12)
+                val read = fis.read(header)
+                if (read >= 8) {
+                    val boxType = String(header, 4, 4, Charsets.US_ASCII)
+                    boxType == "ftyp" || boxType == "styp"
+                } else false
+            }
+        } catch (_: Exception) {
+            false
         }
     }
 

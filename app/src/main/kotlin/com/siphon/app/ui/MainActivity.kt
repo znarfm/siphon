@@ -171,7 +171,7 @@ fun MainContent(viewModel: MainViewModel) {
     val adblockRuleCount by viewModel.adblockRuleCount.collectAsState()
 
     val activeDownloadsCount = downloads.count {
-        it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED
+        it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED || it.state == DownloadState.MERGING
     }
 
     Scaffold { innerPadding ->

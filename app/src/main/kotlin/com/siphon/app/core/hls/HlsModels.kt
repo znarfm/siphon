@@ -29,7 +29,9 @@ data class ParsedHlsSegment(
     val durationSec: Double,
     val keyMethod: String? = null,
     val keyUrl: String? = null,
-    val ivHex: String? = null
+    val ivHex: String? = null,
+    val byteRangeOffset: Long? = null,
+    val byteRangeLength: Long? = null
 )
 
 data class ParsedMasterPlaylist(

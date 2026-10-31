@@ -215,4 +215,68 @@ class HlsPlaylistParserTest {
         assertNull(initSeg.keyUrl)
         assertNull(initSeg.ivHex)
     }
+
+    @Test
+    fun testParseByteRangeSegments() {
+        val content = """
+            #EXTM3U
+            #EXT-X-VERSION:4
+            #EXT-X-TARGETDURATION:10
+            #EXT-X-MEDIA-SEQUENCE:0
+            #EXT-X-BYTERANGE:500@0
+            video.mp4
+            #EXT-X-BYTERANGE:1000
+            video.mp4
+            #EXT-X-BYTERANGE:750@2000
+            video.mp4
+            #EXT-X-ENDLIST
+        """.trimIndent()
+
+        val parsed = HlsPlaylistParser.parseMediaPlaylist(
+            playlistUrl = "https://example.com/video.m3u8",
+            content = content,
+            trackIndex = 0
+        )
+
+        assertEquals(3, parsed.segments.size)
+
+        // Segment 0: 500@0
+        assertEquals(0L, parsed.segments[0].byteRangeOffset)
+        assertEquals(500L, parsed.segments[0].byteRangeLength)
+
+        // Segment 1: 1000 (implicit contiguous offset: 0 + 500 = 500)
+        assertEquals(500L, parsed.segments[1].byteRangeOffset)
+        assertEquals(1000L, parsed.segments[1].byteRangeLength)
+
+        // Segment 2: 750@2000 (explicit offset)
+        assertEquals(2000L, parsed.segments[2].byteRangeOffset)
+        assertEquals(750L, parsed.segments[2].byteRangeLength)
+    }
+
+    @Test
+    fun testParseExtXMapWithByteRange() {
+        val content = """
+            #EXTM3U
+            #EXT-X-VERSION:7
+            #EXT-X-MAP:URI="main.mp4",BYTERANGE="1200@0"
+            #EXT-X-BYTERANGE:8000@1200
+            main.mp4
+            #EXT-X-ENDLIST
+        """.trimIndent()
+
+        val parsed = HlsPlaylistParser.parseMediaPlaylist(
+            playlistUrl = "https://example.com/video.m3u8",
+            content = content,
+            trackIndex = 0
+        )
+
+        assertEquals(2, parsed.segments.size)
+        // Map segment
+        assertEquals(0L, parsed.segments[0].byteRangeOffset)
+        assertEquals(1200L, parsed.segments[0].byteRangeLength)
+
+        // Media segment
+        assertEquals(1200L, parsed.segments[1].byteRangeOffset)
+        assertEquals(8000L, parsed.segments[1].byteRangeLength)
+    }
 }

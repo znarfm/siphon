@@ -144,7 +144,7 @@ fun QueueScreen(
     var showBulkDeleteDialog by remember { mutableStateOf(false) }
     var inspectorDownload by remember { mutableStateOf<DownloadEntity?>(null) }
 
-    val activeCount = downloads.count { it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED }
+    val activeCount = downloads.count { it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED || it.state == DownloadState.MERGING }
     val pausedCount = downloads.count {
         it.state == DownloadState.PAUSED || it.state == DownloadState.AUTH_EXPIRED || it.state == DownloadState.WAITING_FOR_NETWORK
     }
@@ -154,7 +154,7 @@ fun QueueScreen(
     val filteredList = remember(downloads, selectedFilter, searchQuery, selectedSort, chunksMap) {
         val byTab = when (selectedFilter) {
             QueueFilter.ALL -> downloads
-            QueueFilter.ACTIVE -> downloads.filter { it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED }
+            QueueFilter.ACTIVE -> downloads.filter { it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED || it.state == DownloadState.MERGING }
             QueueFilter.PAUSED -> downloads.filter {
                 it.state == DownloadState.PAUSED || it.state == DownloadState.AUTH_EXPIRED || it.state == DownloadState.WAITING_FOR_NETWORK
             }
@@ -757,6 +757,7 @@ private fun DownloadItemCard(
                     )
 
                     val progressDetail = when {
+                        download.state == DownloadState.MERGING -> " • Processing & saving to disk…"
                         download.state == DownloadState.COMPLETED -> {
                             " • ${formatFileSize(if (download.totalBytes > 0) download.totalBytes else downloadedBytes)} (100%)"
                         }
@@ -781,7 +782,14 @@ private fun DownloadItemCard(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Segmented Chunk Progress Bar
-                if (chunks.isNotEmpty()) {
+                if (download.state == DownloadState.MERGING) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                    )
+                } else if (chunks.isNotEmpty()) {
                     SegmentedChunkBar(chunks = chunks, totalBytes = download.totalBytes, isHls = isHls)
                 } else {
                     LinearProgressIndicator(
@@ -809,6 +817,16 @@ private fun DownloadItemCard(
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp)
                             ) {
                                 Text("Pause", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        DownloadState.MERGING -> {
+                            FilledTonalButton(
+                                onClick = {},
+                                enabled = false,
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                            ) {
+                                Text("Merging…", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                         DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK -> {
@@ -1165,6 +1183,7 @@ fun StateBadge(state: DownloadState, modifier: Modifier = Modifier) {
     val (color, text) = when (state) {
         DownloadState.QUEUED -> Pair(StateWaiting, "Queued")
         DownloadState.ACTIVE -> Pair(StateActive, "Downloading")
+        DownloadState.MERGING -> Pair(StateActive, "Merging")
         DownloadState.PAUSED -> Pair(StatePaused, "Paused")
         DownloadState.COMPLETED -> Pair(StateCompleted, "Complete")
         DownloadState.FAILED -> Pair(StateFailed, "Failed")

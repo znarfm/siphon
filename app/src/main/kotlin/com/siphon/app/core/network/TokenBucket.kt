@@ -48,12 +48,20 @@ class TokenBucket(bytesPerSecond: Long = 0L) {
         val elapsedNanos = now - last
         if (elapsedNanos <= 0) return
 
-        if (lastRefillTimeNanos.compareAndSet(last, now)) {
-            val newTokens = (elapsedNanos * rate) / 1_000_000_000L
-            if (newTokens > 0) {
-                availableTokens.updateAndGet { cur ->
-                    min(rate, cur + newTokens)
-                }
+        if (elapsedNanos >= 1_000_000_000L) {
+            if (lastRefillTimeNanos.compareAndSet(last, now)) {
+                availableTokens.set(rate)
+            }
+            return
+        }
+
+        val newTokens = (elapsedNanos * rate) / 1_000_000_000L
+        if (newTokens <= 0) return
+
+        val consumedNanos = (newTokens * 1_000_000_000L) / rate
+        if (lastRefillTimeNanos.compareAndSet(last, last + consumedNanos)) {
+            availableTokens.updateAndGet { cur ->
+                min(rate, cur + newTokens)
             }
         }
     }

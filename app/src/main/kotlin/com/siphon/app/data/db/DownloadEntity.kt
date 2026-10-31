@@ -12,6 +12,7 @@ enum class DownloadType {
 enum class DownloadState {
     QUEUED,
     ACTIVE,
+    MERGING,
     PAUSED,
     WAITING_FOR_NETWORK,
     AUTH_EXPIRED,
