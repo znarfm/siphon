@@ -3,6 +3,7 @@ package com.siphon.app.data.repository
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import com.siphon.app.core.adblock.AdblockConfig
 import com.siphon.app.core.adblock.FastHostFilter
 import com.siphon.app.core.service.DownloadForegroundService
 import com.siphon.app.data.db.BookmarkEntity
@@ -103,10 +104,34 @@ class BrowserRepository(
         browserDao.clearHistory()
     }
 
-    suspend fun refreshAdblockSubscription(
-        customUrl: String = FastHostFilter.DEFAULT_SUBSCRIPTION_URL
-    ): Result<Int> = withContext(Dispatchers.IO) {
-        val result = hostFilter.refreshSubscription(application, customUrl)
+    fun getActiveAdblockConfig(): AdblockConfig {
+        return AdblockConfig(
+            baseUrl = prefs.getString("pref_adblock_base_url", FastHostFilter.HAGEZI_NORMAL_URL)
+                ?: FastHostFilter.HAGEZI_NORMAL_URL,
+            allowShorteners = prefs.getBoolean("pref_adblock_allow_shorteners", true),
+            enableThreatIntel = prefs.getBoolean("pref_adblock_threat_intel", false),
+            customUrl = prefs.getString("pref_adblock_custom_url", "") ?: ""
+        )
+    }
+
+    fun saveAdblockConfig(config: AdblockConfig) {
+        prefs.edit()
+            .putString("pref_adblock_base_url", config.baseUrl)
+            .putBoolean("pref_adblock_allow_shorteners", config.allowShorteners)
+            .putBoolean("pref_adblock_threat_intel", config.enableThreatIntel)
+            .putString("pref_adblock_custom_url", config.customUrl)
+            .apply()
+    }
+
+    suspend fun refreshAdblockSubscriptions(
+        config: AdblockConfig
+    ): Result<Pair<Int, Int>> = withContext(Dispatchers.IO) {
+        saveAdblockConfig(config)
+        val result = hostFilter.refreshSubscriptions(
+            context = application,
+            blockUrls = config.toBlockUrls(),
+            allowUrls = config.toAllowUrls()
+        )
         if (result.isSuccess) {
             _adblockRuleCount.value = hostFilter.ruleCount
         }

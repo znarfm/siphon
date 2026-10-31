@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.siphon.app.core.adblock.AdblockConfig
 import com.siphon.app.core.service.DownloadForegroundService
 import com.siphon.app.core.sniffer.MediaSnifferClient
 import com.siphon.app.core.sniffer.SniffedMedia
@@ -63,6 +64,9 @@ class BrowserViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val adblockRuleCount: StateFlow<Int> = browserRepository.adblockRuleCount
+
+    private val _adblockConfig = MutableStateFlow(browserRepository.getActiveAdblockConfig())
+    val adblockConfig: StateFlow<AdblockConfig> = _adblockConfig.asStateFlow()
 
     private val _isSnifferSheetOpen = MutableStateFlow(false)
     val isSnifferSheetOpen = _isSnifferSheetOpen.asStateFlow()
@@ -223,9 +227,10 @@ class BrowserViewModel(
         }
     }
 
-    fun refreshAdblockSubscription(url: String = com.siphon.app.core.adblock.FastHostFilter.DEFAULT_SUBSCRIPTION_URL) {
+    fun refreshAdblockSubscriptions(config: AdblockConfig) {
+        _adblockConfig.value = config
         viewModelScope.launch {
-            browserRepository.refreshAdblockSubscription(url)
+            browserRepository.refreshAdblockSubscriptions(config)
         }
     }
 

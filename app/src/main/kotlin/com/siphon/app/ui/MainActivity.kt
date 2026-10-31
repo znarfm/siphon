@@ -200,6 +200,7 @@ fun MainContent(
     val history by browserViewModel.history.collectAsState()
     val isCurrentBookmarked by browserViewModel.isCurrentUrlBookmarked.collectAsState()
     val adblockRuleCount by browserViewModel.adblockRuleCount.collectAsState()
+    val adblockConfig by browserViewModel.adblockConfig.collectAsState()
 
     val downloads by queueViewModel.downloads.collectAsState()
     val chunksMap by queueViewModel.chunksMap.collectAsState()
@@ -245,6 +246,7 @@ fun MainContent(
                     bookmarks = bookmarks,
                     history = history,
                     adblockRuleCount = adblockRuleCount,
+                    adblockConfig = adblockConfig,
                     onToggleBars = { isBarsVisible = it },
                     onToggleWebDarkMode = { browserViewModel.toggleWebDarkMode() },
                     onToggleDesktopMode = { browserViewModel.toggleDesktopMode() },
@@ -275,7 +277,7 @@ fun MainContent(
                     onDeleteBookmark = { browserViewModel.deleteBookmark(it) },
                     onDeleteHistory = { browserViewModel.deleteHistory(it) },
                     onClearHistory = { browserViewModel.clearHistory() },
-                    onRefreshAdblock = { browserViewModel.refreshAdblockSubscription(it) },
+                    onRefreshAdblock = { browserViewModel.refreshAdblockSubscriptions(it) },
                     onUpdateTabMeta = { url, title -> browserViewModel.updateActiveTabMeta(url, title) },
                     onRegisterDomScan = { scanner -> browserViewModel.onRequestDomScan = scanner }
                 )

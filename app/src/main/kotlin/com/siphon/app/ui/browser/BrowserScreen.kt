@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.siphon.app.core.adblock.AdblockConfig
 import androidx.compose.ui.zIndex
 import com.siphon.app.core.sniffer.MediaSnifferClient
 import com.siphon.app.data.db.BookmarkEntity
@@ -171,6 +172,7 @@ fun BrowserScreen(
     bookmarks: List<BookmarkEntity> = emptyList(),
     history: List<HistoryEntity> = emptyList(),
     adblockRuleCount: Int = 0,
+    adblockConfig: AdblockConfig = AdblockConfig(),
     onToggleBars: (Boolean) -> Unit = {},
     onToggleWebDarkMode: () -> Unit = {},
     onToggleDesktopMode: () -> Unit = {},
@@ -187,7 +189,7 @@ fun BrowserScreen(
     onDeleteBookmark: (Long) -> Unit = {},
     onDeleteHistory: (Long) -> Unit = {},
     onClearHistory: () -> Unit = {},
-    onRefreshAdblock: (String) -> Unit = {},
+    onRefreshAdblock: (AdblockConfig) -> Unit = {},
     onUpdateTabMeta: (url: String, title: String) -> Unit,
     onRegisterDomScan: (((() -> Unit) -> Unit))? = null,
     onDownloadDirectMedia: ((url: String) -> Unit)? = null,
@@ -705,9 +707,10 @@ fun BrowserScreen(
         if (showAdblockDialog) {
             AdblockSubscriptionDialog(
                 currentRuleCount = adblockRuleCount,
+                initialConfig = adblockConfig,
                 onDismiss = { showAdblockDialog = false },
-                onRefresh = { url ->
-                    onRefreshAdblock(url)
+                onApply = { config ->
+                    onRefreshAdblock(config)
                     showAdblockDialog = false
                 }
             )

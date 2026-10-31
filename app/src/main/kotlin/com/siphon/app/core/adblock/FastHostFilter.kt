@@ -7,6 +7,9 @@ import com.siphon.app.core.network.NetworkClients
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -18,11 +21,31 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.util.concurrent.atomic.AtomicBoolean
 
+data class AdblockConfig(
+    val baseUrl: String = FastHostFilter.HAGEZI_NORMAL_URL,
+    val allowShorteners: Boolean = true,
+    val enableThreatIntel: Boolean = false,
+    val customUrl: String = ""
+) {
+    fun toBlockUrls(): List<String> = buildList {
+        if (baseUrl.isNotBlank()) add(baseUrl.trim())
+        if (enableThreatIntel) add(FastHostFilter.HAGEZI_THREAT_URL)
+        if (customUrl.isNotBlank()) add(customUrl.trim())
+    }
+
+    fun toAllowUrls(): List<String> = buildList {
+        if (allowShorteners) add(FastHostFilter.DANDELION_SHORTENERS_URL)
+    }
+}
+
 class FastHostFilter(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 ) {
     @Volatile
     private var blockedHosts: HashSet<String> = HashSet(0)
+
+    @Volatile
+    private var allowedHosts: HashSet<String> = HashSet(0)
 
     val isLoaded = AtomicBoolean(false)
     var isEnabled: Boolean = true
@@ -31,12 +54,21 @@ class FastHostFilter(
     fun loadFromAssets(context: Context, assetPath: String = "adblock_hosts.txt") {
         if (isLoaded.get()) return
         scope.launch {
-            val file = File(context.filesDir, "adblock_subscription.txt")
-            if (file.exists() && file.length() > 0L) {
+            val blockFile = File(context.filesDir, "adblock_subscription.txt")
+            val allowFile = File(context.filesDir, "adblock_allowlist.txt")
+
+            if (allowFile.exists() && allowFile.length() > 0L) {
                 runCatching {
-                    file.inputStream().use { loadFromStream(it) }
+                    allowFile.inputStream().use { loadAllowlistFromStream(it) }
                 }
             }
+
+            if (blockFile.exists() && blockFile.length() > 0L) {
+                runCatching {
+                    blockFile.inputStream().use { loadFromStream(it) }
+                }
+            }
+
             if (!isLoaded.get() || blockedHosts.isEmpty()) {
                 runCatching {
                     context.assets.open(assetPath).use { stream ->
@@ -47,24 +79,72 @@ class FastHostFilter(
         }
     }
 
-    suspend fun refreshSubscription(
+    suspend fun refreshSubscriptions(
         context: Context,
-        url: String = DEFAULT_SUBSCRIPTION_URL
-    ): Result<Int> = withContext(Dispatchers.IO) {
+        blockUrls: List<String>,
+        allowUrls: List<String>
+    ): Result<Pair<Int, Int>> = withContext(Dispatchers.IO) {
         runCatching {
-            val req = Request.Builder().url(url).build()
-            val file = File(context.filesDir, "adblock_subscription.txt")
-            NetworkClients.defaultClient.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
-                resp.body?.byteStream()?.use { input ->
-                    file.outputStream().use { output -> input.copyTo(output) }
+            val blockFile = File(context.filesDir, "adblock_subscription.txt")
+            val allowFile = File(context.filesDir, "adblock_allowlist.txt")
+
+            val fetchedBlocks = coroutineScope {
+                blockUrls.filter { it.isNotBlank() }.map { url ->
+                    async { fetchAndParse(url, isAllow = false) }
+                }.awaitAll()
+            }
+
+            val fetchedAllows = coroutineScope {
+                allowUrls.filter { it.isNotBlank() }.map { url ->
+                    async { fetchAndParse(url, isAllow = true) }
+                }.awaitAll()
+            }
+
+            val newBlocked = fetchedBlocks.flatten().toHashSet()
+            val newAllowed = fetchedAllows.flatten().toHashSet()
+
+            // Atomic pointer swap
+            blockedHosts = newBlocked
+            allowedHosts = newAllowed
+            isLoaded.set(true)
+
+            // Cache to disk
+            blockFile.bufferedWriter(Charsets.UTF_8).use { writer ->
+                for (host in newBlocked) {
+                    writer.write(host)
+                    writer.newLine()
                 }
             }
-            file.inputStream().use { stream ->
-                loadFromStream(stream)
+            allowFile.bufferedWriter(Charsets.UTF_8).use { writer ->
+                for (host in newAllowed) {
+                    writer.write(host)
+                    writer.newLine()
+                }
             }
-            blockedHosts.size
+
+            Pair(newBlocked.size, newAllowed.size)
         }
+    }
+
+    private fun fetchAndParse(url: String, isAllow: Boolean): Set<String> {
+        val req = Request.Builder().url(url).build()
+        val set = HashSet<String>(1024)
+        NetworkClients.defaultClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code} for $url")
+            resp.body?.byteStream()?.let { stream ->
+                BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
+                    var line = reader.readLine()
+                    while (line != null) {
+                        val host = if (isAllow) extractAllowHostFromRule(line) else extractHostFromRule(line)
+                        if (host != null) {
+                            set.add(host)
+                        }
+                        line = reader.readLine()
+                    }
+                }
+            }
+        }
+        return set
     }
 
     suspend fun loadFromStream(stream: InputStream) = withContext(Dispatchers.Default) {
@@ -85,52 +165,45 @@ class FastHostFilter(
         isLoaded.set(true)
     }
 
-    companion object {
-        const val DEFAULT_SUBSCRIPTION_URL = "https://adaway.org/hosts.txt"
-
-        fun extractHostFromRule(line: String): String? {
-            val trimmed = line.trim()
-            if (trimmed.isEmpty() || trimmed.startsWith("!") || trimmed.startsWith("#") || trimmed.startsWith("[")) {
-                return null
+    suspend fun loadAllowlistFromStream(stream: InputStream) = withContext(Dispatchers.Default) {
+        val lines = ArrayList<String>(1024)
+        BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
+            var line = reader.readLine()
+            while (line != null) {
+                val host = extractAllowHostFromRule(line)
+                if (host != null) {
+                    lines.add(host)
+                }
+                line = reader.readLine()
             }
-            if (trimmed.contains("##") || trimmed.contains("#@#") || trimmed.contains("#?#") || trimmed.startsWith("@@")) {
-                return null
-            }
-
-            // ABP/AdGuard rule syntax: ||domain.com^ or ||domain.com/
-            if (trimmed.startsWith("||")) {
-                val afterBars = trimmed.substring(2)
-                val hostPart = afterBars.takeWhile { it != '^' && it != '/' && it != '$' && it != '?' && it != ':' }
-                val cleanHost = hostPart.trim().lowercase().trimEnd('.')
-                return if (cleanHost.contains('.') && !cleanHost.contains('*')) cleanHost else null
-            }
-
-            // Standard hosts syntax: 0.0.0.0 domain.com or 127.0.0.1 domain.com
-            if (trimmed.startsWith("0.0.0.0 ") || trimmed.startsWith("127.0.0.1 ")) {
-                val hostPart = trimmed.substringAfter(' ').trim().substringBefore(' ').substringBefore('#').trim()
-                val cleanHost = hostPart.lowercase().trimEnd('.')
-                return if (cleanHost.contains('.') && cleanHost != "localhost") cleanHost else null
-            }
-
-            // Plain domain syntax: domain.com
-            val plain = trimmed.substringBefore('#').substringBefore(' ').trim().lowercase().trimEnd('.')
-            if (plain.contains('.') && !plain.contains('/') && !plain.contains(':') && !plain.contains('*')) {
-                return plain
-            }
-            return null
         }
+        val set = HashSet<String>(lines.size * 4 / 3 + 1)
+        set.addAll(lines)
+        allowedHosts = set
     }
 
-    /**
-     * Suffix-slicing matcher:
-     * e.g. "sub.ads.domain.com" -> tests "sub.ads.domain.com", "ads.domain.com", "domain.com"
-     * Stops before single TLD label.
-     */
+    fun isAllowedHost(rawHost: String?): Boolean {
+        if (!isEnabled || rawHost.isNullOrBlank()) return false
+        val host = rawHost.trim().lowercase().trimEnd('.')
+        val set = allowedHosts
+        var current = host
+        while (current.contains('.')) {
+            if (set.contains(current)) {
+                return true
+            }
+            val dotIndex = current.indexOf('.')
+            if (dotIndex == -1) break
+            current = current.substring(dotIndex + 1)
+        }
+        return false
+    }
+
     fun shouldBlockHost(rawHost: String?): Boolean {
         if (!isEnabled || !isLoaded.get() || rawHost.isNullOrBlank()) return false
         val host = rawHost.trim().lowercase().trimEnd('.')
-        val set = blockedHosts
+        if (isAllowedHost(host)) return false
 
+        val set = blockedHosts
         var current = host
         while (current.contains('.')) {
             if (set.contains(current)) {
@@ -170,5 +243,77 @@ class FastHostFilter(
             emptyMap(),
             ByteArrayInputStream(ByteArray(0))
         )
+    }
+
+    companion object {
+        const val HAGEZI_NORMAL_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/normal.txt"
+        const val HAGEZI_LIGHT_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/light.txt"
+        const val HAGEZI_PRO_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/pro.txt"
+        const val HAGEZI_THREAT_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/fake.txt"
+        const val DANDELION_SHORTENERS_URL = "https://raw.githubusercontent.com/DandelionSprout/adfilt/refs/heads/master/LegitimateURLShortener.txt"
+
+        fun extractHostFromRule(line: String): String? {
+            val trimmed = line.trim()
+            if (trimmed.isEmpty() || trimmed.startsWith("!") || trimmed.startsWith("#") || trimmed.startsWith("[")) {
+                return null
+            }
+            if (trimmed.contains("##") || trimmed.contains("#@#") || trimmed.contains("#?#") || trimmed.startsWith("@@")) {
+                return null
+            }
+
+            // ABP/AdGuard rule syntax: ||domain.com^ or ||domain.com/
+            if (trimmed.startsWith("||")) {
+                val afterBars = trimmed.substring(2)
+                val hostPart = afterBars.takeWhile { it != '^' && it != '/' && it != '$' && it != '?' && it != ':' }
+                val cleanHost = hostPart.trim().lowercase().trimEnd('.')
+                return if (cleanHost.contains('.') && !cleanHost.contains('*')) cleanHost else null
+            }
+
+            // Standard hosts syntax: 0.0.0.0 domain.com or 127.0.0.1 domain.com
+            if (trimmed.startsWith("0.0.0.0 ") || trimmed.startsWith("127.0.0.1 ")) {
+                val hostPart = trimmed.substringAfter(' ').trim().substringBefore(' ').substringBefore('#').trim()
+                val cleanHost = hostPart.lowercase().trimEnd('.')
+                return if (cleanHost.contains('.') && cleanHost != "localhost") cleanHost else null
+            }
+
+            // Plain domain syntax: domain.com
+            val plain = trimmed.substringBefore('#').substringBefore(' ').trim().lowercase().trimEnd('.')
+            if (plain.contains('.') && !plain.contains('/') && !plain.contains(':') && !plain.contains('*')) {
+                return plain
+            }
+            return null
+        }
+
+        fun extractAllowHostFromRule(line: String): String? {
+            val trimmed = line.trim()
+            if (trimmed.isEmpty() || trimmed.startsWith("!") || trimmed.startsWith("#") || trimmed.startsWith("[")) {
+                return null
+            }
+            if (trimmed.contains("##") || trimmed.contains("#@#") || trimmed.contains("#?#")) {
+                return null
+            }
+
+            // ABP allowlist syntax: @@||domain.com^ or @@domain.com^
+            if (trimmed.startsWith("@@")) {
+                val afterPrefix = trimmed.removePrefix("@@").removePrefix("||")
+                val hostPart = afterPrefix.takeWhile { it != '^' && it != '/' && it != '$' && it != '?' && it != ':' }
+                val cleanHost = hostPart.trim().lowercase().trimEnd('.')
+                return if (cleanHost.contains('.') && !cleanHost.contains('*')) cleanHost else null
+            }
+
+            // Standard hosts syntax: 0.0.0.0 domain.com or 127.0.0.1 domain.com
+            if (trimmed.startsWith("0.0.0.0 ") || trimmed.startsWith("127.0.0.1 ")) {
+                val hostPart = trimmed.substringAfter(' ').trim().substringBefore(' ').substringBefore('#').trim()
+                val cleanHost = hostPart.lowercase().trimEnd('.')
+                return if (cleanHost.contains('.') && cleanHost != "localhost") cleanHost else null
+            }
+
+            // Plain domain syntax: domain.com
+            val plain = trimmed.substringBefore('#').substringBefore(' ').trim().lowercase().trimEnd('.')
+            if (plain.contains('.') && !plain.contains('/') && !plain.contains(':') && !plain.contains('*')) {
+                return plain
+            }
+            return null
+        }
     }
 }

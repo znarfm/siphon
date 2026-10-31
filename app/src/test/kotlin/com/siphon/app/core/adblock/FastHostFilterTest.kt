@@ -101,4 +101,40 @@ class FastHostFilterTest {
         assertFalse(filter.shouldBlockHost("com"))
         assertFalse(filter.shouldBlockHost("localhost"))
     }
+
+    @Test
+    fun testExtractAllowHostFromRule() {
+        assertEquals("bit.ly", FastHostFilter.extractAllowHostFromRule("@@||bit.ly^"))
+        assertEquals("tinyurl.com", FastHostFilter.extractAllowHostFromRule("@@||tinyurl.com^${'$'}document"))
+        assertEquals("linktr.ee", FastHostFilter.extractAllowHostFromRule("@@||linktr.ee/"))
+        assertEquals("directsite.org", FastHostFilter.extractAllowHostFromRule("@@directsite.org^"))
+        assertEquals("plainshort.io", FastHostFilter.extractAllowHostFromRule("plainshort.io"))
+        assertNull(FastHostFilter.extractAllowHostFromRule("! Comment"))
+        assertNull(FastHostFilter.extractAllowHostFromRule("# Comment"))
+        assertNull(FastHostFilter.extractAllowHostFromRule("##.ad-banner"))
+        assertNull(FastHostFilter.extractAllowHostFromRule("@@||bad*domain.com^"))
+    }
+
+    @Test
+    fun testAllowlistPrecedenceOverBlocklist() {
+        // "popads.net" is in blocklist from setup
+        assertTrue(filter.shouldBlockHost("popads.net"))
+
+        val allowContent = """
+            @@||popads.net^
+            @@||redirect.service.com^
+        """.trimIndent()
+        runBlocking {
+            filter.loadAllowlistFromStream(ByteArrayInputStream(allowContent.toByteArray()))
+        }
+
+        // Now popads.net and its subdomains should NOT be blocked
+        assertFalse(filter.shouldBlockHost("popads.net"))
+        assertFalse(filter.shouldBlockHost("sub.popads.net"))
+        assertTrue(filter.isAllowedHost("popads.net"))
+        assertTrue(filter.isAllowedHost("sub.popads.net"))
+
+        // Unallowed blocked hosts still blocked
+        assertTrue(filter.shouldBlockHost("doubleclick.net"))
+    }
 }

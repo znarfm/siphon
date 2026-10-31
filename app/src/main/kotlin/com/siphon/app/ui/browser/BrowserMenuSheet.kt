@@ -15,8 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -43,6 +46,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.siphon.app.core.adblock.AdblockConfig
 import com.siphon.app.core.adblock.FastHostFilter
 import com.siphon.app.ui.theme.AppColorSeed
 import com.siphon.app.ui.theme.AppThemeMode
@@ -258,60 +262,108 @@ fun BrowserMenuSheet(
 @Composable
 fun AdblockSubscriptionDialog(
     currentRuleCount: Int,
+    initialConfig: AdblockConfig = AdblockConfig(),
     onDismiss: () -> Unit,
-    onRefresh: (String) -> Unit
+    onApply: (AdblockConfig) -> Unit
 ) {
-    val presets = listOf(
-        "AdAway Hosts (Recommended)" to FastHostFilter.DEFAULT_SUBSCRIPTION_URL,
-        "AdGuard Mobile Filter" to "https://filters.adtidy.org/extension/chromium/filters/11.txt",
-        "EasyList Standard" to "https://easylist.to/easylist/easylist.txt"
+    val basePresets = listOf(
+        "HaGeZi Multi Normal (Recommended)" to FastHostFilter.HAGEZI_NORMAL_URL,
+        "HaGeZi Multi Light (Low RAM)" to FastHostFilter.HAGEZI_LIGHT_URL,
+        "HaGeZi Multi Pro (Aggressive)" to FastHostFilter.HAGEZI_PRO_URL
     )
-    var selectedUrl by remember { mutableStateOf(presets.first().second) }
-    var customUrl by remember { mutableStateOf("") }
+
+    var selectedBaseUrl by remember { mutableStateOf(initialConfig.baseUrl) }
+    var allowShorteners by remember { mutableStateOf(initialConfig.allowShorteners) }
+    var enableThreatIntel by remember { mutableStateOf(initialConfig.enableThreatIntel) }
+    var customUrl by remember { mutableStateOf(initialConfig.customUrl) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Adblock Subscriptions", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     text = "Active Rules: $currentRuleCount hosts blocked",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold
                 )
+
                 Spacer(modifier = Modifier.height(10.dp))
-                Text("Select Subscription Source:", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                presets.forEach { (name, url) ->
+                Text("Base Blocklist:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                basePresets.forEach { (name, url) ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                selectedUrl = url
-                                customUrl = ""
-                            }
-                            .padding(vertical = 4.dp),
+                            .clickable { selectedBaseUrl = url }
+                            .padding(vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = selectedUrl == url && customUrl.isEmpty(),
-                            onClick = {
-                                selectedUrl = url
-                                customUrl = ""
-                            }
+                            selected = selectedBaseUrl == url,
+                            onClick = { selectedBaseUrl = url }
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(name, fontSize = 12.sp)
                     }
                 }
-                Spacer(modifier = Modifier.height(6.dp))
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                Text("Redirect & CDN Allowlist:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { allowShorteners = !allowShorteners }
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = allowShorteners,
+                        onCheckedChange = { allowShorteners = it }
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Column {
+                        Text("DandelionSprout Shorteners", fontSize = 12.sp)
+                        Text(
+                            "Unbreaks bit.ly, tinyurl, ad gates, and download resolvers",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                Text("Threat Intel:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { enableThreatIntel = !enableThreatIntel }
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = enableThreatIntel,
+                        onCheckedChange = { enableThreatIntel = it }
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Column {
+                        Text("HaGeZi Fake / Scam / Malicious", fontSize = 12.sp)
+                        Text(
+                            "Blocks scam, phishing, and malware domains",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
                 OutlinedTextField(
                     value = customUrl,
-                    onValueChange = {
-                        customUrl = it
-                        selectedUrl = it
-                    },
-                    label = { Text("Custom Filter / Hosts URL", fontSize = 11.sp) },
+                    onValueChange = { customUrl = it },
+                    label = { Text("Custom Blocklist URL (Optional)", fontSize = 11.sp) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -320,8 +372,14 @@ fun AdblockSubscriptionDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val target = customUrl.ifBlank { selectedUrl }
-                    onRefresh(target)
+                    onApply(
+                        AdblockConfig(
+                            baseUrl = selectedBaseUrl,
+                            allowShorteners = allowShorteners,
+                            enableThreatIntel = enableThreatIntel,
+                            customUrl = customUrl
+                        )
+                    )
                 }
             ) {
                 Text("Refresh & Apply")
