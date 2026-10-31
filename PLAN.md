@@ -1,72 +1,72 @@
 # PLAN.md: Lightweight Android Media Downloader & Sniffer
 
 ## Milestone 0: Project Setup & Core Infrastructure (P0)
-- [ ] Initialize Android project (Min SDK 29, Target/Compile SDK 35, Kotlin 2.x, single `app` module per YAGNI; defer flavors to Milestone 8).
-- [ ] Configure `app/build.gradle.kts`:
-  - [ ] Add OkHttp 4.12+ and Kotlin Coroutines.
-  - [ ] Add Room DB dependencies with KSP.
-  - [ ] Add Jetpack Compose BOM and Material 3 dependencies.
-  - [ ] Restrict NDK ABIs to `arm64-v8a` (add `x86_64` for debug build variants only).
-- [ ] Define Room schema:
-  - [ ] `downloads` table (`id`, `url`, `displayName`, `destinationUri`, `mimeType`, `totalBytes`, `etag`, `lastModified`, `isResumable`, `type` [HTTP/HLS], `state`, `sourcePageUrl`, `headersJson`, `createdAt`).
-  - [ ] `download_chunks` table (primary key `(downloadId, trackIndex, chunkIndex)`, `startOffset`, `currentOffset`, `endOffset`, `state` [`PENDING`, `IN_FLIGHT`, `DONE`, `MERGED`]).
-  - [ ] Write `DownloadDao` with atomic transaction methods, boot recovery (`UPDATE download_chunks SET state = 'PENDING' WHERE state = 'IN_FLIGHT'`), and credential purge (`UPDATE downloads SET headersJson = NULL WHERE id = :id`).
-- [ ] Configure `AndroidManifest.xml` with permissions (`INTERNET`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`) and credential hygiene (`android:allowBackup="false"`, `android:dataExtractionRules` excluding Room DB).
+- [x] Initialize Android project (Min SDK 29, Target/Compile SDK 35, Kotlin 2.x, single `app` module per YAGNI; defer flavors to Milestone 8).
+- [x] Configure `app/build.gradle.kts`:
+  - [x] Add OkHttp 4.12+ and Kotlin Coroutines.
+  - [x] Add Room DB dependencies with KSP.
+  - [x] Add Jetpack Compose BOM and Material 3 dependencies.
+  - [x] Restrict NDK ABIs to `arm64-v8a` (add `x86_64` for debug build variants only).
+- [x] Define Room schema:
+  - [x] `downloads` table (`id`, `url`, `displayName`, `destinationUri`, `mimeType`, `totalBytes`, `etag`, `lastModified`, `isResumable`, `type` [HTTP/HLS], `state`, `sourcePageUrl`, `headersJson`, `createdAt`).
+  - [x] `download_chunks` table (primary key `(downloadId, trackIndex, chunkIndex)`, `startOffset`, `currentOffset`, `endOffset`, `state` [`PENDING`, `IN_FLIGHT`, `DONE`, `MERGED`]).
+  - [x] Write `DownloadDao` with atomic transaction methods, boot recovery (`UPDATE download_chunks SET state = 'PENDING' WHERE state = 'IN_FLIGHT'`), and credential purge (`UPDATE downloads SET headersJson = NULL WHERE id = :id`).
+- [x] Configure `AndroidManifest.xml` with permissions (`INTERNET`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`) and credential hygiene (`android:allowBackup="false"`, `android:dataExtractionRules` excluding Room DB).
 
 ---
 
 ## Milestone 1: Chunk-Queue HTTP Downloader Engine (P0)
 *Goal: Rock-solid multi-threaded byte-range downloading with zero corruption on abrupt process death.*
 
-- [ ] Implement `OkHttpClient` factory:
-  - [ ] Instance 1: HTTP/1.1 enforced (`protocols = listOf(Protocol.HTTP_1_1)`), max 6–8 connections per host.
-  - [ ] Instance 2: HTTP/2 default for HLS/API probes sharing the same connection pool.
-- [ ] Implement `MetadataProber`:
-  - [ ] Issue `Range: bytes=0-0` probe (with `HEAD` fallback).
-  - [ ] Parse `Content-Range` / `Content-Length`, `Accept-Ranges`, `ETag` (strong only), and `Last-Modified`.
-  - [ ] Branch logic: if `Accept-Ranges: bytes` is missing, server returns HTTP 200, or `totalBytes <= 0`, set `isResumable = false` and create a single `ChunkEntity(trackIndex = 0, chunkIndex = 0, startOffset = 0, currentOffset = 0, endOffset = -1)`.
-- [ ] Implement `ChunkQueueEngine`:
-  - [ ] Adaptive chunk sizing: `clamp(totalBytes / 512, min = 4MB, max = 32MB)` (or `totalBytes / workerCount` for files < 24MB).
-  - [ ] Global concurrency: max 2 concurrent active downloads (configurable 1–4), default 6 workers per download (configurable 1–8) pulling from `ConcurrentLinkedQueue`.
-  - [ ] Execute positional disk writes: `channel.write(buffer, currentPos)` in a loop, updating per-chunk `AtomicLong` `currentOffset`.
-  - [ ] Validate HTTP 206 `Content-Range` header against expected `currentOffset` before reading body.
-  - [ ] Retry transient chunk errors with 3 exponential-backoff attempts (`1s`, `2s`, `4s` + `Retry-After` support) before transitioning download to `WAITING_FOR_NETWORK` or `FAILED`.
-- [ ] Implement Single Checkpointer Coroutine:
-  - [ ] Ticking interval: 2–4 seconds.
-  - [ ] Snapshot all workers' `AtomicLong` `currentOffset` values and in-memory `DONE` transitions *before* calling `channel.force(false)`.
-  - [ ] Flush disk: `channel.force(false)`.
-  - [ ] Commit pre-force snapshot to SQLite via `DownloadDao` *after* `force()` returns; execute final `force()` + commit when all chunks finish.
-- [ ] Implement Safe Resumption:
-  - [ ] If `isResumable == false`, truncate `FileChannel` to 0 and restart from byte 0.
-  - [ ] Otherwise query incomplete chunks (`state != DONE`), resuming each from `currentOffset` with `If-Range: <etag>` or `If-Unmodified-Since`.
-  - [ ] Reset task and truncate file if server returns HTTP 200 on resume.
+- [x] Implement `OkHttpClient` factory:
+  - [x] Instance 1: HTTP/1.1 enforced (`protocols = listOf(Protocol.HTTP_1_1)`), max 6–8 connections per host.
+  - [x] Instance 2: HTTP/2 default for HLS/API probes sharing the same connection pool.
+- [x] Implement `MetadataProber`:
+  - [x] Issue `Range: bytes=0-0` probe (with `HEAD` fallback).
+  - [x] Parse `Content-Range` / `Content-Length`, `Accept-Ranges`, `ETag` (strong only), and `Last-Modified`.
+  - [x] Branch logic: if `Accept-Ranges: bytes` is missing, server returns HTTP 200, or `totalBytes <= 0`, set `isResumable = false` and create a single `ChunkEntity(trackIndex = 0, chunkIndex = 0, startOffset = 0, currentOffset = 0, endOffset = -1)`.
+- [x] Implement `ChunkQueueEngine`:
+  - [x] Adaptive chunk sizing: `clamp(totalBytes / 512, min = 4MB, max = 32MB)` (or `totalBytes / workerCount` for files < 24MB).
+  - [x] Global concurrency: max 2 concurrent active downloads (configurable 1–4), default 6 workers per download (configurable 1–8) pulling from `ConcurrentLinkedQueue`.
+  - [x] Execute positional disk writes: `channel.write(buffer, currentPos)` in a loop, updating per-chunk `AtomicLong` `currentOffset`.
+  - [x] Validate HTTP 206 `Content-Range` header against expected `currentOffset` before reading body.
+  - [x] Retry transient chunk errors with 3 exponential-backoff attempts (`1s`, `2s`, `4s` + `Retry-After` support) before transitioning download to `WAITING_FOR_NETWORK` or `FAILED`.
+- [x] Implement Single Checkpointer Coroutine:
+  - [x] Ticking interval: 2–4 seconds.
+  - [x] Snapshot all workers' `AtomicLong` `currentOffset` values and in-memory `DONE` transitions *before* calling `channel.force(false)`.
+  - [x] Flush disk: `channel.force(false)`.
+  - [x] Commit pre-force snapshot to SQLite via `DownloadDao` *after* `force()` returns; execute final `force()` + commit when all chunks finish.
+- [x] Implement Safe Resumption:
+  - [x] If `isResumable == false`, truncate `FileChannel` to 0 and restart from byte 0.
+  - [x] Otherwise query incomplete chunks (`state != DONE`), resuming each from `currentOffset` with `If-Range: <etag>` or `If-Unmodified-Since`.
+  - [x] Reset task and truncate file if server returns HTTP 200 on resume.
 
 ---
 
 ## Milestone 2: Android Storage & MediaStore Integration (P0)
 *Goal: Fast positional writes on API 29+ without requiring MANAGE_EXTERNAL_STORAGE.*
 
-- [ ] Implement `MediaStore` Storage Provider:
-  - [ ] Insert entry into `MediaStore.Downloads.EXTERNAL_CONTENT_URI` with `IS_PENDING = 1` and `DATE_EXPIRES` (+30 days), letting `MediaStore` auto-suffix duplicate `DISPLAY_NAME`s.
-  - [ ] Persist returned `content://` URI string in `downloads.destinationUri`.
-  - [ ] Obtain writeable descriptor via `contentResolver.openFileDescriptor(uri, "rw")` and extract `FileOutputStream(pfd.fileDescriptor).channel`.
-  - [ ] Flip `IS_PENDING = 0` upon completed download; call `contentResolver.delete(uri, null, null)` on cancel/reset to prevent orphan pending files.
-- [ ] Implement Free Space & Filesystem Pre-flight:
-  - [ ] Query `StatFs.availableBytes` before allocation.
-  - [ ] Detect filesystem type via `/proc/mounts` / `Os.fstatvfs`: fail fast if `totalBytes > 4GB` on FAT32, and warn/cap parallel chunk distance on non-sparse FAT/exFAT external SAF mounts.
-- [ ] Implement SAF Document Tree Fallback (for user-selected custom directories).
+- [x] Implement `MediaStore` Storage Provider:
+  - [x] Insert entry into `MediaStore.Downloads.EXTERNAL_CONTENT_URI` with `IS_PENDING = 1` and `DATE_EXPIRES` (+30 days), letting `MediaStore` auto-suffix duplicate `DISPLAY_NAME`s.
+  - [x] Persist returned `content://` URI string in `downloads.destinationUri`.
+  - [x] Obtain writeable descriptor via `contentResolver.openFileDescriptor(uri, "rw")` and extract `FileOutputStream(pfd.fileDescriptor).channel`.
+  - [x] Flip `IS_PENDING = 0` upon completed download; call `contentResolver.delete(uri, null, null)` on cancel/reset to prevent orphan pending files.
+- [x] Implement Free Space & Filesystem Pre-flight:
+  - [x] Query `StatFs.availableBytes` before allocation.
+  - [x] Detect filesystem type via `/proc/mounts` / `Os.fstatvfs`: fail fast if `totalBytes > 4GB` on FAT32, and warn/cap parallel chunk distance on non-sparse FAT/exFAT external SAF mounts.
+- [x] Implement SAF Document Tree Fallback (for user-selected custom directories).
 
 ---
 
 ## Milestone 3: Foreground Service & App Lifecycle (P1)
 *Goal: Stable background execution compliant with Android 14/15 restrictions.*
 
-- [ ] Implement `DownloadForegroundService` (`foregroundServiceType="dataSync"`):
-  - [ ] Foreground notification with throttled progress updates (`sample(250ms)`).
-  - [ ] Add pause, resume, and cancel `PendingIntent` actions.
-- [ ] Handle Android 15 Execution Limits:
-  - [ ] Override `onTimeout(int, int)` (API 35) and `onTimeout(int)` (API 34): cleanly trigger `channel.force(false)`, checkpoint DB state to `PAUSED`, and post tap-to-resume notification.
-  - [ ] Wrap download pipeline in `withContext(NonCancellable)` inside `finally` block to guarantee checkpoint on cancellation.
+- [x] Implement `DownloadForegroundService` (`foregroundServiceType="dataSync"`):
+  - [x] Foreground notification with throttled progress updates (`sample(250ms)`).
+  - [x] Add pause, resume, and cancel `PendingIntent` actions.
+- [x] Handle Android 15 Execution Limits:
+  - [x] Override `onTimeout(int, int)` (API 35) and `onTimeout(int)` (API 34): cleanly trigger `channel.force(false)`, checkpoint DB state to `PAUSED`, and post tap-to-resume notification.
+  - [x] Wrap download pipeline in `withContext(NonCancellable)` inside `finally` block to guarantee checkpoint on cancellation.
 
 ---
 

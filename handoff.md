@@ -19,4 +19,10 @@
 - **Background Execution**: Single `dataSync` Foreground Service for v1 implementing Android 15's two-arg `onTimeout(int, int)` to `force(false)`, checkpoint DB to `PAUSED`, and post a tap-to-resume notification. Defer UIDT `JobService` and `full`/`slim` Torrent flavors (`libtorrent4j`) to post-MVP (Milestone 8, YAGNI).
 
 ## 3. Current State & Artifacts
-- **Status**: All open architectural questions resolved. Ready to execute Milestone 0.
+- **Status**: Milestones 0, 1, 2, and 3 completed:
+  - Dual-protocol OkHttp factory & header serializer: `NetworkClients`, `HeadersCodec`
+  - Range/HEAD metadata prober + 4KB overlap URL rebind verifier: `MetadataProber`
+  - Multi-worker positional `FileChannel` downloader with pre-force snapshot checkpointer, 206 offset validation, 403/410 auth expiry handling, and single-stream fallback: `ChunkQueueEngine`
+  - `MediaStore.Downloads` (`IS_PENDING = 1`, `+30d` `DATE_EXPIRES`) + SAF document tree provider & `Os.fstatvfs` / `/proc/mounts` FAT32/non-sparse pre-flight check: `DownloadStorageProvider`, `FilesystemPreflight`
+  - Foreground execution service with `sample(250ms)` progress notification, Pause/Resume/Cancel `PendingIntent` actions, `ConnectivityManager.NetworkCallback` auto-resume, and Android 14/15 `onTimeout` checkpointing: `DownloadForegroundService`
+  - Ready for Milestone 4 (`FastHostFilter` in-memory ad-blocker) or minimal test UI activity.
