@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Message
+import android.view.MotionEvent
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -61,7 +63,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -98,10 +102,46 @@ import com.siphon.app.ui.theme.AppThemeMode
 
 private const val DARK_MODE_INJECT_JS = """
 (function() {
+    var parseLuma = function(bg) {
+        if (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') return null;
+        var m = bg.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
+        if (!m) return null;
+        if (m[4] !== undefined && parseFloat(m[4]) < 0.15) return null;
+        return (0.299 * parseInt(m[1], 10) + 0.587 * parseInt(m[2], 10) + 0.114 * parseInt(m[3], 10));
+    };
+    var isPageNativelyDark = function() {
+        var docEl = document.documentElement;
+        var body = document.body;
+        if (!docEl) return false;
+        var meta = document.querySelector('meta[name="color-scheme"], meta[name="supported-color-schemes"]');
+        if (meta && /dark/i.test(meta.content)) return true;
+        if ([docEl, body].some(function(el) {
+            return el && (el.hasAttribute('dark') || /dark|night|black/i.test([el.className, el.getAttribute('data-theme'), el.getAttribute('data-color-mode'), el.getAttribute('data-bs-theme')].join(' ')));
+        })) return true;
+        var existingStyle = document.getElementById('__siphon_dark_mode');
+        if (existingStyle) existingStyle.disabled = true;
+        var darkBg = false;
+        try {
+            var ds = window.getComputedStyle(docEl);
+            if (ds && (ds.colorScheme || '').toLowerCase().includes('dark')) darkBg = true;
+            if (!darkBg) {
+                var luma = parseLuma(body ? window.getComputedStyle(body).backgroundColor : null);
+                if (luma === null) luma = parseLuma(ds ? ds.backgroundColor : null);
+                if (luma !== null && luma < 115) darkBg = true;
+            }
+        } catch (e) {}
+        if (existingStyle) existingStyle.disabled = false;
+        return darkBg;
+    };
     var applyDark = function() {
         var root = document.head || document.documentElement;
         if (!root) return;
-        if (!document.getElementById('__siphon_dark_mode')) {
+        var existing = document.getElementById('__siphon_dark_mode');
+        if (isPageNativelyDark()) {
+            if (existing) existing.remove();
+            return;
+        }
+        if (!existing) {
             var s = document.createElement('style');
             s.id = '__siphon_dark_mode';
             s.textContent = ':root { color-scheme: dark !important; } html { filter: invert(90%) hue-rotate(180deg) !important; background-color: #121212 !important; } img, video, iframe, canvas, svg, picture, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
@@ -110,8 +150,17 @@ private const val DARK_MODE_INJECT_JS = """
     };
     applyDark();
     if (!window.__siphon_dark_observer && document.documentElement) {
-        window.__siphon_dark_observer = new MutationObserver(function() { applyDark(); });
-        window.__siphon_dark_observer.observe(document.documentElement, { childList: true, subtree: true });
+        var timer = null;
+        window.__siphon_dark_observer = new MutationObserver(function() {
+            if (timer) return;
+            timer = setTimeout(function() { timer = null; applyDark(); }, 120);
+        });
+        window.__siphon_dark_observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode', 'data-color-scheme', 'data-bs-theme', 'dark']
+        });
     }
 })();
 """
@@ -168,6 +217,7 @@ fun BrowserScreen(
     modifier: Modifier = Modifier
 ) {
     val webViewMap = remember { mutableMapOf<String, WebView>() }
+    val readyTabs = remember { mutableStateMapOf<String, Boolean>() }
     var urlTextFieldValue by remember { mutableStateOf(TextFieldValue(currentUrl)) }
     var isUrlBarFocused by remember { mutableStateOf(false) }
     var isMenuOpen by remember { mutableStateOf(false) }
@@ -175,13 +225,11 @@ fun BrowserScreen(
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
     var pendingPopupUrl by remember { mutableStateOf<String?>(null) }
-    var lastTabSwitchMs by remember { mutableStateOf(0L) }
     val focusManager = LocalFocusManager.current
     val clipboardManager = LocalClipboardManager.current
     val currentActiveTabId = rememberUpdatedState(activeTabId)
     val currentBarsVisible = rememberUpdatedState(isBarsVisible)
     val currentWebDarkMode = rememberUpdatedState(isWebDarkMode)
-    val currentLastTabSwitchMs = rememberUpdatedState(lastTabSwitchMs)
 
     val isSystemDark = isSystemInDarkTheme()
     val isAppDark = when (themeMode) {
@@ -200,14 +248,7 @@ fun BrowserScreen(
     }
 
     LaunchedEffect(activeTabId, tabs.size) {
-        lastTabSwitchMs = android.os.SystemClock.elapsedRealtime()
         onToggleBars(true)
-    }
-
-    LaunchedEffect(isUrlBarFocused) {
-        if (isUrlBarFocused) {
-            onToggleBars(true)
-        }
     }
 
     val activeWebView = webViewMap[activeTabId]
@@ -318,7 +359,8 @@ fun BrowserScreen(
         AnimatedVisibility(
             visible = isBarsVisible || isUrlBarFocused,
             enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            exit = shrinkVertically() + fadeOut(),
+            modifier = Modifier.zIndex(2f)
         ) {
             Column {
                 // "Update Link" 403 Rebind Banner
@@ -424,6 +466,7 @@ fun BrowserScreen(
                                     .onFocusChanged { focusState ->
                                         isUrlBarFocused = focusState.isFocused
                                         if (focusState.isFocused) {
+                                            onToggleBars(true)
                                             val text = urlTextFieldValue.text
                                             urlTextFieldValue = urlTextFieldValue.copy(
                                                 selection = TextRange(0, text.length)
@@ -744,138 +787,185 @@ fun BrowserScreen(
 }
 
     // Multi-Tab WebView Pool: Keeps all opened tab WebViews alive in memory
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(Color(webViewBgArgb))
+        ) {
             tabs.forEach { tab ->
-                val isVisible = tab.id == activeTabId
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .alpha(if (isVisible) 1f else 0f)
-                        .zIndex(if (isVisible) 1f else 0f)
-                ) {
-                    AndroidView(
-                        factory = { context ->
-                            val webView = WebView(context).apply {
-                                layoutParams = ViewGroup.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT
-                                )
-                                setBackgroundColor(webViewBgArgb)
-                                settings.apply {
-                                    javaScriptEnabled = true
-                                    domStorageEnabled = true
-                                    databaseEnabled = true
-                                    useWideViewPort = true
-                                    loadWithOverviewMode = true
-                                    mediaPlaybackRequiresUserGesture = false
-                                    mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                                    setSupportMultipleWindows(true)
-                                    javaScriptCanOpenWindowsAutomatically = true
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                        @Suppress("DEPRECATION")
-                                        forceDark = if (currentWebDarkMode.value) WebSettings.FORCE_DARK_ON else WebSettings.FORCE_DARK_OFF
+                key(tab.id) {
+                    val isVisible = tab.id == activeTabId
+                    val isPageReady = readyTabs[tab.id] == true
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(if (isVisible && isPageReady) 1f else 0f)
+                            .zIndex(if (isVisible) 1f else 0f)
+                    ) {
+                        AndroidView(
+                            factory = { context ->
+                                val density = context.resources.displayMetrics.density
+                                val minScrollablePx = (140f * density).toInt()
+                                val toggleSlopPx = 56f * density
+                                var touchAccumDy = 0f
+                                var lastTouchY = 0f
+                                var isTrackingTouch = false
+
+                                val webView = object : WebView(context) {
+                                    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+                                        if (tab.id != currentActiveTabId.value) return false
+                                        when (ev.actionMasked) {
+                                            MotionEvent.ACTION_DOWN -> {
+                                                lastTouchY = ev.rawY
+                                                touchAccumDy = 0f
+                                                isTrackingTouch = true
+                                            }
+                                            MotionEvent.ACTION_MOVE -> {
+                                                if (isTrackingTouch) {
+                                                    val deltaY = ev.rawY - lastTouchY
+                                                    lastTouchY = ev.rawY
+                                                    val maxScroll = (contentHeight * scale).toInt() - height
+                                                    if (maxScroll > minScrollablePx) {
+                                                        // deltaY < 0 means finger dragging up (scrolling down)
+                                                        if ((deltaY < 0 && touchAccumDy > 0) || (deltaY > 0 && touchAccumDy < 0)) {
+                                                            touchAccumDy = 0f
+                                                        }
+                                                        touchAccumDy += deltaY
+                                                        if (touchAccumDy < -toggleSlopPx && scrollY > (48 * density).toInt()) {
+                                                            if (currentBarsVisible.value) onToggleBars(false)
+                                                            touchAccumDy = 0f
+                                                        } else if (touchAccumDy > toggleSlopPx) {
+                                                            if (!currentBarsVisible.value) onToggleBars(true)
+                                                            touchAccumDy = 0f
+                                                        }
+                                                    } else if (!currentBarsVisible.value) {
+                                                        onToggleBars(true)
+                                                    }
+                                                }
+                                            }
+                                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                                                isTrackingTouch = false
+                                                touchAccumDy = 0f
+                                            }
+                                        }
+                                        return super.dispatchTouchEvent(ev)
                                     }
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        isAlgorithmicDarkeningAllowed = currentWebDarkMode.value
+                                }.apply {
+                                    layoutParams = ViewGroup.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                                    visibility = if (isVisible) View.VISIBLE else View.INVISIBLE
+                                    setBackgroundColor(webViewBgArgb)
+                                    settings.apply {
+                                        javaScriptEnabled = true
+                                        domStorageEnabled = true
+                                        databaseEnabled = true
+                                        useWideViewPort = true
+                                        loadWithOverviewMode = true
+                                        mediaPlaybackRequiresUserGesture = false
+                                        mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                                        setSupportMultipleWindows(true)
+                                        javaScriptCanOpenWindowsAutomatically = true
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                            @Suppress("DEPRECATION")
+                                            forceDark = if (currentWebDarkMode.value) WebSettings.FORCE_DARK_ON else WebSettings.FORCE_DARK_OFF
+                                        }
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            isAlgorithmicDarkeningAllowed = currentWebDarkMode.value
+                                        }
                                     }
-                                }
-                                webViewClient = snifferClient
-                                webChromeClient = object : WebChromeClient() {
-                                    override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                                        if (tab.id == currentActiveTabId.value) {
-                                            pageProgress = newProgress
-                                            canGoBack = view?.canGoBack() == true
-                                            canGoForward = view?.canGoForward() == true
-                                            val vUrl = view?.url
-                                            if (!vUrl.isNullOrBlank() && !isUrlBarFocused && vUrl != urlTextFieldValue.text) {
+                                    webViewClient = snifferClient
+                                    webChromeClient = object : WebChromeClient() {
+                                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                            if (newProgress >= 35) {
+                                                readyTabs[tab.id] = true
+                                            }
+                                            if (tab.id == currentActiveTabId.value) {
+                                                pageProgress = newProgress
+                                                canGoBack = view?.canGoBack() == true
+                                                canGoForward = view?.canGoForward() == true
+                                                val vUrl = view?.url
+                                                if (!vUrl.isNullOrBlank() && !isUrlBarFocused && vUrl != urlTextFieldValue.text) {
+                                                    urlTextFieldValue = TextFieldValue(vUrl)
+                                                    onNavigateUrl(vUrl)
+                                                }
+                                            }
+                                            if (currentWebDarkMode.value && view != null && newProgress >= 10) {
+                                                applyWebDarkModeToWebView(view, true)
+                                            }
+                                        }
+
+                                        override fun onReceivedTitle(view: WebView?, title: String?) {
+                                            val vUrl = view?.url ?: tab.url
+                                            val vTitle = title.orEmpty()
+                                            onUpdateTabMeta(vUrl, vTitle)
+                                            if (tab.id == currentActiveTabId.value && !vUrl.isNullOrBlank() && !isUrlBarFocused && vUrl != urlTextFieldValue.text) {
                                                 urlTextFieldValue = TextFieldValue(vUrl)
                                                 onNavigateUrl(vUrl)
                                             }
                                         }
-                                        if (currentWebDarkMode.value && view != null && newProgress >= 10) {
-                                            applyWebDarkModeToWebView(view, true)
-                                        }
-                                    }
 
-                                    override fun onReceivedTitle(view: WebView?, title: String?) {
-                                        val vUrl = view?.url ?: tab.url
-                                        val vTitle = title.orEmpty()
-                                        onUpdateTabMeta(vUrl, vTitle)
-                                        if (tab.id == currentActiveTabId.value && !vUrl.isNullOrBlank() && !isUrlBarFocused && vUrl != urlTextFieldValue.text) {
-                                            urlTextFieldValue = TextFieldValue(vUrl)
-                                            onNavigateUrl(vUrl)
-                                        }
-                                    }
-
-                                    override fun onCreateWindow(
-                                        view: WebView?,
-                                        isDialog: Boolean,
-                                        isUserGesture: Boolean,
-                                        resultMsg: Message?
-                                    ): Boolean {
-                                        if (resultMsg == null || view == null) return false
-                                        val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
-                                        val tempWebView = WebView(view.context).apply {
-                                            settings.javaScriptEnabled = true
-                                            webViewClient = object : WebViewClient() {
-                                                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                                    request?.url?.toString()?.takeIf { it.isNotBlank() }?.let {
-                                                        pendingPopupUrl = it
+                                        override fun onCreateWindow(
+                                            view: WebView?,
+                                            isDialog: Boolean,
+                                            isUserGesture: Boolean,
+                                            resultMsg: Message?
+                                        ): Boolean {
+                                            if (resultMsg == null || view == null) return false
+                                            val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
+                                            val tempWebView = WebView(view.context).apply {
+                                                settings.javaScriptEnabled = true
+                                                webViewClient = object : WebViewClient() {
+                                                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                                        request?.url?.toString()?.takeIf { it.isNotBlank() }?.let {
+                                                            pendingPopupUrl = it
+                                                        }
+                                                        post { destroy() }
+                                                        return true
                                                     }
-                                                    post { destroy() }
-                                                    return true
-                                                }
 
-                                                @Deprecated("Deprecated in Java")
-                                                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                                                    url?.takeIf { it.isNotBlank() }?.let {
-                                                        pendingPopupUrl = it
+                                                    @Deprecated("Deprecated in Java")
+                                                    override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                                                        url?.takeIf { it.isNotBlank() }?.let {
+                                                            pendingPopupUrl = it
+                                                        }
+                                                        post { destroy() }
+                                                        return true
                                                     }
-                                                    post { destroy() }
-                                                    return true
-                                                }
 
-                                                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                                                    url?.takeIf { it.isNotBlank() }?.let {
-                                                        pendingPopupUrl = it
+                                                    override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                                        url?.takeIf { it.isNotBlank() }?.let {
+                                                            pendingPopupUrl = it
+                                                        }
+                                                        post { destroy() }
                                                     }
-                                                    post { destroy() }
                                                 }
                                             }
-                                        }
-                                        transport.webView = tempWebView
-                                        resultMsg.sendToTarget()
-                                        return true
-                                    }
-                                }
-                                setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
-                                    if (tab.id == currentActiveTabId.value) {
-                                        val elapsedSinceTabSwitch = android.os.SystemClock.elapsedRealtime() - currentLastTabSwitchMs.value
-                                        if (elapsedSinceTabSwitch < 700L) {
-                                            if (!currentBarsVisible.value) onToggleBars(true)
-                                            return@setOnScrollChangeListener
-                                        }
-                                        val dy = scrollY - oldScrollY
-                                        if (scrollY <= 10) {
-                                            if (!currentBarsVisible.value) onToggleBars(true)
-                                        } else if (dy > 15 && oldScrollY > 0) {
-                                            if (currentBarsVisible.value) onToggleBars(false)
-                                        } else if (dy < -15) {
-                                            if (!currentBarsVisible.value) onToggleBars(true)
+                                            transport.webView = tempWebView
+                                            resultMsg.sendToTarget()
+                                            return true
                                         }
                                     }
+                                    setOnScrollChangeListener { _, _, scrollY, _, _ ->
+                                        if (tab.id == currentActiveTabId.value && scrollY <= 10 && !currentBarsVisible.value) {
+                                            onToggleBars(true)
+                                        }
+                                    }
+                                    loadUrl(tab.url)
                                 }
-                                loadUrl(tab.url)
-                            }
-                            webViewMap[tab.id] = webView
-                            webView
-                        },
-                        update = { webView ->
-                            webView.setBackgroundColor(webViewBgArgb)
-                            webViewMap[tab.id] = webView
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                                webViewMap[tab.id] = webView
+                                webView
+                            },
+                            update = { webView ->
+                                webView.visibility = if (isVisible) View.VISIBLE else View.INVISIBLE
+                                webView.setBackgroundColor(webViewBgArgb)
+                                webViewMap[tab.id] = webView
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
