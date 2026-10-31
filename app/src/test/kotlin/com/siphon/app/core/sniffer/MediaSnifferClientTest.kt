@@ -64,27 +64,6 @@ class MediaSnifferClientTest {
     }
 
     @Test
-    fun testParseHlsMasterVariants() {
-        val master = """
-            #EXTM3U
-            #EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1920x1080,CODECS="avc1.640028"
-            1080p.m3u8
-            #EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=1280x720,CODECS="avc1.4d401f"
-            720p.m3u8
-        """.trimIndent()
-
-        val variants = MediaSnifferClient.parseHlsMasterVariants("https://example.com/hls/master.m3u8", master)
-        assertEquals(2, variants.size)
-        assertEquals("https://example.com/hls/1080p.m3u8", variants[0].url)
-        assertEquals(3000000L, variants[0].bandwidth)
-        assertEquals("1920x1080", variants[0].resolution)
-
-        assertEquals("https://example.com/hls/720p.m3u8", variants[1].url)
-        assertEquals(1500000L, variants[1].bandwidth)
-        assertEquals("1280x720", variants[1].resolution)
-    }
-
-    @Test
     fun testExtractDisplayNameReplacesM3u8WithMp4() {
         assertEquals("index.mp4", MediaSnifferClient.extractDisplayNameFromUrl("https://example.com/movie/index.m3u8", "fallback"))
         assertEquals("track.mp3", MediaSnifferClient.extractDisplayNameFromUrl("https://example.com/audio/track.mp3", "fallback"))

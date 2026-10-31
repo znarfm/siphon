@@ -25,18 +25,6 @@ interface DownloadDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChunks(chunks: List<ChunkEntity>)
 
-    @Transaction
-    suspend fun createDownloadWithChunks(
-        download: DownloadEntity,
-        chunks: List<ChunkEntity>
-    ): Long {
-        val id = insertDownload(download)
-        if (chunks.isNotEmpty()) {
-            insertChunks(chunks.map { it.copy(downloadId = id) })
-        }
-        return id
-    }
-
     @Query("SELECT * FROM downloads WHERE id = :id")
     suspend fun getDownload(id: Long): DownloadEntity?
 
@@ -45,15 +33,6 @@ interface DownloadDao {
 
     @Query("SELECT * FROM downloads ORDER BY createdAt DESC")
     fun observeDownloads(): Flow<List<DownloadEntity>>
-
-    @Query(
-        """
-        SELECT * FROM download_chunks
-        WHERE downloadId = :downloadId AND state NOT IN ('DONE', 'MERGED')
-        ORDER BY trackIndex ASC, chunkIndex ASC
-        """
-    )
-    suspend fun getIncompleteChunks(downloadId: Long): List<ChunkEntity>
 
     @Query(
         """

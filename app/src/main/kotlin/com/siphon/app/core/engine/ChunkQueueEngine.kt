@@ -241,20 +241,6 @@ class ChunkQueueEngine(
         }
     }
 
-    /**
-     * Executes or resumes a download into [channel].
-     * Enforces the pre-force snapshot ordering invariant so SQLite never records offsets
-     * ahead of flushed OS pages.
-     */
-    suspend fun execute(
-        downloadId: Long,
-        channel: FileChannel,
-        workerCount: Int = 6,
-        onProgress: ((downloadedBytes: Long, totalBytes: Long) -> Unit)? = null
-    ): DownloadState = downloadSemaphore.withPermit {
-        executeInternal(downloadId, channel, workerCount, onProgress)
-    }
-
     private suspend fun executeInternal(
         downloadId: Long,
         channel: FileChannel,

@@ -58,7 +58,6 @@ fun SnifferSheet(
     onDownloadMedia: (media: SniffedMedia, selectedVariantUrl: String?, customFileName: String) -> Unit,
     onClearMedia: () -> Unit,
     onRefreshMedia: () -> Unit,
-    onRebindMedia: ((target: DownloadEntity, media: SniffedMedia, selectedVariantUrl: String?) -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState()
 ) {
     if (!isOpen) return
@@ -161,13 +160,6 @@ fun SnifferSheet(
                             useTabTitle = useTabTitleAsFilename,
                             onDownload = { variantUrl, fileName ->
                                 onDownloadMedia(media, variantUrl, fileName)
-                            },
-                            onRebind = { target, variantUrl ->
-                                if (onRebindMedia != null) {
-                                    onRebindMedia(target, media, variantUrl)
-                                } else {
-                                    onDownloadMedia(media, variantUrl, media.displayName)
-                                }
                             }
                         )
                     }
@@ -183,8 +175,7 @@ private fun SniffedMediaItemCard(
     rebindTarget: DownloadEntity?,
     activeTabTitle: String?,
     useTabTitle: Boolean,
-    onDownload: (selectedVariantUrl: String?, customFileName: String) -> Unit,
-    onRebind: ((target: DownloadEntity, selectedVariantUrl: String?) -> Unit)? = null
+    onDownload: (selectedVariantUrl: String?, customFileName: String) -> Unit
 ) {
     var selectedVariant by remember(media) {
         mutableStateOf(media.variants.firstOrNull())
@@ -323,11 +314,7 @@ private fun SniffedMediaItemCard(
 
             Button(
                 onClick = {
-                    if (rebindTarget != null && onRebind != null) {
-                        onRebind(rebindTarget, selectedVariant?.url)
-                    } else {
-                        onDownload(selectedVariant?.url, fileName.ifBlank { media.displayName })
-                    }
+                    onDownload(selectedVariant?.url, fileName.ifBlank { media.displayName })
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),

@@ -8,6 +8,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.siphon.app.core.adblock.FastHostFilter
+import com.siphon.app.core.hls.HlsPlaylistParser
 import com.siphon.app.core.network.HeadersCodec
 import com.siphon.app.core.network.MetadataProber
 import com.siphon.app.core.network.NetworkClients
@@ -27,7 +28,6 @@ import kotlinx.coroutines.launch
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
-import java.net.URI
 import java.util.Collections
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -191,7 +191,11 @@ class MediaSnifferClient(
             }
         }.getOrNull() ?: return
 
-        val rawVariants = parseHlsMasterVariants(url, bodyText)
+        val rawVariants = if (HlsPlaylistParser.isMasterPlaylist(bodyText)) {
+            HlsPlaylistParser.parseMasterPlaylist(url, bodyText).variants.map {
+                HlsVariantInfo(it.url, it.bandwidth, it.resolution, it.codecs)
+            }
+        } else emptyList()
         val displayName = extractDisplayNameFromUrl(url, "stream.m3u8")
 
         var durationSec = 0.0
@@ -213,11 +217,12 @@ class MediaSnifferClient(
         }
 
         if (targetPlaylist != null) {
-            durationSec = extractHlsDuration(targetPlaylist.second)
-            val firstSeg = extractFirstSegment(targetPlaylist.first, targetPlaylist.second)
-            if (firstSeg != null && firstSeg.second > 0.0) {
+            val parsedMedia = HlsPlaylistParser.parseMediaPlaylist(targetPlaylist.first, targetPlaylist.second)
+            durationSec = parsedMedia.segments.sumOf { it.durationSec }
+            val firstSeg = parsedMedia.segments.firstOrNull { it.durationSec > 0.0 }
+            if (firstSeg != null) {
                 val segReq = Request.Builder()
-                    .url(firstSeg.first)
+                    .url(firstSeg.url)
                     .headers(okHeaders)
                     .header("Range", "bytes=0-0")
                     .get()
@@ -230,7 +235,7 @@ class MediaSnifferClient(
                     }
                 }.getOrNull()
                 if (sampledBytes != null && sampledBytes > 1000L) {
-                    val rate = (sampledBytes * 8.0 / firstSeg.second).toLong()
+                    val rate = (sampledBytes * 8.0 / firstSeg.durationSec).toLong()
                     if (rate in 50_000L..50_000_000L) {
                         sampledBitrate = rate
                     }
@@ -423,76 +428,6 @@ class MediaSnifferClient(
                 }
             }
             return builder.fragment(null).build().toString()
-        }
-
-        fun parseHlsMasterVariants(baseUrl: String, manifestText: String): List<HlsVariantInfo> {
-            val variants = mutableListOf<HlsVariantInfo>()
-            if (!manifestText.contains("#EXT-X-STREAM-INF")) return variants
-
-            val lines = manifestText.lines()
-            var currentBandwidth: Long = 0
-            var currentResolution: String? = null
-            var currentCodecs: String? = null
-
-            for (line in lines) {
-                val trimmed = line.trim()
-                if (trimmed.startsWith("#EXT-X-STREAM-INF:")) {
-                    val avgBw = com.siphon.app.core.hls.HlsPlaylistParser.extractAttribute(trimmed, "AVERAGE-BANDWIDTH")?.toLongOrNull()
-                    val peakBw = com.siphon.app.core.hls.HlsPlaylistParser.extractAttribute(trimmed, "BANDWIDTH")?.toLongOrNull() ?: 0L
-                    currentBandwidth = if (avgBw != null && avgBw > 0L) avgBw else if (peakBw > 0L) (peakBw * 4L / 10L).coerceAtLeast(500_000L) else 0L
-                    currentResolution = com.siphon.app.core.hls.HlsPlaylistParser.extractAttribute(trimmed, "RESOLUTION")
-                    currentCodecs = com.siphon.app.core.hls.HlsPlaylistParser.extractAttribute(trimmed, "CODECS")
-                } else if (!trimmed.startsWith("#") && trimmed.isNotEmpty() && currentBandwidth > 0L) {
-                    val resolvedUrl = resolveUrl(baseUrl, trimmed)
-                    variants.add(
-                        HlsVariantInfo(
-                            url = resolvedUrl,
-                            bandwidth = currentBandwidth,
-                            resolution = currentResolution,
-                            codecs = currentCodecs
-                        )
-                    )
-                    currentBandwidth = 0L
-                    currentResolution = null
-                    currentCodecs = null
-                }
-            }
-            return variants
-        }
-
-        fun resolveUrl(baseUrl: String, relativeOrAbsolute: String): String {
-            return try {
-                URI.create(baseUrl).resolve(relativeOrAbsolute).toString()
-            } catch (e: Exception) {
-                relativeOrAbsolute
-            }
-        }
-
-        fun extractHlsDuration(manifestText: String): Double {
-            var total = 0.0
-            for (line in manifestText.lineSequence()) {
-                val trimmed = line.trim()
-                if (trimmed.startsWith("#EXTINF:")) {
-                    val durStr = trimmed.substringAfter(':').substringBefore(',').trim()
-                    total += durStr.toDoubleOrNull() ?: 0.0
-                }
-            }
-            return total
-        }
-
-        fun extractFirstSegment(baseUrl: String, manifestText: String): Pair<String, Double>? {
-            var dur = 0.0
-            for (line in manifestText.lineSequence()) {
-                val trimmed = line.trim()
-                if (trimmed.startsWith("#EXTINF:")) {
-                    val durStr = trimmed.substringAfter(':').substringBefore(',').trim()
-                    dur = durStr.toDoubleOrNull() ?: 0.0
-                } else if (!trimmed.startsWith("#") && trimmed.isNotBlank() && dur > 0.0) {
-                    val resolved = resolveUrl(baseUrl, trimmed)
-                    return Pair(resolved, dur)
-                }
-            }
-            return null
         }
 
         fun extractDisplayNameFromUrl(url: String, fallback: String): String {

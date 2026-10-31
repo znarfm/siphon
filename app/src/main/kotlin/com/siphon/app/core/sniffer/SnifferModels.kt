@@ -20,8 +20,6 @@ data class SniffedMedia(
     val displayName: String,
     val totalBytes: Long, // -1 if unknown or master playlist
     val headers: Map<String, String>,
-    val resolution: String? = null,
     val variants: List<HlsVariantInfo> = emptyList(),
-    val detectedAt: Long = System.currentTimeMillis(),
     val durationSec: Double = 0.0
 )

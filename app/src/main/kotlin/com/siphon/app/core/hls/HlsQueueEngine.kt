@@ -191,20 +191,23 @@ class HlsQueueEngine(
         }
     }
 
+    private fun fetchPlaylistText(url: String, headers: Headers): String {
+        val req = Request.Builder().url(url).headers(headers).get().build()
+        return client.newCall(req).execute().use { resp ->
+            if (resp.code == 403 || resp.code == 410) {
+                throw HttpStatusException(resp.code, "Failed to fetch playlist HTTP ${resp.code}")
+            }
+            if (!resp.isSuccessful) throw IOException("Failed to fetch playlist HTTP ${resp.code}")
+            resp.body?.string() ?: throw IOException("Empty playlist response")
+        }
+    }
+
     private suspend fun parseAndPopulateTracks(
         download: DownloadEntity,
         headers: Headers,
         workDir: File
     ): Map<Int, List<ParsedHlsSegment>> {
-        val rootReq = Request.Builder().url(download.url).headers(headers).get().build()
-        val rootContent = client.newCall(rootReq).execute().use { resp ->
-            if (resp.code == 403 || resp.code == 410) {
-                throw HttpStatusException(resp.code, "Failed to fetch playlist: HTTP ${resp.code}")
-            }
-            if (!resp.isSuccessful) throw IOException("Failed to fetch playlist: HTTP ${resp.code}")
-            resp.body?.string() ?: throw IOException("Empty playlist response")
-        }
-
+        val rootContent = fetchPlaylistText(download.url, headers)
         val result = mutableMapOf<Int, List<ParsedHlsSegment>>()
 
         if (HlsPlaylistParser.isMasterPlaylist(rootContent)) {
@@ -212,43 +215,24 @@ class HlsQueueEngine(
             val selectedVariant = master.variants.firstOrNull()
                 ?: throw IOException("No variants found in master playlist")
 
-            // Fetch video/main media playlist
-            val videoReq = Request.Builder().url(selectedVariant.url).headers(headers).get().build()
-            val videoContent = client.newCall(videoReq).execute().use { resp ->
-                if (resp.code == 403 || resp.code == 410) {
-                    throw HttpStatusException(resp.code, "Failed to fetch media playlist HTTP ${resp.code}")
-                }
-                if (!resp.isSuccessful) throw IOException("Failed to fetch media playlist HTTP ${resp.code}")
-                resp.body?.string().orEmpty()
-            }
+            val videoContent = fetchPlaylistText(selectedVariant.url, headers)
             File(workDir, "media_track_0.m3u8").writeText(videoContent)
             File(workDir, "media_track_0.url").writeText(selectedVariant.url)
-            val videoMedia = HlsPlaylistParser.parseMediaPlaylist(selectedVariant.url, videoContent, trackIndex = 0)
-            result[0] = videoMedia.segments
+            result[0] = HlsPlaylistParser.parseMediaPlaylist(selectedVariant.url, videoContent, trackIndex = 0).segments
 
-            // Check if there is a separate audio track
             if (selectedVariant.audioGroupId != null) {
                 val audioTrack = master.audioTracks.firstOrNull { it.groupId == selectedVariant.audioGroupId }
                 if (audioTrack != null && audioTrack.url.isNotBlank() && audioTrack.url != selectedVariant.url) {
-                    val audioReq = Request.Builder().url(audioTrack.url).headers(headers).get().build()
-                    val audioContent = client.newCall(audioReq).execute().use { resp ->
-                        if (resp.code == 403 || resp.code == 410) {
-                            throw HttpStatusException(resp.code, "Failed to fetch audio playlist HTTP ${resp.code}")
-                        }
-                        if (!resp.isSuccessful) throw IOException("Failed to fetch audio playlist HTTP ${resp.code}")
-                        resp.body?.string().orEmpty()
-                    }
+                    val audioContent = fetchPlaylistText(audioTrack.url, headers)
                     File(workDir, "media_track_1.m3u8").writeText(audioContent)
                     File(workDir, "media_track_1.url").writeText(audioTrack.url)
-                    val audioMedia = HlsPlaylistParser.parseMediaPlaylist(audioTrack.url, audioContent, trackIndex = 1)
-                    result[1] = audioMedia.segments
+                    result[1] = HlsPlaylistParser.parseMediaPlaylist(audioTrack.url, audioContent, trackIndex = 1).segments
                 }
             }
         } else {
             File(workDir, "media_track_0.m3u8").writeText(rootContent)
             File(workDir, "media_track_0.url").writeText(download.url)
-            val media = HlsPlaylistParser.parseMediaPlaylist(download.url, rootContent, trackIndex = 0)
-            result[0] = media.segments
+            result[0] = HlsPlaylistParser.parseMediaPlaylist(download.url, rootContent, trackIndex = 0).segments
         }
 
         return result

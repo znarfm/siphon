@@ -83,6 +83,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Context.MODE_PRIVATE
     )
 
+    private val _themeMode = MutableStateFlow(
+        runCatching {
+            com.siphon.app.ui.theme.AppThemeMode.valueOf(
+                prefs.getString("pref_theme_mode", com.siphon.app.ui.theme.AppThemeMode.SYSTEM.name)
+                    ?: com.siphon.app.ui.theme.AppThemeMode.SYSTEM.name
+            )
+        }.getOrDefault(com.siphon.app.ui.theme.AppThemeMode.SYSTEM)
+    )
+    val themeMode: StateFlow<com.siphon.app.ui.theme.AppThemeMode> = _themeMode.asStateFlow()
+
+    private val _isWebDarkMode = MutableStateFlow(
+        prefs.getBoolean("pref_web_dark_mode", false)
+    )
+    val isWebDarkMode: StateFlow<Boolean> = _isWebDarkMode.asStateFlow()
+
+    fun setThemeMode(mode: com.siphon.app.ui.theme.AppThemeMode) {
+        _themeMode.value = mode
+        prefs.edit().putString("pref_theme_mode", mode.name).apply()
+    }
+
+    fun toggleWebDarkMode() {
+        val next = !_isWebDarkMode.value
+        _isWebDarkMode.value = next
+        prefs.edit().putBoolean("pref_web_dark_mode", next).apply()
+    }
+
     private val _maxConcurrentDownloads = MutableStateFlow(
         prefs.getInt(DownloadForegroundService.PREF_MAX_CONCURRENT_DOWNLOADS, 2).coerceIn(1, 4)
     )

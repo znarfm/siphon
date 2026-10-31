@@ -3,13 +3,19 @@ package com.siphon.app.ui.browser
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
+import android.os.Message
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.os.Message
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.material3.AlertDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -27,6 +33,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Badge
@@ -35,13 +42,18 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,23 +62,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.clickable
-import androidx.compose.material3.InputChip
-import androidx.compose.material3.InputChipDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -76,6 +90,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.siphon.app.core.sniffer.MediaSnifferClient
 import com.siphon.app.data.db.DownloadEntity
+import com.siphon.app.ui.theme.AppThemeMode
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -87,6 +102,12 @@ fun BrowserScreen(
     detectedMediaCount: Int,
     isAdBlockEnabled: Boolean,
     rebindTarget: DownloadEntity?,
+    isBarsVisible: Boolean = true,
+    isWebDarkMode: Boolean = false,
+    themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    onToggleBars: (Boolean) -> Unit = {},
+    onToggleWebDarkMode: () -> Unit = {},
+    onSetThemeMode: (AppThemeMode) -> Unit = {},
     onNavigateUrl: (String) -> Unit,
     onToggleAdBlock: () -> Unit,
     onOpenSniffer: () -> Unit,
@@ -101,11 +122,57 @@ fun BrowserScreen(
     val webViewMap = remember { mutableMapOf<String, WebView>() }
     var urlTextFieldValue by remember { mutableStateOf(TextFieldValue(currentUrl)) }
     var isUrlBarFocused by remember { mutableStateOf(false) }
+    var isMenuOpen by remember { mutableStateOf(false) }
     var pageProgress by remember { mutableIntStateOf(100) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
     var pendingPopupUrl by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
+    val clipboardManager = LocalClipboardManager.current
+    val currentActiveTabId = rememberUpdatedState(activeTabId)
+    val currentBarsVisible = rememberUpdatedState(isBarsVisible)
+
+    LaunchedEffect(isWebDarkMode) {
+        webViewMap.values.forEach { webView ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                @Suppress("DEPRECATION")
+                webView.settings.forceDark = if (isWebDarkMode) WebSettings.FORCE_DARK_ON else WebSettings.FORCE_DARK_OFF
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                webView.settings.isAlgorithmicDarkeningAllowed = isWebDarkMode
+            }
+            val js = if (isWebDarkMode) {
+                """
+                (function() {
+                    if (!document.getElementById('__siphon_dark_mode')) {
+                        var s = document.createElement('style');
+                        s.id = '__siphon_dark_mode';
+                        s.textContent = '@media (prefers-color-scheme: dark) { :root { color-scheme: dark; } } html { filter: invert(90%) hue-rotate(180deg) !important; background-color: #121212 !important; } img, video, canvas, svg, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
+                        (document.head || document.documentElement).appendChild(s);
+                    }
+                })()
+                """.trimIndent()
+            } else {
+                """
+                (function() {
+                    var s = document.getElementById('__siphon_dark_mode');
+                    if (s) s.remove();
+                })()
+                """.trimIndent()
+            }
+            webView.evaluateJavascript(js, null)
+        }
+    }
+
+    LaunchedEffect(activeTabId) {
+        onToggleBars(true)
+    }
+
+    LaunchedEffect(isUrlBarFocused) {
+        if (isUrlBarFocused) {
+            onToggleBars(true)
+        }
+    }
 
     val activeWebView = webViewMap[activeTabId]
 
@@ -189,8 +256,14 @@ fun BrowserScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // "Update Link" 403 Rebind Banner
-        if (rebindTarget != null) {
+        AnimatedVisibility(
+            visible = isBarsVisible || isUrlBarFocused,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column {
+                // "Update Link" 403 Rebind Banner
+                if (rebindTarget != null) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                 shape = RoundedCornerShape(0.dp),
@@ -227,6 +300,7 @@ fun BrowserScreen(
         // Top Browser Bar: Controls, URL Bar, Ad-Block toggle, Sniffer trigger
         Surface(
             tonalElevation = 2.dp,
+            color = MaterialTheme.colorScheme.surface,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
@@ -236,89 +310,123 @@ fun BrowserScreen(
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (!isUrlBarFocused) {
-                        // Navigation controls (M3 Expressive Pill buttons)
-                        FilledTonalButton(
+                    if (!isUrlBarFocused && canGoBack) {
+                        IconButton(
                             onClick = { activeWebView?.goBack() },
-                            enabled = canGoBack,
-                            modifier = Modifier.size(38.dp),
-                            shape = CircleShape,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                            modifier = Modifier.size(34.dp)
                         ) {
-                            Text("‹", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                            Text("‹", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         }
-
                         Spacer(modifier = Modifier.width(4.dp))
-
-                        FilledTonalButton(
-                            onClick = { activeWebView?.goForward() },
-                            enabled = canGoForward,
-                            modifier = Modifier.size(38.dp),
-                            shape = CircleShape,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
-                        ) {
-                            Text("›", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        FilledTonalButton(
-                            onClick = { activeWebView?.reload() },
-                            modifier = Modifier.size(38.dp),
-                            shape = CircleShape,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
-                        ) {
-                            Text("⟳", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
                     }
 
-                    // Address bar (Expressive extra-large rounded pill)
-                    OutlinedTextField(
-                        value = urlTextFieldValue,
-                        onValueChange = { newValue ->
-                            if (!isUrlBarFocused) {
-                                // Tapping unselected field: select all text immediately
-                                isUrlBarFocused = true
-                                val text = newValue.text
-                                urlTextFieldValue = newValue.copy(
-                                    selection = TextRange(0, text.length)
-                                )
-                            } else {
-                                urlTextFieldValue = newValue
-                            }
-                        },
+                    // Sleek Expressive URL Bar Capsule
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.75f),
                         modifier = Modifier
                             .weight(1f)
-                            .onFocusChanged { focusState ->
-                                isUrlBarFocused = focusState.isFocused
-                                if (focusState.isFocused) {
-                                    val text = urlTextFieldValue.text
-                                    urlTextFieldValue = urlTextFieldValue.copy(
-                                        selection = TextRange(0, text.length)
-                                    )
-                                }
-                            },
-                        shape = RoundedCornerShape(24.dp),
-                        singleLine = true,
-                        placeholder = { Text("Search or type URL", maxLines = 1, fontSize = 13.sp) },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Uri,
-                            imeAction = ImeAction.Go
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onGo = {
-                                focusManager.clearFocus()
-                                val target = sanitizeUrl(urlTextFieldValue.text)
-                                onNavigateUrl(target)
-                                activeWebView?.loadUrl(target)
+                            .height(40.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = onToggleAdBlock,
+                                modifier = Modifier.size(26.dp)
+                            ) {
+                                Text(
+                                    text = "🛡",
+                                    fontSize = 13.sp,
+                                    color = if (isAdBlockEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                )
                             }
-                        )
-                    )
+
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            BasicTextField(
+                                value = urlTextFieldValue,
+                                onValueChange = { newValue ->
+                                    if (!isUrlBarFocused) {
+                                        isUrlBarFocused = true
+                                        val text = newValue.text
+                                        urlTextFieldValue = newValue.copy(
+                                            selection = TextRange(0, text.length)
+                                        )
+                                    } else {
+                                        urlTextFieldValue = newValue
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .onFocusChanged { focusState ->
+                                        isUrlBarFocused = focusState.isFocused
+                                        if (focusState.isFocused) {
+                                            val text = urlTextFieldValue.text
+                                            urlTextFieldValue = urlTextFieldValue.copy(
+                                                selection = TextRange(0, text.length)
+                                            )
+                                        }
+                                    },
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Uri,
+                                    imeAction = ImeAction.Go
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onGo = {
+                                        focusManager.clearFocus()
+                                        val target = sanitizeUrl(urlTextFieldValue.text)
+                                        onNavigateUrl(target)
+                                        activeWebView?.loadUrl(target)
+                                    }
+                                ),
+                                decorationBox = { innerTextField ->
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        if (urlTextFieldValue.text.isEmpty()) {
+                                            Text(
+                                                "Search or type URL",
+                                                maxLines = 1,
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                }
+                            )
+
+                            if (isUrlBarFocused) {
+                                IconButton(
+                                    onClick = { urlTextFieldValue = TextFieldValue("") },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Text("✕", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            } else {
+                                IconButton(
+                                    onClick = { activeWebView?.reload() },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Text("⟳", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
 
                     if (isUrlBarFocused) {
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         TextButton(
                             onClick = {
                                 focusManager.clearFocus()
@@ -331,65 +439,119 @@ fun BrowserScreen(
                     } else {
                         Spacer(modifier = Modifier.width(6.dp))
 
-                        // Ad-Block Toggle Pill
-                        Button(
-                            onClick = onToggleAdBlock,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isAdBlockEnabled) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                },
-                                contentColor = if (isAdBlockEnabled) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            ),
-                            shape = RoundedCornerShape(16.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = if (isAdBlockEnabled) "🛡 Shield" else "🛡 Off",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                        // Sniffer catch button
+                        if (detectedMediaCount > 0) {
+                            FilledTonalButton(
+                                onClick = onOpenSniffer,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                ),
+                                shape = CircleShape,
+                                modifier = Modifier.height(34.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+                            ) {
+                                Text("↓ $detectedMediaCount", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            IconButton(
+                                onClick = onOpenSniffer,
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Text("↓", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                            }
                         }
 
-                        Spacer(modifier = Modifier.width(6.dp))
+                        // Overflow menu button
+                        Box {
+                            IconButton(
+                                onClick = { isMenuOpen = true },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Text("⋮", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            }
 
-                        // Sniffer Sheet Trigger (Expressive Action Pill)
-                        BadgedBox(
-                            badge = {
-                                if (detectedMediaCount > 0) {
-                                    Badge(
-                                        containerColor = MaterialTheme.colorScheme.error,
-                                        contentColor = Color.White
-                                    ) {
-                                        Text(detectedMediaCount.toString(), fontWeight = FontWeight.Bold)
+                            DropdownMenu(
+                                expanded = isMenuOpen,
+                                onDismissRequest = { isMenuOpen = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("🌙 Web Dark Mode", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                            Switch(
+                                                checked = isWebDarkMode,
+                                                onCheckedChange = { onToggleWebDarkMode() },
+                                                modifier = Modifier.scale(0.8f)
+                                            )
+                                        }
+                                    },
+                                    onClick = onToggleWebDarkMode
+                                )
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                                Text(
+                                    text = "🎨 App Theme",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
+                                )
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    AppThemeMode.entries.forEach { mode ->
+                                        val isSelected = mode == themeMode
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = { onSetThemeMode(mode) },
+                                            label = { Text(mode.title, fontSize = 10.sp) },
+                                            shape = CircleShape,
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        )
                                     }
                                 }
-                            }
-                        ) {
-                            Button(
-                                onClick = onOpenSniffer,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (detectedMediaCount > 0) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("🛡 Ad Blocker", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                            Switch(
+                                                checked = isAdBlockEnabled,
+                                                onCheckedChange = { onToggleAdBlock() },
+                                                modifier = Modifier.scale(0.8f)
+                                            )
+                                        }
                                     },
-                                    contentColor = if (detectedMediaCount > 0) {
-                                        MaterialTheme.colorScheme.onPrimary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    onClick = onToggleAdBlock
+                                )
+
+                                DropdownMenuItem(
+                                    text = { Text("📋 Copy Link", fontSize = 13.sp) },
+                                    onClick = {
+                                        isMenuOpen = false
+                                        val url = activeWebView?.url ?: currentUrl
+                                        clipboardManager.setText(AnnotatedString(url))
                                     }
-                                ),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.height(38.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
-                            ) {
-                                Text("↓ Catch", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                )
                             }
                         }
                     }
@@ -404,64 +566,76 @@ fun BrowserScreen(
                     )
                 }
 
-                // Horizontal Tab Bar Strip
+                // Horizontal Tab Bar Strip (sleek, compact)
                 if (!isUrlBarFocused) {
                     LazyRow(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(tabs, key = { it.id }) { tab ->
                             val isSelected = tab.id == activeTabId
-                            InputChip(
-                                selected = isSelected,
-                                onClick = { onSelectTab(tab.id) },
-                                label = {
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable { onSelectTab(tab.id) }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
                                     Text(
-                                        text = tab.title,
+                                        text = tab.title.ifBlank { "New Tab" },
                                         maxLines = 1,
                                         fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                                         overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.widthIn(max = 100.dp)
+                                        modifier = Modifier.widthIn(max = 110.dp)
                                     )
-                                },
-                                trailingIcon = {
-                                    Text(
-                                        text = "✕",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier
-                                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                                            .clickable { onCloseTab(tab.id) }
-                                    )
-                                },
-                                shape = RoundedCornerShape(14.dp),
-                                colors = InputChipDefaults.inputChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                                )
-                            )
+                                    if (tabs.size > 1) {
+                                        Text(
+                                            text = "✕",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier
+                                                .clip(CircleShape)
+                                                .clickable { onCloseTab(tab.id) }
+                                                .padding(2.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
 
                         item {
-                            FilledTonalButton(
-                                onClick = { onNewTab("https://google.com") },
+                            Surface(
                                 shape = CircleShape,
-                                modifier = Modifier.size(32.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .clickable { onNewTab("https://google.com") }
                             ) {
-                                Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("+", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
 
-        // Multi-Tab WebView Pool: Keeps all opened tab WebViews alive in memory
+    // Multi-Tab WebView Pool: Keeps all opened tab WebViews alive in memory
         Box(modifier = Modifier.fillMaxSize()) {
             tabs.forEach { tab ->
                 val isVisible = tab.id == activeTabId
@@ -488,6 +662,13 @@ fun BrowserScreen(
                                     mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                                     setSupportMultipleWindows(true)
                                     javaScriptCanOpenWindowsAutomatically = true
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                        @Suppress("DEPRECATION")
+                                        forceDark = if (isWebDarkMode) WebSettings.FORCE_DARK_ON else WebSettings.FORCE_DARK_OFF
+                                    }
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        isAlgorithmicDarkeningAllowed = isWebDarkMode
+                                    }
                                 }
                                 webViewClient = snifferClient
                                 webChromeClient = object : WebChromeClient() {
@@ -501,6 +682,19 @@ fun BrowserScreen(
                                                 urlTextFieldValue = TextFieldValue(vUrl)
                                                 onNavigateUrl(vUrl)
                                             }
+                                        }
+                                        if (isWebDarkMode && newProgress >= 15) {
+                                            val js = """
+                                                (function() {
+                                                    if (!document.getElementById('__siphon_dark_mode')) {
+                                                        var s = document.createElement('style');
+                                                        s.id = '__siphon_dark_mode';
+                                                        s.textContent = '@media (prefers-color-scheme: dark) { :root { color-scheme: dark; } } html { filter: invert(90%) hue-rotate(180deg) !important; background-color: #121212 !important; } img, video, canvas, svg, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
+                                                        (document.head || document.documentElement).appendChild(s);
+                                                    }
+                                                })()
+                                            """.trimIndent()
+                                            view?.evaluateJavascript(js, null)
                                         }
                                     }
 
@@ -553,6 +747,18 @@ fun BrowserScreen(
                                         transport.webView = tempWebView
                                         resultMsg.sendToTarget()
                                         return true
+                                    }
+                                }
+                                setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+                                    if (tab.id == currentActiveTabId.value) {
+                                        val dy = scrollY - oldScrollY
+                                        if (scrollY <= 10) {
+                                            if (!currentBarsVisible.value) onToggleBars(true)
+                                        } else if (dy > 15) {
+                                            if (currentBarsVisible.value) onToggleBars(false)
+                                        } else if (dy < -15) {
+                                            if (!currentBarsVisible.value) onToggleBars(true)
+                                        }
                                     }
                                 }
                                 loadUrl(tab.url)

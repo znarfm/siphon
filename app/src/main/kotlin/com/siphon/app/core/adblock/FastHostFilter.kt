@@ -52,18 +52,6 @@ class FastHostFilter(
         isLoaded.set(true)
     }
 
-    fun initDirect(domains: Collection<String>) {
-        val set = HashSet<String>(domains.size * 4 / 3 + 1)
-        for (d in domains) {
-            val t = d.trim().lowercase()
-            if (t.isNotEmpty() && !t.startsWith("#")) {
-                set.add(t)
-            }
-        }
-        blockedHosts = set
-        isLoaded.set(true)
-    }
-
     /**
      * Suffix-slicing matcher:
      * e.g. "sub.ads.domain.com" -> tests "sub.ads.domain.com", "ads.domain.com", "domain.com"

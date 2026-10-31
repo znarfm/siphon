@@ -53,8 +53,7 @@ class DownloadStorageProvider(context: Context) {
     fun createDestination(
         displayName: String,
         mimeType: String,
-        customTreeUri: Uri? = null,
-        relativeSubPath: String? = null
+        customTreeUri: Uri? = null
     ): Uri {
         val safeName = sanitizeDisplayName(displayName)
         val safeMime = mimeType.ifBlank { "application/octet-stream" }
@@ -69,10 +68,6 @@ class DownloadStorageProvider(context: Context) {
             put(MediaStore.Downloads.MIME_TYPE, safeMime)
             put(MediaStore.Downloads.IS_PENDING, 1)
             put(MediaStore.Downloads.DATE_EXPIRES, nowSeconds + PENDING_EXPIRY_SECONDS)
-            if (!relativeSubPath.isNullOrBlank()) {
-                val cleanSub = relativeSubPath.trim('/')
-                put(MediaStore.Downloads.RELATIVE_PATH, "Download/$cleanSub")
-            }
         }
 
         return resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)

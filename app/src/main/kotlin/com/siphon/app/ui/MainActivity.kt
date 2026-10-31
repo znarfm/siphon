@@ -10,24 +10,38 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -56,7 +70,8 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
 
         setContent {
-            SiphonTheme {
+            val themeMode by viewModel.themeMode.collectAsState()
+            SiphonTheme(themeMode = themeMode) {
                 MainContent(viewModel = viewModel)
             }
         }
@@ -93,6 +108,7 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainContent(viewModel: MainViewModel) {
+    var isBarsVisible by remember { mutableStateOf(true) }
     val currentTab by viewModel.currentTab.collectAsState()
     val browserTabs by viewModel.browserTabs.collectAsState()
     val activeTabId by viewModel.activeTabId.collectAsState()
@@ -100,6 +116,8 @@ fun MainContent(viewModel: MainViewModel) {
     val detectedMedia by viewModel.detectedMedia.collectAsState()
     val rebindTarget by viewModel.rebindTarget.collectAsState()
     val isAdBlockEnabled by viewModel.isAdBlockEnabled.collectAsState()
+    val isWebDarkMode by viewModel.isWebDarkMode.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
     val isSnifferSheetOpen by viewModel.isSnifferSheetOpen.collectAsState()
     val downloads by viewModel.downloads.collectAsState()
     val chunksMap by viewModel.chunksMap.collectAsState()
@@ -112,50 +130,94 @@ fun MainContent(viewModel: MainViewModel) {
 
     Scaffold(
         bottomBar = {
-            NavigationBar(
-                tonalElevation = 6.dp,
-                modifier = Modifier
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .clip(RoundedCornerShape(28.dp))
+            AnimatedVisibility(
+                visible = isBarsVisible || currentTab != AppTab.BROWSER,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
             ) {
-                NavigationBarItem(
-                    selected = currentTab == AppTab.BROWSER,
-                    onClick = { viewModel.selectTab(AppTab.BROWSER) },
-                    icon = {
-                        BadgedBox(badge = {
-                            if (detectedMedia.isNotEmpty()) {
-                                Badge(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                ) {
-                                    Text(detectedMedia.size.toString(), fontWeight = FontWeight.Bold)
+                Surface(
+                    tonalElevation = 6.dp,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(26.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 48.dp, vertical = 6.dp)
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        val isBrowser = currentTab == AppTab.BROWSER
+                        Surface(
+                            color = if (isBrowser) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable { viewModel.selectTab(AppTab.BROWSER) }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                BadgedBox(badge = {
+                                    if (detectedMedia.isNotEmpty()) {
+                                        Badge(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                        ) {
+                                            Text(detectedMedia.size.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                        }
+                                    }
+                                }) {
+                                    Text("🌐", fontSize = 16.sp)
                                 }
+                                Text(
+                                    "Browser",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isBrowser) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isBrowser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                        }) {
-                            Text("🌐", fontSize = 20.sp)
                         }
-                    },
-                    label = { Text("Browser", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-                )
-                NavigationBarItem(
-                    selected = currentTab == AppTab.QUEUE,
-                    onClick = { viewModel.selectTab(AppTab.QUEUE) },
-                    icon = {
-                        BadgedBox(badge = {
-                            if (activeDownloadsCount > 0) {
-                                Badge(
-                                    containerColor = MaterialTheme.colorScheme.tertiary,
-                                    contentColor = MaterialTheme.colorScheme.onTertiary
-                                ) {
-                                    Text(activeDownloadsCount.toString(), fontWeight = FontWeight.Bold)
+
+                        val isQueue = currentTab == AppTab.QUEUE
+                        Surface(
+                            color = if (isQueue) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable { viewModel.selectTab(AppTab.QUEUE) }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                BadgedBox(badge = {
+                                    if (activeDownloadsCount > 0) {
+                                        Badge(
+                                            containerColor = MaterialTheme.colorScheme.tertiary,
+                                            contentColor = MaterialTheme.colorScheme.onTertiary
+                                        ) {
+                                            Text(activeDownloadsCount.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                        }
+                                    }
+                                }) {
+                                    Text("📥", fontSize = 16.sp)
                                 }
+                                Text(
+                                    "Downloads",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isQueue) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isQueue) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                        }) {
-                            Text("📥", fontSize = 20.sp)
                         }
-                    },
-                    label = { Text("Downloads", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-                )
+                    }
+                }
             }
         }
     ) { innerPadding ->
@@ -180,6 +242,12 @@ fun MainContent(viewModel: MainViewModel) {
                     detectedMediaCount = detectedMedia.size,
                     isAdBlockEnabled = isAdBlockEnabled,
                     rebindTarget = rebindTarget,
+                    isBarsVisible = isBarsVisible,
+                    isWebDarkMode = isWebDarkMode,
+                    themeMode = themeMode,
+                    onToggleBars = { isBarsVisible = it },
+                    onToggleWebDarkMode = { viewModel.toggleWebDarkMode() },
+                    onSetThemeMode = { viewModel.setThemeMode(it) },
                     onNavigateUrl = { viewModel.setBrowserUrl(it) },
                     onToggleAdBlock = { viewModel.toggleAdBlock() },
                     onOpenSniffer = { viewModel.openSnifferSheet() },
@@ -234,9 +302,6 @@ fun MainContent(viewModel: MainViewModel) {
                             selectedVariantUrl = variantUrl
                         )
                     }
-                },
-                onRebindMedia = { target, media, variantUrl ->
-                    viewModel.rebindDownload(target, media, variantUrl)
                 }
             )
         }
