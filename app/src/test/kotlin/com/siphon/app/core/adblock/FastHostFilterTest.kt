@@ -146,4 +146,11 @@ class FastHostFilterTest {
         assertTrue(config.toBlockUrls().contains(FastHostFilter.HAGEZI_NORMAL_URL))
         assertTrue(config.toAllowUrls().contains(FastHostFilter.DANDELION_SHORTENERS_URL))
     }
+
+    @Test
+    fun testScriptAndRelativeUrlBlocking() {
+        assertTrue(filter.shouldBlockUrl("//doubleclick.net/test"))
+        assertTrue(filter.shouldBlockUrl("https://test.com/pagead.js"))
+        assertTrue(filter.shouldBlockUrl("https://test.com/widget/ads"))
+    }
 }

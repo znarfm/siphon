@@ -107,13 +107,18 @@ class MediaSnifferClient(
             currentPageUrl = url
             onUrlChanged?.invoke(url)
             onNavigationStateChanged?.invoke(view?.canGoBack() == true, view?.canGoForward() == true)
+            if (hostFilter.isEnabled) {
+                val css = ".adbox, .banner_ads, .adsbox, .textads, [class*='ad-banner'], [id*='ad-container'] { display: none !important; }"
+                val js = "(function() { var el = document.getElementById('__siphon_adblock_style__'); if (!el) { el = document.createElement('style'); el.id = '__siphon_adblock_style__'; el.textContent = '$css'; (document.head || document.documentElement).appendChild(el); } })();"
+                view?.evaluateJavascript(js, null)
+            }
             if (view != null) onWebViewPageFinished?.invoke(view, url)
         }
     }
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-        val url = request?.url?.toString() ?: return false
-        if (hostFilter.shouldBlockUrl(url)) {
+        val uri = request?.url ?: return false
+        if (hostFilter.shouldBlockUri(uri)) {
             return true // Drop ad redirects / popup chains
         }
         return false
@@ -125,15 +130,14 @@ class MediaSnifferClient(
     ): WebResourceResponse? {
         val req = request ?: return null
         val uri = req.url ?: return null
-        val urlStr = uri.toString()
 
         // 1. Drop ad network subresources immediately
-        if (hostFilter.shouldBlockUrl(urlStr)) {
+        if (hostFilter.shouldBlockUri(uri)) {
             return hostFilter.createEmptyResponse()
         }
 
         // 2. Passive sniffer: strictly return null for all non-ad requests so Chromium loads normally
-        inspectCandidateAsync(urlStr, req.requestHeaders)
+        inspectCandidateAsync(uri.toString(), req.requestHeaders)
         return null
     }
 

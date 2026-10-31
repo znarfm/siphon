@@ -250,13 +250,30 @@ class FastHostFilter(
         return false
     }
 
+    fun shouldBlockUri(uri: Uri?): Boolean {
+        if (!isEnabled || uri == null) return false
+        val path = uri.path?.lowercase().orEmpty()
+        if (path.endsWith("/pagead.js") || path.endsWith("/ads.js") || path.contains("/widget/ads")) {
+            return true
+        }
+        val host = uri.host?.lowercase()
+        if (!host.isNullOrBlank()) {
+            return shouldBlockHost(host)
+        }
+        return false
+    }
+
     fun shouldBlockUrl(url: String?): Boolean {
         if (!isEnabled || url.isNullOrBlank()) return false
+        val lower = url.lowercase()
+        if (lower.contains("/pagead.js") || lower.contains("/widget/ads") || lower.contains("/ads.js")) {
+            return true
+        }
         val host = runCatching {
             val uri = Uri.parse(url)
             uri.host?.lowercase()
         }.getOrNull()?.takeIf { it.isNotBlank() } ?: runCatching {
-            val withoutScheme = if (url.contains("://")) url.substringAfter("://") else url
+            val withoutScheme = if (url.contains("://")) url.substringAfter("://") else url.trimStart('/')
             val authority = withoutScheme.substringBefore('/').substringBefore('?')
             val hostPort = if (authority.contains('@')) authority.substringAfterLast('@') else authority
             if (hostPort.startsWith('[')) {
@@ -272,8 +289,8 @@ class FastHostFilter(
         return WebResourceResponse(
             "text/plain",
             "UTF-8",
-            200,
-            "OK",
+            403,
+            "Blocked",
             emptyMap(),
             ByteArrayInputStream(ByteArray(0))
         )
