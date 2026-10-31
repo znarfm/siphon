@@ -18,8 +18,9 @@ import com.siphon.app.data.db.DownloadState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
@@ -296,50 +297,86 @@ class HlsQueueEngine(
             .maxOfOrNull { it.chunkIndex }
         var nextMergeChunkIndex = if (maxMerged == null) 0 else maxMerged + 1
 
+        val pendingSegments = segments.filter { it.chunkIndex >= nextMergeChunkIndex }
+        if (pendingSegments.isEmpty()) {
+            trackChannel.close()
+            raf.close()
+            return@coroutineScope
+        }
+
+        val segmentQueue = ConcurrentLinkedQueue(pendingSegments)
+        val completionSignal = Channel<Unit>(Channel.CONFLATED)
+
         try {
-            val pendingSegments = segments.filter { it.chunkIndex >= nextMergeChunkIndex }
-            val chunkBatches = pendingSegments.chunked(maxParallelSegments)
+            // Background Merger: wakes immediately whenever any worker finishes a segment,
+            // assembly merges all contiguous finished segments in strict sequence without blocking workers.
+            val mergerJob = kotlinx.coroutines.launch(Dispatchers.IO) {
+                var uncommittedSegments = 0
+                while (isActive && nextMergeChunkIndex < segments.size) {
+                    var mergedAny = false
+                    mergeMutex.withLock {
+                        while (isActive) {
+                            val nextSegFile = File(workDir, "seg_${trackIndex}_${nextMergeChunkIndex}.tmp")
+                            if (!nextSegFile.exists() || nextSegFile.length() == 0L) break
 
-            for (batch in chunkBatches) {
-                if (!isActive) break
+                            FileInputStream(nextSegFile).channel.use { inChannel ->
+                                val segSize = inChannel.size()
+                                var pos = 0L
+                                while (pos < segSize) {
+                                    val transferred = inChannel.transferTo(pos, segSize - pos, trackChannel)
+                                    if (transferred <= 0) break
+                                    pos += transferred
+                                }
+                                cumulativeBytes += segSize
+                            }
 
-                // Parallel download of batch segments
-                batch.map { segment ->
-                    async(Dispatchers.IO) {
+                            nextSegFile.delete()
+                            nextMergeChunkIndex++
+                            uncommittedSegments++
+                            mergedAny = true
+
+                            // Periodically sync OS dirty pages and update database (every 8 segments or when done)
+                            if (uncommittedSegments >= 8 || nextMergeChunkIndex >= segments.size) {
+                                trackChannel.force(false)
+                                dao.markChunkMerged(downloadId, trackIndex, nextMergeChunkIndex - 1, cumulativeBytes)
+                                uncommittedSegments = 0
+                            }
+                            onSegmentMerged()
+                        }
+                    }
+
+                    if (nextMergeChunkIndex >= segments.size) break
+                    if (!mergedAny) {
+                        // Wait for next worker completion signal
+                        completionSignal.receiveCatching()
+                    }
+                }
+
+                // Final commit on completion
+                if (uncommittedSegments > 0) {
+                    trackChannel.force(false)
+                    dao.markChunkMerged(downloadId, trackIndex, nextMergeChunkIndex - 1, cumulativeBytes)
+                }
+            }
+
+            // Continuous Worker Pool: Pull from shared queue without batch waiting barriers
+            val concurrency = maxParallelSegments.coerceIn(4, 8)
+            val workers = (0 until concurrency).map {
+                kotlinx.coroutines.launch(Dispatchers.IO) {
+                    while (isActive) {
+                        val segment = segmentQueue.poll() ?: break
                         val segFile = File(workDir, "seg_${trackIndex}_${segment.chunkIndex}.tmp")
                         if (!segFile.exists() || segFile.length() == 0L) {
                             downloadSegment(segment, headers, segFile)
                         }
-                    }
-                }.awaitAll()
-
-                // Sliding-window assembly: merge contiguous completed segments in strict sequence
-                mergeMutex.withLock {
-                    while (true) {
-                        val nextSegFile = File(workDir, "seg_${trackIndex}_${nextMergeChunkIndex}.tmp")
-                        if (!nextSegFile.exists() || nextSegFile.length() == 0L) break
-
-                        FileInputStream(nextSegFile).channel.use { inChannel ->
-                            val segSize = inChannel.size()
-                            var pos = 0L
-                            while (pos < segSize) {
-                                val transferred = inChannel.transferTo(pos, segSize - pos, trackChannel)
-                                if (transferred <= 0) break
-                                pos += transferred
-                            }
-                            cumulativeBytes += segSize
-                        }
-
-                        trackChannel.force(false)
-                        dao.markChunkMerged(downloadId, trackIndex, nextMergeChunkIndex, cumulativeBytes)
-
-                        // Immediately delete segment file to avoid 3x disk amplification
-                        nextSegFile.delete()
-                        nextMergeChunkIndex++
-                        onSegmentMerged()
+                        completionSignal.trySend(Unit)
                     }
                 }
             }
+
+            workers.forEach { it.join() }
+            completionSignal.trySend(Unit)
+            mergerJob.join()
         } finally {
             trackChannel.force(false)
             runCatching { trackChannel.close() }
@@ -361,22 +398,24 @@ class HlsQueueEngine(
             if (!resp.isSuccessful) throw IOException("Segment download failed HTTP ${resp.code}: ${segment.url}")
             val body = resp.body ?: throw IOException("Empty segment body")
 
-            if (segment.keyMethod.equals("AES-128", ignoreCase = true) && !segment.keyUrl.isNullOrBlank()) {
+            val cipher = if (segment.keyMethod.equals("AES-128", ignoreCase = true) && !segment.keyUrl.isNullOrBlank()) {
                 val keyBytes = getOrFetchKey(segment.keyUrl, headers)
                 val ivBytes = parseOrGenerateIv(segment.ivHex, segment.sequenceNumber)
-
-                val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
-                cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), IvParameterSpec(ivBytes))
-
-                CipherInputStream(body.byteStream(), cipher).use { cipherIn ->
-                    FileOutputStream(partFile).use { fileOut ->
-                        cipherIn.copyTo(fileOut)
-                    }
+                Cipher.getInstance("AES/CBC/PKCS5Padding").apply {
+                    init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), IvParameterSpec(ivBytes))
                 }
-            } else {
-                body.byteStream().use { rawIn ->
-                    FileOutputStream(partFile).use { fileOut ->
-                        rawIn.copyTo(fileOut)
+            } else null
+
+            val outStream = FileOutputStream(partFile)
+            val inStream = if (cipher != null) CipherInputStream(body.byteStream(), cipher) else body.byteStream()
+
+            outStream.use { fileOut ->
+                inStream.use { rawIn ->
+                    val buffer = ByteArray(64 * 1024)
+                    var bytes = rawIn.read(buffer)
+                    while (bytes >= 0) {
+                        fileOut.write(buffer, 0, bytes)
+                        bytes = rawIn.read(buffer)
                     }
                 }
             }
