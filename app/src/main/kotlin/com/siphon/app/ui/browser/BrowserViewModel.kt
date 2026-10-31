@@ -133,11 +133,17 @@ class BrowserViewModel(
         }
     }
 
-    fun openNewBrowserTab(url: String = "https://google.com", isIncognito: Boolean = false) {
+    fun openNewBrowserTab(
+        url: String = "https://google.com",
+        isIncognito: Boolean = false,
+        switchImmediately: Boolean = true
+    ) {
         val newTab = BrowserTab(url = url, isIncognito = isIncognito)
         _browserTabs.value = _browserTabs.value + newTab
-        _activeTabId.value = newTab.id
-        _browserUrl.value = url
+        if (switchImmediately) {
+            _activeTabId.value = newTab.id
+            _browserUrl.value = url
+        }
     }
 
     fun switchBrowserTab(tabId: String) {
@@ -269,6 +275,26 @@ class BrowserViewModel(
                 customFilename = customDisplayName
             )
             _isSnifferSheetOpen.value = false
+        }
+    }
+
+    fun downloadDirectMedia(url: String) {
+        viewModelScope.launch {
+            val fileName = com.siphon.app.core.sniffer.SnifferUrlClassifier.extractDisplayNameFromUrl(
+                url = url,
+                fallback = "download_${System.currentTimeMillis()}"
+            )
+            val sniffed = SniffedMedia(
+                id = java.util.UUID.randomUUID().toString(),
+                url = url,
+                displayName = fileName,
+                mimeType = "image/*",
+                totalBytes = -1L,
+                mediaType = com.siphon.app.data.db.DownloadType.HTTP,
+                sourcePageUrl = _browserUrl.value,
+                headers = emptyMap()
+            )
+            downloadRepository.startDownload(sniffed)
         }
     }
 

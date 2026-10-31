@@ -3,6 +3,8 @@ package com.siphon.app.ui.browser
 import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.view.MotionEvent
 import android.view.View
@@ -178,7 +180,7 @@ fun BrowserScreen(
     onToggleAdBlock: () -> Unit,
     onOpenSniffer: () -> Unit,
     onCancelRebind: () -> Unit,
-    onNewTab: (url: String, isIncognito: Boolean) -> Unit,
+    onNewTab: (url: String, isIncognito: Boolean, inBackground: Boolean) -> Unit,
     onSelectTab: (String) -> Unit,
     onCloseTab: (String) -> Unit,
     onToggleBookmark: () -> Unit = {},
@@ -188,6 +190,7 @@ fun BrowserScreen(
     onRefreshAdblock: (String) -> Unit = {},
     onUpdateTabMeta: (url: String, title: String) -> Unit,
     onRegisterDomScan: (((() -> Unit) -> Unit))? = null,
+    onDownloadDirectMedia: ((url: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val webViewMap = remember { mutableMapOf<String, WebView>() }
@@ -200,6 +203,7 @@ fun BrowserScreen(
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
     var pendingPopupUrl by remember { mutableStateOf<String?>(null) }
+    var contextMenuTarget by remember { mutableStateOf<ContextMenuTarget?>(null) }
     val focusManager = LocalFocusManager.current
     val clipboardManager = LocalClipboardManager.current
     val currentActiveTabId = rememberUpdatedState(activeTabId)
@@ -444,7 +448,7 @@ fun BrowserScreen(
                             colorSeed = colorSeed,
                             currentUrl = activeWebView?.url ?: currentUrl,
                             clipboardManager = clipboardManager,
-                            onNewIncognitoTab = { onNewTab("https://google.com", true) },
+                            onNewIncognitoTab = { onNewTab("https://google.com", true, false) },
                             onOpenBookmarksAndHistory = { isUrlBarFocused = true },
                             onOpenAdblockDialog = { showAdblockDialog = true },
                             onToggleWebDarkMode = onToggleWebDarkMode,
@@ -462,7 +466,7 @@ fun BrowserScreen(
                         activeTabId = activeTabId,
                         onSelectTab = onSelectTab,
                         onCloseTab = onCloseTab,
-                        onNewTab = onNewTab
+                        onNewTab = { url, incog -> onNewTab(url, incog, false) }
                     )
                 }
             }
@@ -567,6 +571,42 @@ fun BrowserScreen(
                                         clearCache(true)
                                         clearHistory()
                                     }
+                                    setOnLongClickListener { v ->
+                                        val wv = v as? WebView ?: return@setOnLongClickListener false
+                                        val hit = wv.hitTestResult
+                                        when (hit.type) {
+                                            WebView.HitTestResult.SRC_ANCHOR_TYPE -> {
+                                                val url = hit.extra
+                                                if (!url.isNullOrBlank()) {
+                                                    contextMenuTarget = ContextMenuTarget(linkUrl = url)
+                                                    true
+                                                } else false
+                                            }
+                                            WebView.HitTestResult.IMAGE_TYPE -> {
+                                                val imgUrl = hit.extra
+                                                if (!imgUrl.isNullOrBlank()) {
+                                                    contextMenuTarget = ContextMenuTarget(imageUrl = imgUrl)
+                                                    true
+                                                } else false
+                                            }
+                                            WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+                                                val imgUrl = hit.extra
+                                                val handler = object : Handler(Looper.getMainLooper()) {
+                                                    override fun handleMessage(msg: Message) {
+                                                        val linkUrl = msg.data?.getString("url")
+                                                        val src = msg.data?.getString("src") ?: imgUrl
+                                                        if (!linkUrl.isNullOrBlank() || !src.isNullOrBlank()) {
+                                                            contextMenuTarget = ContextMenuTarget(linkUrl = linkUrl, imageUrl = src)
+                                                        }
+                                                    }
+                                                }
+                                                val msg = handler.obtainMessage()
+                                                wv.requestFocusNodeHref(msg)
+                                                true
+                                            }
+                                            else -> false
+                                        }
+                                    }
                                     addJavascriptInterface(
                                         com.siphon.app.core.sniffer.SiphonSnifferBridge(snifferClient),
                                         "__siphon_sniffer__"
@@ -648,7 +688,7 @@ fun BrowserScreen(
                 confirmButton = {
                     TextButton(onClick = {
                         val activeIsIncognito = tabs.firstOrNull { it.id == activeTabId }?.isIncognito ?: false
-                        onNewTab(popup, activeIsIncognito)
+                        onNewTab(popup, activeIsIncognito, false)
                         pendingPopupUrl = null
                     }) {
                         Text("Open")
@@ -670,6 +710,20 @@ fun BrowserScreen(
                     onRefreshAdblock(url)
                     showAdblockDialog = false
                 }
+            )
+        }
+
+        contextMenuTarget?.let { target ->
+            LinkContextMenuSheet(
+                target = target,
+                onDismiss = { contextMenuTarget = null },
+                onOpenInNewTab = { url ->
+                    onNewTab(url, false, true)
+                },
+                onOpenInIncognitoTab = { url ->
+                    onNewTab(url, true, true)
+                },
+                onDownloadImage = onDownloadDirectMedia
             )
         }
     }

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -42,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -181,6 +183,7 @@ fun MainContent(
     currentTab: AppTab,
     onSelectTab: (AppTab) -> Unit
 ) {
+    val context = LocalContext.current
     var isBarsVisible by remember { mutableStateOf(true) }
 
     val browserTabs by browserViewModel.browserTabs.collectAsState()
@@ -251,7 +254,17 @@ fun MainContent(
                     onToggleAdBlock = { browserViewModel.toggleAdBlock() },
                     onOpenSniffer = { browserViewModel.openSnifferSheet() },
                     onCancelRebind = { browserViewModel.cancelRebindFlow() },
-                    onNewTab = { url, isIncognito -> browserViewModel.openNewBrowserTab(url, isIncognito) },
+                    onNewTab = { url, isIncognito, inBackground ->
+                        browserViewModel.openNewBrowserTab(url, isIncognito, switchImmediately = !inBackground)
+                        if (inBackground) {
+                            val msg = if (isIncognito) "Opened in background (Incognito)" else "Opened in background"
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onDownloadDirectMedia = { url ->
+                        browserViewModel.downloadDirectMedia(url)
+                        Toast.makeText(context, "Download started", Toast.LENGTH_SHORT).show()
+                    },
                     onSelectTab = { browserViewModel.switchBrowserTab(it) },
                     onCloseTab = { browserViewModel.closeBrowserTab(it) },
                     onToggleBookmark = {
