@@ -1,7 +1,6 @@
 package com.siphon.app.ui.browser
 
 import android.annotation.SuppressLint
-import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Message
@@ -13,52 +12,24 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.material3.AlertDialog
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -71,39 +42,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import com.siphon.app.data.db.BookmarkEntity
-import com.siphon.app.data.db.HistoryEntity
-import com.siphon.app.core.adblock.FastHostFilter
-import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.zIndex
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import com.siphon.app.core.sniffer.MediaSnifferClient
+import com.siphon.app.data.db.BookmarkEntity
 import com.siphon.app.data.db.DownloadEntity
+import com.siphon.app.data.db.HistoryEntity
 import com.siphon.app.ui.theme.AppColorSeed
 import com.siphon.app.ui.theme.AppThemeMode
 
@@ -194,10 +150,6 @@ private fun applyWebDarkModeToWebView(webView: WebView, enabled: Boolean) {
     webView.evaluateJavascript(if (enabled) DARK_MODE_INJECT_JS else DARK_MODE_REMOVE_JS, null)
 }
 
-enum class QuickSearchFilter {
-    ALL, BOOKMARKS, HISTORY
-}
-
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun BrowserScreen(
@@ -244,7 +196,6 @@ fun BrowserScreen(
     var isUrlBarFocused by remember { mutableStateOf(false) }
     var isMenuOpen by remember { mutableStateOf(false) }
     var showAdblockDialog by remember { mutableStateOf(false) }
-    var searchFilter by remember { mutableStateOf(QuickSearchFilter.ALL) }
     var pageProgress by remember { mutableIntStateOf(100) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
@@ -409,628 +360,115 @@ fun BrowserScreen(
             Column {
                 // "Update Link" 403 Rebind Banner
                 if (rebindTarget != null) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                shape = RoundedCornerShape(0.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Update Link Mode (403 Rebind)",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        Text(
-                            text = rebindTarget.displayName,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                    TextButton(onClick = onCancelRebind) {
-                        Text("Cancel", color = MaterialTheme.colorScheme.onErrorContainer)
-                    }
-                }
-            }
-        }
-
-        // Top Browser Bar: Controls, URL Bar, Ad-Block toggle, Sniffer trigger
-        Surface(
-            tonalElevation = 2.dp,
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (!isUrlBarFocused && canGoBack) {
-                        IconButton(
-                            onClick = { activeWebView?.goBack() },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Text("‹", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
-
-                    // Sleek Expressive URL Bar Capsule
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.75f),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(40.dp)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        shape = RoundedCornerShape(0.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 8.dp),
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconButton(
-                                onClick = onToggleAdBlock,
-                                modifier = Modifier.size(26.dp)
-                            ) {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "🛡",
-                                    fontSize = 13.sp,
-                                    color = if (isAdBlockEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(4.dp))
-
-                            BasicTextField(
-                                value = urlTextFieldValue,
-                                onValueChange = { newValue ->
-                                    if (!isUrlBarFocused) {
-                                        isUrlBarFocused = true
-                                        val text = newValue.text
-                                        urlTextFieldValue = newValue.copy(
-                                            selection = TextRange(0, text.length)
-                                        )
-                                    } else {
-                                        urlTextFieldValue = newValue
-                                    }
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .onFocusChanged { focusState ->
-                                        isUrlBarFocused = focusState.isFocused
-                                        if (focusState.isFocused) {
-                                            onToggleBars(true)
-                                            val text = urlTextFieldValue.text
-                                            urlTextFieldValue = urlTextFieldValue.copy(
-                                                selection = TextRange(0, text.length)
-                                            )
-                                        }
-                                    },
-                                singleLine = true,
-                                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                ),
-                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Uri,
-                                    imeAction = ImeAction.Go
-                                ),
-                                keyboardActions = KeyboardActions(
-                                    onGo = {
-                                        isUrlBarFocused = false
-                                        focusManager.clearFocus()
-                                        val target = sanitizeUrl(urlTextFieldValue.text)
-                                        onNavigateUrl(target)
-                                        activeWebView?.loadUrl(target)
-                                    }
-                                ),
-                                decorationBox = { innerTextField ->
-                                    Box(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        contentAlignment = Alignment.CenterStart
-                                    ) {
-                                        if (urlTextFieldValue.text.isEmpty()) {
-                                            Text(
-                                                "Search or type URL",
-                                                maxLines = 1,
-                                                fontSize = 13.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                            )
-                                        }
-                                        innerTextField()
-                                    }
-                                }
-                            )
-
-                            IconButton(
-                                onClick = onToggleBookmark,
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Text(
-                                    text = if (isCurrentBookmarked) "★" else "☆",
-                                    fontSize = 15.sp,
+                                    text = "Update Link Mode (403 Rebind)",
+                                    style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (isCurrentBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    color = MaterialTheme.colorScheme.onErrorContainer
                                 )
-                            }
-
-                            if (isUrlBarFocused) {
-                                IconButton(
-                                    onClick = { urlTextFieldValue = TextFieldValue("") },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Text("✕", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            } else {
-                                IconButton(
-                                    onClick = { activeWebView?.reload() },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Text("⟳", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-                    }
-
-                    if (isUrlBarFocused) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        TextButton(
-                            onClick = {
-                                isUrlBarFocused = false
-                                focusManager.clearFocus()
-                                val cur = activeWebView?.url ?: currentUrl
-                                urlTextFieldValue = TextFieldValue(cur)
-                            }
-                        ) {
-                            Text("Cancel", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        // Sniffer catch button
-                        if (detectedMediaCount > 0) {
-                            FilledTonalButton(
-                                onClick = onOpenSniffer,
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                ),
-                                shape = CircleShape,
-                                modifier = Modifier.height(34.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                            ) {
-                                Text("↓ $detectedMediaCount", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        } else {
-                            IconButton(
-                                onClick = onOpenSniffer,
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Text("↓", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                            }
-                        }
-
-                        // Overflow menu button
-                        Box {
-                            IconButton(
-                                onClick = { isMenuOpen = true },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Text("⋮", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                            }
-
-                            DropdownMenu(
-                                expanded = isMenuOpen,
-                                onDismissRequest = { isMenuOpen = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("🕶 New Incognito Tab", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
-                                    onClick = {
-                                        isMenuOpen = false
-                                        onNewTab("https://google.com", true)
-                                    }
-                                )
-
-                                DropdownMenuItem(
-                                    text = { Text("⭐ Bookmarks & History", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
-                                    onClick = {
-                                        isMenuOpen = false
-                                        isUrlBarFocused = true
-                                    }
-                                )
-
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("🛡 Adblock Rules", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                            Text("$adblockRuleCount", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                                        }
-                                    },
-                                    onClick = {
-                                        isMenuOpen = false
-                                        showAdblockDialog = true
-                                    }
-                                )
-
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("🌙 Web Dark Mode", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                            Switch(
-                                                checked = isWebDarkMode,
-                                                onCheckedChange = { onToggleWebDarkMode() },
-                                                modifier = Modifier.scale(0.8f)
-                                            )
-                                        }
-                                    },
-                                    onClick = onToggleWebDarkMode
-                                )
-
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("🖥 Desktop Site", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                            Switch(
-                                                checked = isDesktopMode,
-                                                onCheckedChange = { onToggleDesktopMode() },
-                                                modifier = Modifier.scale(0.8f)
-                                            )
-                                        }
-                                    },
-                                    onClick = onToggleDesktopMode
-                                )
-
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
                                 Text(
-                                    text = "🎨 App Theme",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
+                                    text = rebindTarget.displayName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
                                 )
-
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 10.dp, vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    AppThemeMode.entries.forEach { mode ->
-                                        val isSelected = mode == themeMode
-                                        FilterChip(
-                                            selected = isSelected,
-                                            onClick = { onSetThemeMode(mode) },
-                                            label = { Text(mode.title, fontSize = 10.sp) },
-                                            shape = CircleShape,
-                                            colors = FilterChipDefaults.filterChipColors(
-                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
-                                        )
-                                    }
-                                }
-
-                                val availableSeeds = remember {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                        AppColorSeed.entries
-                                    } else {
-                                        AppColorSeed.entries.filter { it != AppColorSeed.DYNAMIC }
-                                    }
-                                }
-
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    availableSeeds.forEach { seed ->
-                                        val effectiveSelected = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && colorSeed == AppColorSeed.DYNAMIC) {
-                                            seed == AppColorSeed.SAPPHIRE
-                                        } else {
-                                            seed == colorSeed
-                                        }
-                                        if (seed == AppColorSeed.DYNAMIC) {
-                                            FilterChip(
-                                                selected = effectiveSelected,
-                                                onClick = { onSetColorSeed(seed) },
-                                                label = { Text("Monet", fontSize = 10.sp) },
-                                                shape = CircleShape,
-                                                colors = FilterChipDefaults.filterChipColors(
-                                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
-                                                )
-                                            )
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(22.dp)
-                                                    .clip(CircleShape)
-                                                    .background(seed.swatch)
-                                                    .border(
-                                                        width = if (effectiveSelected) 2.5.dp else 1.dp,
-                                                        color = if (effectiveSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
-                                                        shape = CircleShape
-                                                    )
-                                                    .clickable { onSetColorSeed(seed) }
-                                            )
-                                        }
-                                    }
-                                }
-
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("🛡 Ad Blocker", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                            Switch(
-                                                checked = isAdBlockEnabled,
-                                                onCheckedChange = { onToggleAdBlock() },
-                                                modifier = Modifier.scale(0.8f)
-                                            )
-                                        }
-                                    },
-                                    onClick = onToggleAdBlock
-                                )
-
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                                DropdownMenuItem(
-                                    text = { Text("📋 Copy Link", fontSize = 13.sp) },
-                                    onClick = {
-                                        isMenuOpen = false
-                                        val url = activeWebView?.url ?: currentUrl
-                                        clipboardManager.setText(AnnotatedString(url))
-                                    }
-                                )
+                            }
+                            TextButton(onClick = onCancelRebind) {
+                                Text("Cancel", color = MaterialTheme.colorScheme.onErrorContainer)
                             }
                         }
                     }
                 }
 
-                if (pageProgress in 1..99) {
-                    LinearProgressIndicator(
-                        progress = { pageProgress / 100f },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.dp)
-                    )
-                }
-
-                // Fast Search & Filter Panel (Bookmarks + History)
-                if (isUrlBarFocused) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surface)
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        val query = urlTextFieldValue.text.trim().lowercase()
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                FilterChip(
-                                    selected = searchFilter == QuickSearchFilter.ALL,
-                                    onClick = { searchFilter = QuickSearchFilter.ALL },
-                                    label = { Text("All", fontSize = 11.sp) }
-                                )
-                                FilterChip(
-                                    selected = searchFilter == QuickSearchFilter.BOOKMARKS,
-                                    onClick = { searchFilter = QuickSearchFilter.BOOKMARKS },
-                                    label = { Text("⭐ Bookmarks (${bookmarks.size})", fontSize = 11.sp) }
-                                )
-                                FilterChip(
-                                    selected = searchFilter == QuickSearchFilter.HISTORY,
-                                    onClick = { searchFilter = QuickSearchFilter.HISTORY },
-                                    label = { Text("🕒 History (${history.size})", fontSize = 11.sp) }
-                                )
-                            }
-                            if (searchFilter == QuickSearchFilter.HISTORY && history.isNotEmpty()) {
-                                TextButton(
-                                    onClick = onClearHistory,
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp)
-                                ) {
-                                    Text("Clear All", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-
-                        val matchedBookmarks = if (searchFilter != QuickSearchFilter.HISTORY) {
-                            bookmarks.filter { query.isEmpty() || it.title.lowercase().contains(query) || it.url.lowercase().contains(query) }
-                        } else emptyList()
-
-                        val matchedHistory = if (searchFilter != QuickSearchFilter.BOOKMARKS) {
-                            history.filter { query.isEmpty() || it.title.lowercase().contains(query) || it.url.lowercase().contains(query) }
-                        } else emptyList()
-
-                        if (matchedBookmarks.isEmpty() && matchedHistory.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 16.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("No matching bookmarks or history", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 260.dp)
-                            ) {
-                                if (matchedBookmarks.isNotEmpty()) {
-                                    items(matchedBookmarks, key = { "bm_${it.id}" }) { bm ->
-                                        SearchResultItemRow(
-                                            icon = "⭐",
-                                            title = bm.title,
-                                            url = bm.url,
-                                            onSelect = {
-                                                isUrlBarFocused = false
-                                                focusManager.clearFocus()
-                                                urlTextFieldValue = TextFieldValue(bm.url)
-                                                onNavigateUrl(bm.url)
-                                                activeWebView?.loadUrl(bm.url)
-                                            },
-                                            onDelete = { onDeleteBookmark(bm.id) }
-                                        )
-                                    }
-                                }
-
-                                if (matchedHistory.isNotEmpty()) {
-                                    items(matchedHistory, key = { "hi_${it.id}" }) { hi ->
-                                        SearchResultItemRow(
-                                            icon = "🕒",
-                                            title = hi.title,
-                                            url = hi.url,
-                                            onSelect = {
-                                                isUrlBarFocused = false
-                                                focusManager.clearFocus()
-                                                urlTextFieldValue = TextFieldValue(hi.url)
-                                                onNavigateUrl(hi.url)
-                                                activeWebView?.loadUrl(hi.url)
-                                            },
-                                            onDelete = { onDeleteHistory(hi.id) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                BrowserTopBar(
+                    canGoBack = canGoBack,
+                    onGoBack = { activeWebView?.goBack() },
+                    onToggleAdBlock = onToggleAdBlock,
+                    isAdBlockEnabled = isAdBlockEnabled,
+                    urlTextFieldValue = urlTextFieldValue,
+                    onUrlChange = { urlTextFieldValue = it },
+                    isUrlBarFocused = isUrlBarFocused,
+                    onFocusChange = { isUrlBarFocused = it },
+                    onSubmitUrl = { target ->
+                        isUrlBarFocused = false
+                        focusManager.clearFocus()
+                        urlTextFieldValue = TextFieldValue(target)
+                        onNavigateUrl(target)
+                        activeWebView?.loadUrl(target)
+                    },
+                    onClearUrl = {
+                        urlTextFieldValue = TextFieldValue("")
+                    },
+                    pageProgress = pageProgress,
+                    onReload = { activeWebView?.reload() },
+                    onStop = { activeWebView?.stopLoading() },
+                    isCurrentBookmarked = isCurrentBookmarked,
+                    onToggleBookmark = onToggleBookmark,
+                    detectedMediaCount = detectedMediaCount,
+                    onOpenSniffer = onOpenSniffer,
+                    onOpenMenu = { isMenuOpen = true },
+                    bookmarks = bookmarks,
+                    history = history,
+                    onSelectHistoryOrBookmark = { url ->
+                        isUrlBarFocused = false
+                        focusManager.clearFocus()
+                        urlTextFieldValue = TextFieldValue(url)
+                        onNavigateUrl(url)
+                        activeWebView?.loadUrl(url)
+                    },
+                    onDeleteBookmark = onDeleteBookmark,
+                    onDeleteHistory = onDeleteHistory,
+                    onClearHistory = onClearHistory,
+                    menuContent = {
+                        BrowserMenuSheet(
+                            isMenuOpen = isMenuOpen,
+                            onDismissRequest = { isMenuOpen = false },
+                            adblockRuleCount = adblockRuleCount,
+                            isWebDarkMode = isWebDarkMode,
+                            isDesktopMode = isDesktopMode,
+                            isAdBlockEnabled = isAdBlockEnabled,
+                            themeMode = themeMode,
+                            colorSeed = colorSeed,
+                            currentUrl = activeWebView?.url ?: currentUrl,
+                            clipboardManager = clipboardManager,
+                            onNewIncognitoTab = { onNewTab("https://google.com", true) },
+                            onOpenBookmarksAndHistory = { isUrlBarFocused = true },
+                            onOpenAdblockDialog = { showAdblockDialog = true },
+                            onToggleWebDarkMode = onToggleWebDarkMode,
+                            onToggleDesktopMode = onToggleDesktopMode,
+                            onToggleAdBlock = onToggleAdBlock,
+                            onSetThemeMode = onSetThemeMode,
+                            onSetColorSeed = onSetColorSeed
+                        )
                     }
-                }
+                )
 
-                // Horizontal Tab Bar Strip (sleek, compact)
                 if (!isUrlBarFocused) {
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        items(tabs, key = { it.id }) { tab ->
-                            val isSelected = tab.id == activeTabId
-                            val tabBg = when {
-                                tab.isIncognito && isSelected -> Color(0xFF333333)
-                                tab.isIncognito -> Color(0xFF222222)
-                                isSelected -> MaterialTheme.colorScheme.primaryContainer
-                                else -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
-                            }
-                            val tabFg = when {
-                                tab.isIncognito -> Color.White
-                                isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                            Surface(
-                                shape = CircleShape,
-                                color = tabBg,
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .clickable { onSelectTab(tab.id) }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Text(
-                                        text = (if (tab.isIncognito) "🕶 " else "") + tab.title.ifBlank { if (tab.isIncognito) "Private" else "New Tab" },
-                                        maxLines = 1,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = tabFg,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.widthIn(max = 110.dp)
-                                    )
-                                    if (tabs.size > 1) {
-                                        Text(
-                                            text = "✕",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = tabFg,
-                                            modifier = Modifier
-                                                .clip(CircleShape)
-                                                .clickable { onCloseTab(tab.id) }
-                                                .padding(2.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        item {
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
-                                modifier = Modifier
-                                    .size(26.dp)
-                                    .clip(CircleShape)
-                                    .clickable { onNewTab("https://google.com", false) }
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text("+", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-
-                        item {
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
-                                modifier = Modifier
-                                    .size(26.dp)
-                                    .clip(CircleShape)
-                                    .clickable { onNewTab("https://google.com", true) }
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text("🕶", fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    }
+                    BrowserTabGrid(
+                        tabs = tabs,
+                        activeTabId = activeTabId,
+                        onSelectTab = onSelectTab,
+                        onCloseTab = onCloseTab,
+                        onNewTab = onNewTab
+                    )
                 }
             }
         }
-    }
-}
 
-    // Multi-Tab WebView Pool: Keeps all opened tab WebViews alive in memory
+        // Multi-Tab WebView Pool: Keeps all opened tab WebViews alive in memory
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -1071,7 +509,6 @@ fun BrowserScreen(
                                                     lastTouchY = ev.rawY
                                                     val maxScroll = (contentHeight * density).toInt() - height
                                                     if (maxScroll > minScrollablePx) {
-                                                        // deltaY < 0 means finger dragging up (scrolling down)
                                                         if ((deltaY < 0 && touchAccumDy > 0) || (deltaY > 0 && touchAccumDy < 0)) {
                                                             touchAccumDy = 0f
                                                         }
@@ -1149,23 +586,10 @@ fun BrowserScreen(
                                                     urlTextFieldValue = TextFieldValue(vUrl)
                                                     onNavigateUrl(vUrl)
                                                 }
-                                            }
-                                            if (view != null && newProgress >= 10) {
-                                                if (currentWebDarkMode.value) {
-                                                    applyWebDarkModeToWebView(view, true)
+                                                val vTitle = view?.title.orEmpty()
+                                                if (!vUrl.isNullOrBlank()) {
+                                                    onUpdateTabMeta(vUrl, vTitle)
                                                 }
-                                                val domain = runCatching { Uri.parse(view.url).host }.getOrNull()
-                                                view.evaluateJavascript(com.siphon.app.core.sniffer.SnifferJsInjector.buildUserscript(domain), null)
-                                            }
-                                        }
-
-                                        override fun onReceivedTitle(view: WebView?, title: String?) {
-                                            val vUrl = view?.url ?: tab.url
-                                            val vTitle = title.orEmpty()
-                                            onUpdateTabMeta(vUrl, vTitle)
-                                            if (tab.id == currentActiveTabId.value && !vUrl.isNullOrBlank() && !isUrlBarFocused && vUrl != urlTextFieldValue.text) {
-                                                urlTextFieldValue = TextFieldValue(vUrl)
-                                                onNavigateUrl(vUrl)
                                             }
                                         }
 
@@ -1175,60 +599,38 @@ fun BrowserScreen(
                                             isUserGesture: Boolean,
                                             resultMsg: Message?
                                         ): Boolean {
-                                            if (resultMsg == null || view == null) return false
+                                            if (resultMsg == null) return false
                                             val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
-                                            val tempWebView = WebView(view.context).apply {
-                                                settings.javaScriptEnabled = true
+                                            val popupWebView = WebView(view?.context ?: return false).apply {
                                                 webViewClient = object : WebViewClient() {
-                                                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                                        request?.url?.toString()?.takeIf { it.isNotBlank() }?.let {
-                                                            pendingPopupUrl = it
+                                                    override fun shouldOverrideUrlLoading(v: WebView?, request: WebResourceRequest?): Boolean {
+                                                        val popupUrl = request?.url?.toString()
+                                                        if (!popupUrl.isNullOrBlank()) {
+                                                            pendingPopupUrl = popupUrl
+                                                            destroy()
+                                                            return true
                                                         }
-                                                        post { destroy() }
-                                                        return true
-                                                    }
-
-                                                    @Deprecated("Deprecated in Java")
-                                                    override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                                                        url?.takeIf { it.isNotBlank() }?.let {
-                                                            pendingPopupUrl = it
-                                                        }
-                                                        post { destroy() }
-                                                        return true
-                                                    }
-
-                                                    override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                                                        url?.takeIf { it.isNotBlank() }?.let {
-                                                            pendingPopupUrl = it
-                                                        }
-                                                        post { destroy() }
+                                                        return false
                                                     }
                                                 }
                                             }
-                                            transport.webView = tempWebView
+                                            transport.webView = popupWebView
                                             resultMsg.sendToTarget()
                                             return true
                                         }
                                     }
-                                    setOnScrollChangeListener { _, _, scrollY, _, _ ->
-                                        if (tab.id == currentActiveTabId.value && scrollY <= 10 && !currentBarsVisible.value) {
-                                            onToggleBars(true)
-                                        }
-                                    }
-                                    setDownloadListener { downloadUrl, userAgent, _, _, _ ->
-                                        val headers = if (!userAgent.isNullOrBlank()) mapOf("User-Agent" to userAgent) else emptyMap()
-                                        snifferClient.inspectCandidate(downloadUrl, headers, forceInspect = true)
-                                        onOpenSniffer()
-                                    }
-                                    loadUrl(tab.url)
                                 }
                                 webViewMap[tab.id] = webView
+                                webView.loadUrl(tab.url)
                                 webView
                             },
                             update = { webView ->
-                                webView.visibility = if (isVisible) View.VISIBLE else View.INVISIBLE
-                                webView.setBackgroundColor(webViewBgArgb)
                                 webViewMap[tab.id] = webView
+                                webView.visibility = if (isVisible) View.VISIBLE else View.INVISIBLE
+                                if (isVisible && isPageReady) {
+                                    canGoBack = webView.canGoBack()
+                                    canGoForward = webView.canGoForward()
+                                }
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -1238,45 +640,23 @@ fun BrowserScreen(
         }
 
         if (pendingPopupUrl != null) {
-            val urlToOpen = pendingPopupUrl!!
-            AlertDialog(
+            val popup = pendingPopupUrl ?: ""
+            androidx.compose.material3.AlertDialog(
                 onDismissRequest = { pendingPopupUrl = null },
-                title = { Text("Open Popup") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("A page wants to open:")
-                        Text(
-                            text = urlToOpen,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                },
+                title = { Text("Open Link in New Tab?") },
+                text = { Text(popup, maxLines = 3, overflow = TextOverflow.Ellipsis) },
                 confirmButton = {
-                    Button(
-                        onClick = {
-                            onNewTab(urlToOpen, false)
-                            pendingPopupUrl = null
-                        }
-                    ) {
-                        Text("New Tab")
+                    TextButton(onClick = {
+                        val activeIsIncognito = tabs.firstOrNull { it.id == activeTabId }?.isIncognito ?: false
+                        onNewTab(popup, activeIsIncognito)
+                        pendingPopupUrl = null
+                    }) {
+                        Text("Open")
                     }
                 },
                 dismissButton = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { pendingPopupUrl = null }) {
-                            Text("Cancel")
-                        }
-                        FilledTonalButton(
-                            onClick = {
-                                activeWebView?.loadUrl(urlToOpen)
-                                pendingPopupUrl = null
-                            }
-                        ) {
-                            Text("Current Tab")
-                        }
+                    TextButton(onClick = { pendingPopupUrl = null }) {
+                        Text("Dismiss")
                     }
                 }
             )
@@ -1291,143 +671,6 @@ fun BrowserScreen(
                     showAdblockDialog = false
                 }
             )
-        }
-    }
-}
-
-@Composable
-private fun AdblockSubscriptionDialog(
-    currentRuleCount: Int,
-    onDismiss: () -> Unit,
-    onRefresh: (String) -> Unit
-) {
-    val presets = listOf(
-        "AdAway Hosts (Recommended)" to FastHostFilter.DEFAULT_SUBSCRIPTION_URL,
-        "AdGuard Mobile Filter" to "https://filters.adtidy.org/extension/chromium/filters/11.txt",
-        "EasyList Standard" to "https://easylist.to/easylist/easylist.txt"
-    )
-    var selectedUrl by remember { mutableStateOf(presets.first().second) }
-    var customUrl by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Adblock Subscriptions", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
-        text = {
-            Column {
-                Text(
-                    text = "Active Rules: $currentRuleCount hosts blocked",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Text("Select Subscription Source:", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                presets.forEach { (name, url) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                selectedUrl = url
-                                customUrl = ""
-                            }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = selectedUrl == url && customUrl.isEmpty(),
-                            onClick = {
-                                selectedUrl = url
-                                customUrl = ""
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(name, fontSize = 12.sp)
-                    }
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = customUrl,
-                    onValueChange = {
-                        customUrl = it
-                        selectedUrl = it
-                    },
-                    label = { Text("Custom Filter / Hosts URL", fontSize = 11.sp) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val target = customUrl.ifBlank { selectedUrl }
-                    onRefresh(target)
-                }
-            ) {
-                Text("Refresh & Apply")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close")
-            }
-        }
-    )
-}
-
-private fun sanitizeUrl(input: String): String {
-    val trimmed = input.trim()
-    return when {
-        trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
-        trimmed.contains(".") && !trimmed.contains(" ") -> "https://$trimmed"
-        else -> "https://www.google.com/search?q=" + Uri.encode(trimmed)
-    }
-}
-
-@Composable
-private fun SearchResultItemRow(
-    icon: String,
-    title: String,
-    url: String,
-    onSelect: () -> Unit,
-    onDelete: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onSelect() }
-            .padding(vertical = 6.dp, horizontal = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(icon, fontSize = 12.sp)
-            Spacer(modifier = Modifier.width(8.dp))
-            Column {
-                Text(
-                    text = title.ifBlank { url },
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = url,
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-        IconButton(
-            onClick = onDelete,
-            modifier = Modifier.size(22.dp)
-        ) {
-            Text("✕", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

@@ -52,15 +52,38 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
+import com.siphon.app.SiphonApp
 import com.siphon.app.data.db.DownloadState
 import com.siphon.app.ui.browser.BrowserScreen
+import com.siphon.app.ui.browser.BrowserViewModel
 import com.siphon.app.ui.queue.QueueScreen
+import com.siphon.app.ui.queue.QueueViewModel
 import com.siphon.app.ui.sniffer.SnifferSheet
 import com.siphon.app.ui.theme.SiphonTheme
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+enum class AppTab {
+    BROWSER,
+    QUEUE
+}
 
 class MainActivity : ComponentActivity() {
 
-    private val viewModel: MainViewModel by viewModels()
+    private val browserViewModel: BrowserViewModel by viewModels {
+        (application as SiphonApp).container.viewModelFactory
+    }
+
+    private val queueViewModel: QueueViewModel by viewModels {
+        (application as SiphonApp).container.viewModelFactory
+    }
+
+    private val _currentTab = MutableStateFlow(AppTab.BROWSER)
+    val currentTab = _currentTab.asStateFlow()
+
+    fun selectTab(tab: AppTab) {
+        _currentTab.value = tab
+    }
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -74,10 +97,16 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
 
         setContent {
-            val themeMode by viewModel.themeMode.collectAsState()
-            val colorSeed by viewModel.colorSeed.collectAsState()
+            val themeMode by browserViewModel.themeMode.collectAsState()
+            val colorSeed by browserViewModel.colorSeed.collectAsState()
+            val tab by currentTab.collectAsState()
             SiphonTheme(themeMode = themeMode, colorSeed = colorSeed) {
-                MainContent(viewModel = viewModel)
+                MainContent(
+                    browserViewModel = browserViewModel,
+                    queueViewModel = queueViewModel,
+                    currentTab = tab,
+                    onSelectTab = { selectTab(it) }
+                )
             }
         }
     }
@@ -91,7 +120,8 @@ class MainActivity : ComponentActivity() {
         if (intent == null) return
         val url = extractUrlFromIntent(intent)
         if (!url.isNullOrBlank()) {
-            viewModel.loadUrlAndOpenSniffer(url)
+            selectTab(AppTab.BROWSER)
+            browserViewModel.loadUrlAndOpenSniffer(url)
         }
     }
 
@@ -145,30 +175,37 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainContent(viewModel: MainViewModel) {
+fun MainContent(
+    browserViewModel: BrowserViewModel,
+    queueViewModel: QueueViewModel,
+    currentTab: AppTab,
+    onSelectTab: (AppTab) -> Unit
+) {
     var isBarsVisible by remember { mutableStateOf(true) }
-    val currentTab by viewModel.currentTab.collectAsState()
-    val browserTabs by viewModel.browserTabs.collectAsState()
-    val activeTabId by viewModel.activeTabId.collectAsState()
-    val browserUrl by viewModel.browserUrl.collectAsState()
-    val detectedMedia by viewModel.detectedMedia.collectAsState()
-    val rebindTarget by viewModel.rebindTarget.collectAsState()
-    val isAdBlockEnabled by viewModel.isAdBlockEnabled.collectAsState()
-    val isWebDarkMode by viewModel.isWebDarkMode.collectAsState()
-    val isDesktopMode by viewModel.isDesktopMode.collectAsState()
-    val themeMode by viewModel.themeMode.collectAsState()
-    val colorSeed by viewModel.colorSeed.collectAsState()
-    val isSnifferSheetOpen by viewModel.isSnifferSheetOpen.collectAsState()
-    val downloads by viewModel.downloads.collectAsState()
-    val chunksMap by viewModel.chunksMap.collectAsState()
-    val maxConcurrentDownloads by viewModel.maxConcurrentDownloads.collectAsState()
-    val workersPerDownload by viewModel.workersPerDownload.collectAsState()
-    val bandwidthLimitBytes by viewModel.bandwidthLimitBytes.collectAsState()
-    val isWifiOnly by viewModel.isWifiOnly.collectAsState()
-    val bookmarks by viewModel.bookmarks.collectAsState()
-    val history by viewModel.history.collectAsState()
-    val isCurrentBookmarked by viewModel.isCurrentUrlBookmarked.collectAsState()
-    val adblockRuleCount by viewModel.adblockRuleCount.collectAsState()
+
+    val browserTabs by browserViewModel.browserTabs.collectAsState()
+    val activeTabId by browserViewModel.activeTabId.collectAsState()
+    val browserUrl by browserViewModel.browserUrl.collectAsState()
+    val detectedMedia by browserViewModel.detectedMedia.collectAsState()
+    val rebindTarget by browserViewModel.rebindTarget.collectAsState()
+    val isAdBlockEnabled by browserViewModel.isAdBlockEnabled.collectAsState()
+    val browserPrefs by browserViewModel.browserPreferences.collectAsState()
+    val themeMode by browserViewModel.themeMode.collectAsState()
+    val colorSeed by browserViewModel.colorSeed.collectAsState()
+    val isSnifferSheetOpen by browserViewModel.isSnifferSheetOpen.collectAsState()
+    val bookmarks by browserViewModel.bookmarks.collectAsState()
+    val history by browserViewModel.history.collectAsState()
+    val isCurrentBookmarked by browserViewModel.isCurrentUrlBookmarked.collectAsState()
+    val adblockRuleCount by browserViewModel.adblockRuleCount.collectAsState()
+
+    val downloads by queueViewModel.downloads.collectAsState()
+    val chunksMap by queueViewModel.chunksMap.collectAsState()
+    val concurrencySettings by queueViewModel.concurrencySettings.collectAsState()
+    val queueFilter by queueViewModel.filter.collectAsState()
+    val queueSortOption by queueViewModel.sortOption.collectAsState()
+    val queueSearchQuery by queueViewModel.searchQuery.collectAsState()
+    val queueSelectedIds by queueViewModel.selectedIds.collectAsState()
+    val queueIsSelectionMode by queueViewModel.isSelectionMode.collectAsState()
 
     val activeDownloadsCount = downloads.count {
         it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED || it.state == DownloadState.MERGING
@@ -192,13 +229,13 @@ fun MainContent(viewModel: MainViewModel) {
                     currentUrl = browserUrl,
                     tabs = browserTabs,
                     activeTabId = activeTabId,
-                    snifferClient = viewModel.snifferClient,
+                    snifferClient = browserViewModel.snifferClient,
                     detectedMediaCount = detectedMedia.size,
                     isAdBlockEnabled = isAdBlockEnabled,
                     rebindTarget = rebindTarget,
                     isBarsVisible = isBarsVisible,
-                    isWebDarkMode = isWebDarkMode,
-                    isDesktopMode = isDesktopMode,
+                    isWebDarkMode = browserPrefs.webDarkMode,
+                    isDesktopMode = browserPrefs.desktopMode,
                     themeMode = themeMode,
                     colorSeed = colorSeed,
                     isCurrentBookmarked = isCurrentBookmarked,
@@ -206,28 +243,28 @@ fun MainContent(viewModel: MainViewModel) {
                     history = history,
                     adblockRuleCount = adblockRuleCount,
                     onToggleBars = { isBarsVisible = it },
-                    onToggleWebDarkMode = { viewModel.toggleWebDarkMode() },
-                    onToggleDesktopMode = { viewModel.toggleDesktopMode() },
-                    onSetThemeMode = { viewModel.setThemeMode(it) },
-                    onSetColorSeed = { viewModel.setColorSeed(it) },
-                    onNavigateUrl = { viewModel.setBrowserUrl(it) },
-                    onToggleAdBlock = { viewModel.toggleAdBlock() },
-                    onOpenSniffer = { viewModel.openSnifferSheet() },
-                    onCancelRebind = { viewModel.cancelRebindFlow() },
-                    onNewTab = { url, isIncognito -> viewModel.openNewBrowserTab(url, isIncognito) },
-                    onSelectTab = { viewModel.switchBrowserTab(it) },
-                    onCloseTab = { viewModel.closeBrowserTab(it) },
+                    onToggleWebDarkMode = { browserViewModel.toggleWebDarkMode() },
+                    onToggleDesktopMode = { browserViewModel.toggleDesktopMode() },
+                    onSetThemeMode = { browserViewModel.setThemeMode(it) },
+                    onSetColorSeed = { browserViewModel.setColorSeed(it) },
+                    onNavigateUrl = { browserViewModel.setBrowserUrl(it) },
+                    onToggleAdBlock = { browserViewModel.toggleAdBlock() },
+                    onOpenSniffer = { browserViewModel.openSnifferSheet() },
+                    onCancelRebind = { browserViewModel.cancelRebindFlow() },
+                    onNewTab = { url, isIncognito -> browserViewModel.openNewBrowserTab(url, isIncognito) },
+                    onSelectTab = { browserViewModel.switchBrowserTab(it) },
+                    onCloseTab = { browserViewModel.closeBrowserTab(it) },
                     onToggleBookmark = {
                         val activeTab = browserTabs.firstOrNull { it.id == activeTabId }
                         val title = activeTab?.title.orEmpty()
-                        viewModel.toggleBookmark(browserUrl, title)
+                        browserViewModel.toggleBookmark(browserUrl, title)
                     },
-                    onDeleteBookmark = { viewModel.deleteBookmark(it) },
-                    onDeleteHistory = { viewModel.deleteHistory(it) },
-                    onClearHistory = { viewModel.clearHistory() },
-                    onRefreshAdblock = { viewModel.refreshAdblockSubscription(it) },
-                    onUpdateTabMeta = { url, title -> viewModel.updateActiveTabMeta(url, title) },
-                    onRegisterDomScan = { scanner -> viewModel.onRequestDomScan = scanner }
+                    onDeleteBookmark = { browserViewModel.deleteBookmark(it) },
+                    onDeleteHistory = { browserViewModel.deleteHistory(it) },
+                    onClearHistory = { browserViewModel.clearHistory() },
+                    onRefreshAdblock = { browserViewModel.refreshAdblockSubscription(it) },
+                    onUpdateTabMeta = { url, title -> browserViewModel.updateActiveTabMeta(url, title) },
+                    onRegisterDomScan = { scanner -> browserViewModel.onRequestDomScan = scanner }
                 )
             }
 
@@ -240,23 +277,38 @@ fun MainContent(viewModel: MainViewModel) {
                     QueueScreen(
                         downloads = downloads,
                         chunksMap = chunksMap,
-                        maxConcurrentDownloads = maxConcurrentDownloads,
-                        workersPerDownload = workersPerDownload,
-                        bandwidthLimitBytes = bandwidthLimitBytes,
-                        isWifiOnly = isWifiOnly,
-                        onPause = { viewModel.pauseDownload(it) },
-                        onResume = { viewModel.resumeDownload(it) },
-                        onCancel = { viewModel.cancelDownload(it) },
-                        onDelete = { id, deleteFile -> viewModel.deleteDownload(id, deleteFile) },
-                        onRebind = { viewModel.startRebindFlow(it) },
-                        onSaveSettings = { maxD, w, limit, wifi -> viewModel.setConcurrency(maxD, w, limit, wifi) },
-                        onClearCompleted = { viewModel.clearCompleted() },
-                        onPauseAll = { viewModel.pauseAll() },
-                        onResumeAll = { viewModel.resumeAll() },
-                        onRetry = { viewModel.retryDownload(it) },
-                        onRename = { id, name -> viewModel.renameDownload(id, name) },
-                        onBulkDelete = { ids, deleteFiles -> ids.forEach { viewModel.deleteDownload(it, deleteFiles) } },
-                        onBulkCancel = { ids -> ids.forEach { viewModel.cancelDownload(it) } }
+                        maxConcurrentDownloads = concurrencySettings.maxDownloads,
+                        workersPerDownload = concurrencySettings.workers,
+                        bandwidthLimitBytes = concurrencySettings.bandwidthLimit,
+                        isWifiOnly = concurrencySettings.wifiOnly,
+                        selectedFilter = queueFilter,
+                        onSelectFilter = { queueViewModel.setFilter(it) },
+                        selectedSort = queueSortOption,
+                        onSelectSort = { queueViewModel.setSortOption(it) },
+                        searchQuery = queueSearchQuery,
+                        onSearchQueryChange = { queueViewModel.setSearchQuery(it) },
+                        isSelectionMode = queueIsSelectionMode,
+                        onSetSelectionMode = { queueViewModel.setSelectionMode(it) },
+                        selectedIds = queueSelectedIds,
+                        onToggleSelectId = { queueViewModel.toggleSelection(it) },
+                        onSelectAllIds = { queueViewModel.selectAll(it) },
+                        onClearSelection = { queueViewModel.clearSelection() },
+                        onPause = { queueViewModel.pauseDownload(it) },
+                        onResume = { queueViewModel.resumeDownload(it) },
+                        onCancel = { queueViewModel.cancelDownload(it) },
+                        onDelete = { id, deleteFile -> queueViewModel.deleteDownload(id, deleteFile) },
+                        onRebind = { download ->
+                            onSelectTab(AppTab.BROWSER)
+                            browserViewModel.startRebindFlow(download)
+                        },
+                        onSaveSettings = { maxD, w, limit, wifi -> queueViewModel.setConcurrency(maxD, w, limit, wifi) },
+                        onClearCompleted = { queueViewModel.clearCompleted() },
+                        onPauseAll = { queueViewModel.pauseAll() },
+                        onResumeAll = { queueViewModel.resumeAll() },
+                        onRetry = { queueViewModel.retryDownload(it) },
+                        onRename = { id, name -> queueViewModel.renameDownload(id, name) },
+                        onBulkDelete = { ids, deleteFiles -> queueViewModel.bulkDelete(ids, deleteFiles) },
+                        onBulkCancel = { ids -> queueViewModel.bulkCancel(ids) }
                     )
                 }
             }
@@ -308,7 +360,7 @@ fun MainContent(viewModel: MainViewModel) {
                             shape = CircleShape,
                             modifier = Modifier
                                 .clip(CircleShape)
-                                .clickable { viewModel.selectTab(AppTab.BROWSER) }
+                                .clickable { onSelectTab(AppTab.BROWSER) }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 7.dp),
@@ -343,7 +395,7 @@ fun MainContent(viewModel: MainViewModel) {
                             shape = CircleShape,
                             modifier = Modifier
                                 .clip(CircleShape)
-                                .clickable { viewModel.selectTab(AppTab.QUEUE) }
+                                .clickable { onSelectTab(AppTab.QUEUE) }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 7.dp),
@@ -381,17 +433,17 @@ fun MainContent(viewModel: MainViewModel) {
                 detectedMedia = detectedMedia,
                 rebindTarget = rebindTarget,
                 activeTabTitle = activeTabTitle,
-                onDismiss = { viewModel.closeSnifferSheet() },
-                onClearMedia = { viewModel.clearDetectedMedia() },
-                onRefreshMedia = { viewModel.refreshDetectedMedia() },
+                onDismiss = { browserViewModel.closeSnifferSheet() },
+                onClearMedia = { browserViewModel.clearDetectedMedia() },
+                onRefreshMedia = { browserViewModel.refreshDetectedMedia() },
                 onDownloadSelected = { requests ->
                     val target = rebindTarget
                     if (target != null) {
                         val first = requests.firstOrNull() ?: return@SnifferSheet
-                        viewModel.rebindDownload(target, first.media, first.selectedVariantUrl)
+                        browserViewModel.rebindDownload(target, first.media, first.selectedVariantUrl)
                     } else {
                         requests.forEach { req ->
-                            viewModel.startDownload(
+                            browserViewModel.startDownload(
                                 media = req.media,
                                 customDisplayName = req.customFileName,
                                 selectedVariantUrl = req.selectedVariantUrl
