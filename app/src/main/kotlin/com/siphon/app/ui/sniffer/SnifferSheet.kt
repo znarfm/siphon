@@ -84,7 +84,8 @@ fun SnifferSheet(
         if (useTabTitleAsFilename && cleanTab != null) {
             cleanTab
         } else {
-            val selectedVideo = detectedMedia.firstOrNull { !it.isSubtitle && selectedIds[it.id] == true }
+            val selectedVideo = detectedMedia.firstOrNull { !it.isSubtitle && !it.isAudio && selectedIds[it.id] == true }
+                ?: detectedMedia.firstOrNull { !it.isSubtitle && !it.isAudio }
                 ?: detectedMedia.firstOrNull { !it.isSubtitle }
             selectedVideo?.displayName?.substringBeforeLast('.')
         }
@@ -284,6 +285,7 @@ private fun buildDefaultFileName(
 ): String {
     val defaultExt = when {
         media.isSubtitle -> media.displayName.substringAfterLast('.', "vtt")
+        media.isAudio -> media.displayName.substringAfterLast('.', if (media.mediaType == DownloadType.HLS) "m4a" else "mp3")
         media.mediaType == DownloadType.HLS -> "mp4"
         else -> media.displayName.substringAfterLast('.', "mp4")
     }
@@ -351,7 +353,7 @@ private fun SniffedMediaItemCard(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = media.displayName,
+                        text = (if (media.isAudio) "🎵 " else if (media.isSubtitle) "💬 " else "🎬 ") + media.displayName,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
@@ -384,6 +386,7 @@ private fun SniffedMediaItemCard(
                         Text(
                             text = "$durationLabel$langLabel • " + when {
                                 media.isSubtitle -> media.mimeType
+                                media.isAudio && media.mediaType == DownloadType.HLS -> "audio/mp4"
                                 media.mediaType == DownloadType.HLS -> "video/mp4"
                                 else -> media.mimeType
                             },
@@ -400,6 +403,11 @@ private fun SniffedMediaItemCard(
                 val (badgeText, badgeBg, badgeFg) = when {
                     media.isSubtitle -> Triple(
                         "SUB",
+                        MaterialTheme.colorScheme.tertiaryContainer,
+                        MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    media.isAudio -> Triple(
+                        "AUDIO",
                         MaterialTheme.colorScheme.tertiaryContainer,
                         MaterialTheme.colorScheme.onTertiaryContainer
                     )

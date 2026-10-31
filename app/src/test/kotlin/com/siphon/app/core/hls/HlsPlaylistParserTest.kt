@@ -48,6 +48,21 @@ class HlsPlaylistParserTest {
     }
 
     @Test
+    fun testParseAudioOnlyMasterPlaylist() {
+        val audioMaster = """
+            #EXTM3U
+            #EXT-X-VERSION:4
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-high",NAME="Stereo",DEFAULT=YES,URI="audio/stereo.m3u8"
+        """.trimIndent()
+
+        assertTrue(HlsPlaylistParser.isMasterPlaylist(audioMaster))
+        val parsed = HlsPlaylistParser.parseMasterPlaylist("https://radio.example.com/master.m3u8", audioMaster)
+        assertEquals(1, parsed.audioTracks.size)
+        assertEquals(1, parsed.variants.size)
+        assertEquals("https://radio.example.com/audio/stereo.m3u8", parsed.variants[0].url)
+    }
+
+    @Test
     fun testParseMediaPlaylistWithAes128AndSegments() {
         val mediaContent = """
             #EXTM3U

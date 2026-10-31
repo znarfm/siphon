@@ -71,15 +71,27 @@ class HlsQueueEngine(
             download.displayName.endsWith(".vtt", ignoreCase = true) ||
             download.displayName.endsWith(".srt", ignoreCase = true)
 
+        val isAudioDownload = download.mimeType.startsWith("audio/") ||
+            download.displayName.endsWith(".mp3", ignoreCase = true) ||
+            download.displayName.endsWith(".m4a", ignoreCase = true) ||
+            download.displayName.endsWith(".aac", ignoreCase = true)
+
         val targetMime = when {
             isSubDownload -> download.mimeType.ifBlank { "text/vtt" }
+            isAudioDownload -> if (download.displayName.endsWith(".mp3", ignoreCase = true)) "audio/mpeg" else "audio/mp4"
             download.type == DownloadType.HLS || download.displayName.endsWith(".mp4", ignoreCase = true) -> "video/mp4"
             else -> download.mimeType
         }
-        val targetName = if (targetMime == "video/mp4" && !download.displayName.endsWith(".mp4", ignoreCase = true)) {
-            "${download.displayName.substringBeforeLast('.')}.mp4"
-        } else {
-            download.displayName
+        val targetName = when {
+            isAudioDownload -> {
+                if (!download.displayName.endsWith(".m4a", ignoreCase = true) && !download.displayName.endsWith(".mp3", ignoreCase = true)) {
+                    "${download.displayName.substringBeforeLast('.')}.m4a"
+                } else download.displayName
+            }
+            targetMime == "video/mp4" && !download.displayName.endsWith(".mp4", ignoreCase = true) -> {
+                "${download.displayName.substringBeforeLast('.')}.mp4"
+            }
+            else -> download.displayName
         }
 
         val destUri = if (!download.destinationUri.isNullOrBlank()) {

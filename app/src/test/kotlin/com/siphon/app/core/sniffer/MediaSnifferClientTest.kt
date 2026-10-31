@@ -66,8 +66,36 @@ class MediaSnifferClientTest {
     @Test
     fun testExtractDisplayNameReplacesM3u8WithMp4() {
         assertEquals("index.mp4", MediaSnifferClient.extractDisplayNameFromUrl("https://example.com/movie/index.m3u8", "fallback"))
+        assertEquals("podcast.m4a", MediaSnifferClient.extractDisplayNameFromUrl("https://example.com/audio/podcast.m3u8", "fallback", isAudio = true))
         assertEquals("track.mp3", MediaSnifferClient.extractDisplayNameFromUrl("https://example.com/audio/track.mp3", "fallback"))
         assertEquals("fallback", MediaSnifferClient.extractDisplayNameFromUrl("https://example.com/", "fallback"))
+    }
+
+    @Test
+    fun testAudioDetection() {
+        assertTrue(MediaSnifferClient.isAudioUrl("https://example.com/podcast/ep1.mp3"))
+        assertTrue(MediaSnifferClient.isAudioUrl("https://example.com/radio/stream.aac"))
+        assertTrue(MediaSnifferClient.isAudioUrl("https://example.com/track.flac"))
+        assertFalse(MediaSnifferClient.isAudioUrl("https://example.com/video.mp4"))
+
+        assertTrue(MediaSnifferClient.isAudioMime("audio/mpeg"))
+        assertTrue(MediaSnifferClient.isAudioMime("audio/mp4"))
+        assertTrue(MediaSnifferClient.isAudioMime("application/ogg"))
+        assertFalse(MediaSnifferClient.isAudioMime("video/mp4"))
+
+        assertTrue(MediaSnifferClient.isAudioHls("#EXTINF:10.0,\nseg1.aac", "https://radio.example.com/live.m3u8"))
+        assertTrue(MediaSnifferClient.isAudioHls("#EXT-X-MEDIA:TYPE=AUDIO,NAME=\"Stream\"", "https://example.com/stream.m3u8"))
+        assertFalse(MediaSnifferClient.isAudioHls("#EXTINF:10.0,\nseg1.ts", "https://example.com/video.m3u8"))
+    }
+
+    @Test
+    fun testSnifferJsInjectorContainsBypassAndInterception() {
+        val js = SnifferJsInjector.buildUserscript("soundcloud.com")
+        assertTrue(js.contains("__siphon_sniffer__"))
+        assertTrue(js.contains("WebSocket"))
+        assertTrue(js.contains("fetch"))
+        assertTrue(js.contains("canRunAds"))
+        assertTrue(js.contains("__sc_hydration"))
     }
 
     @Test

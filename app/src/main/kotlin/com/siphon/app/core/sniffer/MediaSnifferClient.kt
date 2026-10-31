@@ -268,7 +268,9 @@ class MediaSnifferClient(
             }
         }
 
-        val displayName = extractDisplayNameFromUrl(url, "stream.m3u8")
+        val isAudioStream = isAudioHls(bodyText, url) ||
+            (rawVariants.isNotEmpty() && rawVariants.all { it.resolution == null && it.codecs?.startsWith("mp4a") == true })
+        val displayName = extractDisplayNameFromUrl(url, if (isAudioStream) "audio.m4a" else "stream.m3u8", isAudio = isAudioStream)
 
         var durationSec = 0.0
         val isMaster = rawVariants.isNotEmpty()
@@ -347,12 +349,13 @@ class MediaSnifferClient(
             url = url,
             sourcePageUrl = currentPageUrl,
             mediaType = DownloadType.HLS,
-            mimeType = "application/vnd.apple.mpegurl",
+            mimeType = if (isAudioStream) "audio/mp4" else "application/vnd.apple.mpegurl",
             displayName = displayName,
             totalBytes = estimatedTotalBytes,
             headers = headersMap,
             variants = enrichedVariants,
-            durationSec = durationSec
+            durationSec = durationSec,
+            isAudio = isAudioStream
         )
 
         _detectedMedia.update { list ->
@@ -382,8 +385,9 @@ class MediaSnifferClient(
         }
 
         val isSub = isSubtitleUrl(probeResult.finalUrl) || isSubtitleUrl(url) || isSubtitleMime(mime)
+        val isAudio = isAudioUrl(probeResult.finalUrl) || isAudioUrl(url) || isAudioMime(mime)
         val isMediaMime = mime.startsWith("video/") || mime.startsWith("audio/") ||
-            mime == "application/octet-stream" || isSub || forceInspect
+            mime == "application/octet-stream" || isSub || isAudio || forceInspect
 
         if (probeResult.totalBytes <= 0 && !isMediaMime) {
             return
@@ -394,7 +398,7 @@ class MediaSnifferClient(
         val displayName = if (isSub) {
             probeResult.suggestedFilename ?: buildSubtitleDisplayName(probeResult.finalUrl, hintLabel, lang, ext)
         } else {
-            probeResult.suggestedFilename ?: extractDisplayNameFromUrl(url, "media")
+            probeResult.suggestedFilename ?: extractDisplayNameFromUrl(url, if (isAudio) "audio.mp3" else "media", isAudio = isAudio)
         }
 
         val resolvedMime = if (isSub && (mime == "application/octet-stream" || mime.startsWith("text/plain"))) {
@@ -412,6 +416,7 @@ class MediaSnifferClient(
             totalBytes = probeResult.totalBytes,
             headers = headersMap,
             isSubtitle = isSub,
+            isAudio = isAudio,
             language = lang
         )
 
@@ -472,6 +477,10 @@ class MediaSnifferClient(
             "mp4", "mkv", "webm", "flv", "avi", "mov", "m4v",
             "m4a", "mp3", "aac", "opus", "flac", "wav", "ogg",
             "m3u8", "mpd"
+        )
+
+        private val AUDIO_EXTENSIONS = setOf(
+            "mp3", "m4a", "aac", "ogg", "opus", "wav", "flac"
         )
 
         private val SUBTITLE_EXTENSIONS = setOf(
@@ -595,16 +604,215 @@ class MediaSnifferClient(
             return builder.fragment(null).build().toString()
         }
 
-        fun extractDisplayNameFromUrl(url: String, fallback: String): String {
+        fun isAudioUrl(url: String): Boolean {
+            val path = runCatching<String?> {
+                url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
+            }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+            val ext = path.substringAfterLast('.', "")
+            return ext in AUDIO_EXTENSIONS
+        }
+
+        fun isAudioMime(mime: String): Boolean {
+            val m = mime.lowercase(Locale.ROOT)
+            return m.startsWith("audio/") || m == "application/ogg" || m.contains("audio")
+        }
+
+        fun isAudioHls(content: String, url: String): Boolean {
+            val lower = content.lowercase(Locale.ROOT)
+            val lowerUrl = url.lowercase(Locale.ROOT)
+            if (lowerUrl.contains("audio") || lowerUrl.contains("podcast") || lowerUrl.contains("radio") || lowerUrl.contains("sound")) return true
+            if (lower.contains("type=audio") && !lower.contains("type=video") && !lower.contains("resolution=")) return true
+            if (lower.contains(".aac") || lower.contains(".mp3") || lower.contains(".m4a")) return true
+            return false
+        }
+
+        fun extractDisplayNameFromUrl(url: String, fallback: String, isAudio: Boolean = false): String {
             val path = runCatching { Uri.parse(url).path }.getOrNull()
                 ?: url.substringBefore('?').substringBefore('#')
             val rawName = path.substringAfterLast('/', "").trim()
             val name = if (rawName.isNotBlank()) rawName else fallback
             return if (name.endsWith(".m3u8", ignoreCase = true)) {
-                name.substringBeforeLast('.') + ".mp4"
+                val base = name.substringBeforeLast('.')
+                if (isAudio) "$base.m4a" else "$base.mp4"
             } else {
                 name
             }
         }
+    }
+}
+
+class SiphonSnifferBridge(
+    private val client: MediaSnifferClient
+) {
+    @android.webkit.JavascriptInterface
+    fun postCandidate(url: String?, headersJson: String?, lang: String?, label: String?) {
+        if (url.isNullOrBlank()) return
+        val headers = if (!headersJson.isNullOrBlank()) {
+            runCatching {
+                val map = mutableMapOf<String, String>()
+                val json = org.json.JSONObject(headersJson)
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    map[k] = json.optString(k)
+                }
+                map
+            }.getOrDefault(emptyMap())
+        } else emptyMap()
+        client.inspectCandidate(url, headers, lang, label)
+    }
+}
+
+object SnifferJsInjector {
+    fun buildUserscript(domain: String?): String {
+        val domainHook = when {
+            domain?.contains("soundcloud.com") == true -> """
+                try {
+                    if (window.__sc_hydration) {
+                        window.__sc_hydration.forEach(function(item) {
+                            if (item.data && item.data.media && item.data.media.transcodings) {
+                                item.data.media.transcodings.forEach(function(t) {
+                                    if (t.url) notify(t.url);
+                                });
+                            }
+                        });
+                    }
+                } catch(e) {}
+            """.trimIndent()
+            domain?.contains("twitch.tv") == true -> """
+                try {
+                    document.querySelectorAll('[data-a-target="video-player"]').forEach(function(el) {
+                        el.style.display = 'block';
+                    });
+                } catch(e) {}
+            """.trimIndent()
+            else -> """
+                try {
+                    var selectors = ['.play-button', '.vjs-big-play-button', '.jw-display-icon-display', '[class*="play-btn"]', '.video-overlay'];
+                    selectors.forEach(function(sel) {
+                        document.querySelectorAll(sel).forEach(function(btn) {
+                            if (btn && typeof btn.click === 'function' && !btn.__siphon_clicked__) {
+                                btn.__siphon_clicked__ = true;
+                                btn.click();
+                            }
+                        });
+                    });
+                } catch(e) {}
+            """.trimIndent()
+        }
+
+        return """
+            (function() {
+                if (window.__siphon_injected__) return;
+                window.__siphon_injected__ = true;
+
+                try {
+                    window.canRunAds = true;
+                    window.isAdBlockActive = false;
+                    window.adBlockDetected = false;
+                    if (!window.adsbygoogle) {
+                        window.adsbygoogle = { loaded: true, push: function() {} };
+                    }
+                    var origGetComputedStyle = window.getComputedStyle;
+                    window.getComputedStyle = function(el, pseudo) {
+                        var style = origGetComputedStyle.apply(this, arguments);
+                        if (el && ((el.id && el.id.indexOf('ad') !== -1) || (el.className && typeof el.className === 'string' && el.className.indexOf('ad') !== -1))) {
+                            return new Proxy(style, {
+                                get: function(target, prop) {
+                                    if (prop === 'display') return 'block';
+                                    if (prop === 'visibility') return 'visible';
+                                    if (prop === 'height') return target[prop] === '0px' ? '100px' : target[prop];
+                                    return target[prop];
+                                }
+                            });
+                        }
+                        return style;
+                    };
+                } catch(e) {}
+
+                function notify(url, headers, lang, label) {
+                    if (!url || typeof url !== 'string') return;
+                    if (url.indexOf('blob:') === 0 || url.indexOf('javascript:') === 0 || url.indexOf('data:') === 0) return;
+                    try {
+                        if (window.__siphon_sniffer__ && window.__siphon_sniffer__.postCandidate) {
+                            window.__siphon_sniffer__.postCandidate(url, headers ? JSON.stringify(headers) : null, lang || null, label || null);
+                        }
+                    } catch(e) {}
+                }
+
+                var MEDIA_REGEX = /\.(m3u8|mpd|mp4|webm|mkv|m4v|mp3|m4a|aac|ogg|opus|wav|flac|vtt|srt)(\?[^"'\s]*)?$/i;
+                var RPC_STREAM_REGEX = /https?:\/\/[^\s"'<>]+\.(?:m3u8|mpd|mp4|webm|m4v|mp3|m4a|aac|ogg|opus|flac|wav)[\w\-.~:/?#\[\]@!$&'()*+,;=]*/gi;
+
+                function checkUrl(url) {
+                    if (typeof url === 'string' && MEDIA_REGEX.test(url)) {
+                        notify(url);
+                    }
+                }
+
+                if (window.WebSocket) {
+                    var OrigWebSocket = window.WebSocket;
+                    window.WebSocket = function(url, protocols) {
+                        var ws = protocols ? new OrigWebSocket(url, protocols) : new OrigWebSocket(url);
+                        try {
+                            ws.addEventListener('message', function(event) {
+                                if (typeof event.data === 'string') {
+                                    var matches = event.data.match(RPC_STREAM_REGEX);
+                                    if (matches) {
+                                        for (var i = 0; i < matches.length; i++) {
+                                            notify(matches[i]);
+                                        }
+                                    }
+                                }
+                            });
+                        } catch(e) {}
+                        return ws;
+                    };
+                    window.WebSocket.prototype = OrigWebSocket.prototype;
+                }
+
+                if (window.fetch) {
+                    var origFetch = window.fetch;
+                    window.fetch = function(resource, init) {
+                        var url = typeof resource === 'string' ? resource : (resource && resource.url ? resource.url : '');
+                        if (url) checkUrl(url);
+                        return origFetch.apply(this, arguments).then(function(response) {
+                            try {
+                                var ct = response.headers.get('content-type') || '';
+                                if (ct.indexOf('video/') !== -1 || ct.indexOf('audio/') !== -1 || ct.indexOf('mpegurl') !== -1 || ct.indexOf('dash+xml') !== -1) {
+                                    notify(response.url || url);
+                                }
+                            } catch(e) {}
+                            return response;
+                        });
+                    };
+                }
+
+                function sweepMediaElements() {
+                    document.querySelectorAll('video, audio').forEach(function(el) {
+                        if (el.style.display === 'none') el.style.display = 'block';
+                        if (el.style.visibility === 'hidden') el.style.visibility = 'visible';
+                        if (el.hidden) el.hidden = false;
+
+                        var src = el.src || el.currentSrc;
+                        if (src) checkUrl(src);
+
+                        el.querySelectorAll('source').forEach(function(s) {
+                            if (s.src) checkUrl(s.src);
+                        });
+                        el.querySelectorAll('track').forEach(function(t) {
+                            if (t.src) notify(t.src, null, t.srclang, t.label);
+                        });
+                    });
+                    $domainHook
+                }
+
+                sweepMediaElements();
+                if (document.readyState !== 'complete') {
+                    window.addEventListener('DOMContentLoaded', sweepMediaElements);
+                    window.addEventListener('load', sweepMediaElements);
+                }
+                setInterval(sweepMediaElements, 2500);
+            })();
+        """.trimIndent()
     }
 }

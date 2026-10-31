@@ -5,7 +5,8 @@ import java.net.URI
 object HlsPlaylistParser {
 
     fun isMasterPlaylist(content: String): Boolean {
-        return content.contains("#EXT-X-STREAM-INF")
+        return content.contains("#EXT-X-STREAM-INF") ||
+            (content.contains("#EXT-X-MEDIA:TYPE=AUDIO") && content.contains("URI="))
     }
 
     fun parseMasterPlaylist(baseUrl: String, content: String): ParsedMasterPlaylist {
@@ -77,6 +78,20 @@ object HlsPlaylistParser {
                 currentResolution = null
                 currentCodecs = null
                 currentAudioGroup = null
+            }
+        }
+
+        if (variants.isEmpty() && audioTracks.isNotEmpty()) {
+            for (audio in audioTracks) {
+                variants.add(
+                    ParsedHlsVariant(
+                        url = audio.url,
+                        bandwidth = 128_000L,
+                        resolution = null,
+                        codecs = "mp4a.40.2",
+                        audioGroupId = audio.groupId
+                    )
+                )
             }
         }
 

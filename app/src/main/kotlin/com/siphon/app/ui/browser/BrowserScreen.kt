@@ -340,15 +340,19 @@ fun BrowserScreen(
             canGoBack = back
             canGoForward = forward
         }
-        snifferClient.onWebViewPageStarted = { view, _ ->
+        snifferClient.onWebViewPageStarted = { view, url ->
             if (currentWebDarkMode.value) {
                 applyWebDarkModeToWebView(view, true)
             }
+            val domain = runCatching { Uri.parse(url).host }.getOrNull()
+            view.evaluateJavascript(com.siphon.app.core.sniffer.SnifferJsInjector.buildUserscript(domain), null)
         }
-        snifferClient.onWebViewPageFinished = { view, _ ->
+        snifferClient.onWebViewPageFinished = { view, url ->
             if (currentWebDarkMode.value) {
                 applyWebDarkModeToWebView(view, true)
             }
+            val domain = runCatching { Uri.parse(url).host }.getOrNull()
+            view.evaluateJavascript(com.siphon.app.core.sniffer.SnifferJsInjector.buildUserscript(domain), null)
             domScanAction(view)
         }
     }
@@ -912,6 +916,10 @@ fun BrowserScreen(
                                             isAlgorithmicDarkeningAllowed = currentWebDarkMode.value
                                         }
                                     }
+                                    addJavascriptInterface(
+                                        com.siphon.app.core.sniffer.SiphonSnifferBridge(snifferClient),
+                                        "__siphon_sniffer__"
+                                    )
                                     webViewClient = snifferClient
                                     webChromeClient = object : WebChromeClient() {
                                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -928,8 +936,12 @@ fun BrowserScreen(
                                                     onNavigateUrl(vUrl)
                                                 }
                                             }
-                                            if (currentWebDarkMode.value && view != null && newProgress >= 10) {
-                                                applyWebDarkModeToWebView(view, true)
+                                            if (view != null && newProgress >= 10) {
+                                                if (currentWebDarkMode.value) {
+                                                    applyWebDarkModeToWebView(view, true)
+                                                }
+                                                val domain = runCatching { Uri.parse(view.url).host }.getOrNull()
+                                                view.evaluateJavascript(com.siphon.app.core.sniffer.SnifferJsInjector.buildUserscript(domain), null)
                                             }
                                         }
 

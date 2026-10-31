@@ -23,5 +23,6 @@ data class SniffedMedia(
     val variants: List<HlsVariantInfo> = emptyList(),
     val durationSec: Double = 0.0,
     val isSubtitle: Boolean = false,
+    val isAudio: Boolean = false,
     val language: String? = null
 )
