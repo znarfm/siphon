@@ -80,6 +80,12 @@ class MediaSnifferClient(
         pageManifests.clear()
     }
 
+    fun updateCurrentPageUrl(url: String) {
+        if (url.isNotBlank()) {
+            currentPageUrl = url
+        }
+    }
+
     fun inspectCandidate(
         url: String,
         requestHeaders: Map<String, String> = emptyMap(),
@@ -189,13 +195,20 @@ class MediaSnifferClient(
         }
     }
 
+    private fun findReferer(headersMap: Map<String, String>): String? {
+        return headersMap["Referer"]
+            ?: headersMap["referer"]
+            ?: headersMap.entries.firstOrNull { it.key.equals("referer", ignoreCase = true) }?.value
+    }
+
     private suspend fun processHlsCandidate(
         url: String,
         headersMap: Map<String, String>,
         hintLang: String? = null,
         hintLabel: String? = null
     ) {
-        val manifests = pageManifests.getOrPut(currentPageUrl) {
+        val sourcePage = findReferer(headersMap) ?: currentPageUrl
+        val manifests = pageManifests.getOrPut(sourcePage) {
             Collections.newSetFromMap(ConcurrentHashMap())
         }
         manifests.add(url)
@@ -226,7 +239,7 @@ class MediaSnifferClient(
                 val subDisplay = buildSubtitleDisplayName(sub.url, sub.name, sub.language, "vtt")
                 val subMedia = SniffedMedia(
                     url = sub.url,
-                    sourcePageUrl = currentPageUrl,
+                    sourcePageUrl = sourcePage,
                     mediaType = DownloadType.HLS,
                     mimeType = "text/vtt",
                     displayName = subDisplay,
@@ -255,7 +268,7 @@ class MediaSnifferClient(
                 val subDisplay = buildSubtitleDisplayName(url, hintLabel, lang, "vtt")
                 val subMedia = SniffedMedia(
                     url = url,
-                    sourcePageUrl = currentPageUrl,
+                    sourcePageUrl = sourcePage,
                     mediaType = DownloadType.HLS,
                     mimeType = "text/vtt",
                     displayName = subDisplay,
@@ -351,7 +364,7 @@ class MediaSnifferClient(
 
         val media = SniffedMedia(
             url = url,
-            sourcePageUrl = currentPageUrl,
+            sourcePageUrl = sourcePage,
             mediaType = DownloadType.HLS,
             mimeType = if (isAudioStream) "audio/mp4" else "application/vnd.apple.mpegurl",
             displayName = displayName,
@@ -374,6 +387,7 @@ class MediaSnifferClient(
         hintLabel: String? = null,
         forceInspect: Boolean = false
     ) {
+        val sourcePage = findReferer(headersMap) ?: currentPageUrl
         val okHeadersBuilder = Headers.Builder()
         headersMap.forEach { (k, v) -> okHeadersBuilder.add(k, v) }
         val okHeaders = okHeadersBuilder.build()
@@ -413,7 +427,7 @@ class MediaSnifferClient(
 
         val media = SniffedMedia(
             url = probeResult.finalUrl,
-            sourcePageUrl = currentPageUrl,
+            sourcePageUrl = sourcePage,
             mediaType = DownloadType.HTTP,
             mimeType = resolvedMime,
             displayName = displayName,

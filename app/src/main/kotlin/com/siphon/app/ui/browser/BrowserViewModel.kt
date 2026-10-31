@@ -132,6 +132,7 @@ class BrowserViewModel(
 
     fun setBrowserUrl(url: String) {
         _browserUrl.value = url
+        snifferClient.updateCurrentPageUrl(url)
         val curId = _activeTabId.value
         _browserTabs.value = _browserTabs.value.map {
             if (it.id == curId) it.copy(url = url) else it
@@ -148,6 +149,7 @@ class BrowserViewModel(
         if (switchImmediately) {
             _activeTabId.value = newTab.id
             _browserUrl.value = url
+            snifferClient.updateCurrentPageUrl(url)
         }
     }
 
@@ -155,6 +157,7 @@ class BrowserViewModel(
         val target = _browserTabs.value.firstOrNull { it.id == tabId } ?: return
         _activeTabId.value = tabId
         _browserUrl.value = target.url
+        snifferClient.updateCurrentPageUrl(target.url)
     }
 
     fun closeBrowserTab(tabId: String) {
@@ -164,6 +167,7 @@ class BrowserViewModel(
             _browserTabs.value = listOf(resetTab)
             _activeTabId.value = tabId
             _browserUrl.value = resetTab.url
+            snifferClient.updateCurrentPageUrl(resetTab.url)
             return
         }
         val remaining = currentList.filter { it.id != tabId }
@@ -172,12 +176,14 @@ class BrowserViewModel(
             val nextTab = remaining.last()
             _activeTabId.value = nextTab.id
             _browserUrl.value = nextTab.url
+            snifferClient.updateCurrentPageUrl(nextTab.url)
         }
     }
 
     fun updateActiveTabMeta(url: String, title: String) {
         val curId = _activeTabId.value
         _browserUrl.value = url
+        snifferClient.updateCurrentPageUrl(url)
         var currentTabIsIncognito = false
         _browserTabs.value = _browserTabs.value.map {
             if (it.id == curId) {

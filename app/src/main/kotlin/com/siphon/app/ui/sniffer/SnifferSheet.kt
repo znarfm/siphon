@@ -75,11 +75,53 @@ enum class SnifferSort(val label: String) {
     NAME("Name")
 }
 
-private fun isCurrentTabMedia(sourceUrl: String, activeUrl: String?): Boolean {
+internal fun isCurrentTabMedia(sourceUrl: String, activeUrl: String?): Boolean {
     if (activeUrl.isNullOrBlank() || sourceUrl.isBlank()) return false
-    val activeHost = runCatching { Uri.parse(activeUrl).host?.lowercase() }.getOrNull()
-    val sourceHost = runCatching { Uri.parse(sourceUrl).host?.lowercase() }.getOrNull()
-    return activeHost != null && activeHost == sourceHost
+    val cleanActive = activeUrl.substringBefore('#').trimEnd('/')
+    val cleanSource = sourceUrl.substringBefore('#').trimEnd('/')
+    if (cleanActive.equals(cleanSource, ignoreCase = true)) return true
+
+    val activeHost = (runCatching { java.net.URI(cleanActive).host }.getOrNull()
+        ?: runCatching { Uri.parse(cleanActive).host }.getOrNull())
+        ?.lowercase()?.removePrefix("www.")?.removePrefix("m.") ?: return false
+    val sourceHost = (runCatching { java.net.URI(cleanSource).host }.getOrNull()
+        ?: runCatching { Uri.parse(cleanSource).host }.getOrNull())
+        ?.lowercase()?.removePrefix("www.")?.removePrefix("m.") ?: return false
+    if (activeHost != sourceHost) return false
+
+    val activePath = (runCatching { java.net.URI(cleanActive).path }.getOrNull()
+        ?: runCatching { Uri.parse(cleanActive).path }.getOrNull() ?: "").trimEnd('/')
+    val sourcePath = (runCatching { java.net.URI(cleanSource).path }.getOrNull()
+        ?: runCatching { Uri.parse(cleanSource).path }.getOrNull() ?: "").trimEnd('/')
+    if (activePath != sourcePath) return false
+
+    val activeRawQuery = runCatching { java.net.URI(cleanActive).rawQuery }.getOrNull()
+        ?: runCatching { Uri.parse(cleanActive).query }.getOrNull()
+    val sourceRawQuery = runCatching { java.net.URI(cleanSource).rawQuery }.getOrNull()
+        ?: runCatching { Uri.parse(cleanSource).query }.getOrNull()
+
+    val activeParams = parseQueryParams(activeRawQuery)
+    val sourceParams = parseQueryParams(sourceRawQuery)
+
+    for (param in listOf("v", "id", "vid", "video_id", "clip", "item")) {
+        val aVal = activeParams[param]
+        val sVal = sourceParams[param]
+        if (aVal != null || sVal != null) {
+            return aVal == sVal
+        }
+    }
+
+    return true
+}
+
+private fun parseQueryParams(query: String?): Map<String, String> {
+    if (query.isNullOrBlank()) return emptyMap()
+    return query.split('&').mapNotNull { pair ->
+        val parts = pair.split('=', limit = 2)
+        if (parts.isNotEmpty() && parts[0].isNotBlank()) {
+            parts[0] to (parts.getOrNull(1) ?: "")
+        } else null
+    }.toMap()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -147,6 +189,11 @@ fun SnifferSheet(
             SnifferSort.SIZE -> filtered.sortedByDescending { it.totalBytes }
             SnifferSort.NAME -> filtered.sortedBy { it.displayName.lowercase() }
         }
+    }
+
+    val hasMultipleSources = remember(filteredAndSortedMedia, activeTabUrl) {
+        val currentCount = filteredAndSortedMedia.count { isCurrentTabMedia(it.sourcePageUrl, activeTabUrl) }
+        currentCount in 1 until filteredAndSortedMedia.size
     }
 
     val selectedMediaList = detectedMedia.filter { selectedIds[it.id] == true }
@@ -310,7 +357,7 @@ fun SnifferSheet(
                         val isSelected = selectedIds[media.id] == true
                         val currentVariant = selectedVariants[media.id] ?: media.variants.firstOrNull()
                         val currentFileName = customNames[media.id] ?: media.displayName
-                        val isCurrentTab = isCurrentTabMedia(media.sourcePageUrl, activeTabUrl)
+                        val isCurrentTab = hasMultipleSources && isCurrentTabMedia(media.sourcePageUrl, activeTabUrl)
 
                         SniffedMediaItemCard(
                             media = media,
