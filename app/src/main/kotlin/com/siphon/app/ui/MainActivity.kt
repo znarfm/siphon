@@ -13,6 +13,8 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.zIndex
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -141,21 +143,33 @@ fun MainContent(viewModel: MainViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (currentTab) {
-                AppTab.BROWSER -> {
-                    BrowserScreen(
-                        currentUrl = browserUrl,
-                        snifferClient = viewModel.snifferClient,
-                        detectedMediaCount = detectedMedia.size,
-                        isAdBlockEnabled = isAdBlockEnabled,
-                        rebindTarget = rebindTarget,
-                        onNavigateUrl = { viewModel.setBrowserUrl(it) },
-                        onToggleAdBlock = { viewModel.toggleAdBlock() },
-                        onOpenSniffer = { viewModel.openSnifferSheet() },
-                        onCancelRebind = { viewModel.cancelRebindFlow() }
-                    )
-                }
-                AppTab.QUEUE -> {
+            val isBrowserVisible = currentTab == AppTab.BROWSER
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(if (isBrowserVisible) 1f else 0f)
+                    .zIndex(if (isBrowserVisible) 1f else 0f)
+            ) {
+                BrowserScreen(
+                    currentUrl = browserUrl,
+                    snifferClient = viewModel.snifferClient,
+                    detectedMediaCount = detectedMedia.size,
+                    isAdBlockEnabled = isAdBlockEnabled,
+                    rebindTarget = rebindTarget,
+                    onNavigateUrl = { viewModel.setBrowserUrl(it) },
+                    onToggleAdBlock = { viewModel.toggleAdBlock() },
+                    onOpenSniffer = { viewModel.openSnifferSheet() },
+                    onCancelRebind = { viewModel.cancelRebindFlow() }
+                )
+            }
+
+            if (currentTab == AppTab.QUEUE) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(2f)
+                ) {
                     QueueScreen(
                         downloads = downloads,
                         chunksMap = chunksMap,

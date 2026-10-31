@@ -53,6 +53,9 @@ class MediaSnifferClient(
     var currentPageUrl: String = ""
         private set
 
+    var onUrlChanged: ((String) -> Unit)? = null
+    var onNavigationStateChanged: ((canGoBack: Boolean, canGoForward: Boolean) -> Unit)? = null
+
     // LRU cache for candidate URLs normalized by stripping byte-range query params
     private val lruDedup = Collections.synchronizedMap(
         object : LinkedHashMap<String, Boolean>(256, 0.75f, true) {
@@ -80,6 +83,17 @@ class MediaSnifferClient(
         if (!url.isNullOrBlank()) {
             currentPageUrl = url
             pageManifests.putIfAbsent(url, Collections.newSetFromMap(ConcurrentHashMap()))
+            onUrlChanged?.invoke(url)
+            onNavigationStateChanged?.invoke(view?.canGoBack() == true, view?.canGoForward() == true)
+        }
+    }
+
+    override fun onPageFinished(view: WebView?, url: String?) {
+        super.onPageFinished(view, url)
+        if (!url.isNullOrBlank()) {
+            currentPageUrl = url
+            onUrlChanged?.invoke(url)
+            onNavigationStateChanged?.invoke(view?.canGoBack() == true, view?.canGoForward() == true)
         }
     }
 

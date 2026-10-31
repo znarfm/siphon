@@ -75,18 +75,33 @@ fun BrowserScreen(
     modifier: Modifier = Modifier
 ) {
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
-    var urlInput by remember(currentUrl) { mutableStateOf(currentUrl) }
+    var urlInput by remember { mutableStateOf(currentUrl) }
     var pageProgress by remember { mutableIntStateOf(100) }
     var canGoBack by remember { mutableStateOf(false) }
+    var canGoForward by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(snifferClient) {
+        snifferClient.onUrlChanged = { newUrl ->
+            urlInput = newUrl
+            onNavigateUrl(newUrl)
+        }
+        snifferClient.onNavigationStateChanged = { back, forward ->
+            canGoBack = back
+            canGoForward = forward
+        }
+    }
 
     BackHandler(enabled = canGoBack) {
         webViewInstance?.goBack()
     }
 
     LaunchedEffect(currentUrl) {
-        if (webViewInstance != null && webViewInstance?.url != currentUrl) {
-            webViewInstance?.loadUrl(currentUrl)
+        if (webViewInstance != null) {
+            val currentWebUrl = webViewInstance?.url
+            if (currentWebUrl == null || (currentWebUrl != currentUrl && !currentUrl.startsWith(currentWebUrl))) {
+                webViewInstance?.loadUrl(currentUrl)
+            }
         }
     }
 
@@ -141,7 +156,7 @@ fun BrowserScreen(
                     // Navigation controls
                     FilledTonalButton(
                         onClick = { webViewInstance?.goBack() },
-                        enabled = webViewInstance?.canGoBack() == true,
+                        enabled = canGoBack,
                         modifier = Modifier.size(36.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                     ) {
@@ -152,7 +167,7 @@ fun BrowserScreen(
 
                     FilledTonalButton(
                         onClick = { webViewInstance?.goForward() },
-                        enabled = webViewInstance?.canGoForward() == true,
+                        enabled = canGoForward,
                         modifier = Modifier.size(36.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                     ) {
@@ -285,11 +300,19 @@ fun BrowserScreen(
                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
                             pageProgress = newProgress
                             canGoBack = view?.canGoBack() == true
+                            canGoForward = view?.canGoForward() == true
+                            val vUrl = view?.url
+                            if (!vUrl.isNullOrBlank() && vUrl != urlInput) {
+                                urlInput = vUrl
+                                onNavigateUrl(vUrl)
+                            }
                         }
 
                         override fun onReceivedTitle(view: WebView?, title: String?) {
-                            if (!title.isNullOrBlank() && view?.url != null) {
-                                urlInput = view.url.orEmpty()
+                            val vUrl = view?.url
+                            if (!vUrl.isNullOrBlank() && vUrl != urlInput) {
+                                urlInput = vUrl
+                                onNavigateUrl(vUrl)
                             }
                         }
                     }
