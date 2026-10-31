@@ -61,10 +61,14 @@ class HlsQueueEngine(
         val download = dao.getDownload(downloadId)
             ?: return@withContext DownloadState.FAILED
 
-        val targetMime = if (download.type == DownloadType.HLS || download.displayName.endsWith(".mp4", ignoreCase = true)) {
-            "video/mp4"
-        } else {
-            download.mimeType
+        val isSubDownload = download.mimeType.startsWith("text/") ||
+            download.displayName.endsWith(".vtt", ignoreCase = true) ||
+            download.displayName.endsWith(".srt", ignoreCase = true)
+
+        val targetMime = when {
+            isSubDownload -> download.mimeType.ifBlank { "text/vtt" }
+            download.type == DownloadType.HLS || download.displayName.endsWith(".mp4", ignoreCase = true) -> "video/mp4"
+            else -> download.mimeType
         }
         val targetName = if (targetMime == "video/mp4" && !download.displayName.endsWith(".mp4", ignoreCase = true)) {
             "${download.displayName.substringBeforeLast('.')}.mp4"
@@ -136,18 +140,18 @@ class HlsQueueEngine(
                 )
             }
 
-            // 3. Remux track files into final destination
+            // 3. Remux track files into final destination (or keep raw concatenated track for subtitle playlists)
             val trackFiles = segmentsByTrack.keys.sorted().map { trackIdx ->
                 File(workDir, "track_${trackIdx}.tmp")
             }
 
             val remuxOutputFile = File(workDir, "remux_output.mp4")
-            val remuxSuccess = remuxToMp4(trackFiles, remuxOutputFile)
+            val remuxSuccess = if (isSubDownload) false else remuxToMp4(trackFiles, remuxOutputFile)
 
             val finalSourceFile = if (remuxSuccess && remuxOutputFile.exists() && remuxOutputFile.length() > 0) {
                 remuxOutputFile
             } else {
-                // Fallback to copying raw track 0 (.ts)
+                // Fallback to copying raw track 0 (.ts or .vtt)
                 trackFiles.firstOrNull() ?: throw IOException("No track files produced")
             }
 

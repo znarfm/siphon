@@ -55,6 +55,8 @@ class MediaSnifferClient(
 
     var onUrlChanged: ((String) -> Unit)? = null
     var onNavigationStateChanged: ((canGoBack: Boolean, canGoForward: Boolean) -> Unit)? = null
+    var onWebViewPageStarted: ((WebView, String) -> Unit)? = null
+    var onWebViewPageFinished: ((WebView, String) -> Unit)? = null
 
     // LRU cache for candidate URLs normalized by stripping byte-range query params
     private val lruDedup = Collections.synchronizedMap(
@@ -78,8 +80,13 @@ class MediaSnifferClient(
         pageManifests.clear()
     }
 
-    fun inspectCandidate(url: String, requestHeaders: Map<String, String> = emptyMap()) {
-        inspectCandidateAsync(url, requestHeaders)
+    fun inspectCandidate(
+        url: String,
+        requestHeaders: Map<String, String> = emptyMap(),
+        hintLang: String? = null,
+        hintLabel: String? = null
+    ) {
+        inspectCandidateAsync(url, requestHeaders, hintLang, hintLabel)
     }
 
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -89,6 +96,7 @@ class MediaSnifferClient(
             pageManifests.putIfAbsent(url, Collections.newSetFromMap(ConcurrentHashMap()))
             onUrlChanged?.invoke(url)
             onNavigationStateChanged?.invoke(view?.canGoBack() == true, view?.canGoForward() == true)
+            if (view != null) onWebViewPageStarted?.invoke(view, url)
         }
     }
 
@@ -98,6 +106,7 @@ class MediaSnifferClient(
             currentPageUrl = url
             onUrlChanged?.invoke(url)
             onNavigationStateChanged?.invoke(view?.canGoBack() == true, view?.canGoForward() == true)
+            if (view != null) onWebViewPageFinished?.invoke(view, url)
         }
     }
 
@@ -127,7 +136,12 @@ class MediaSnifferClient(
         return null
     }
 
-    private fun inspectCandidateAsync(url: String, requestHeaders: Map<String, String>) {
+    private fun inspectCandidateAsync(
+        url: String,
+        requestHeaders: Map<String, String>,
+        hintLang: String? = null,
+        hintLabel: String? = null
+    ) {
         if (!isCandidateMediaUrl(url, requestHeaders)) return
 
         // 3. Skip segment probing (.ts / .m4s) if a parent manifest is already captured for this page
@@ -162,14 +176,19 @@ class MediaSnifferClient(
 
         scope.launch(Dispatchers.IO) {
             if (isHlsUrl(url)) {
-                processHlsCandidate(url, headersBuilder)
+                processHlsCandidate(url, headersBuilder, hintLang, hintLabel)
             } else {
-                processProgressiveCandidate(url, headersBuilder)
+                processProgressiveCandidate(url, headersBuilder, hintLang, hintLabel)
             }
         }
     }
 
-    private suspend fun processHlsCandidate(url: String, headersMap: Map<String, String>) {
+    private suspend fun processHlsCandidate(
+        url: String,
+        headersMap: Map<String, String>,
+        hintLang: String? = null,
+        hintLabel: String? = null
+    ) {
         val manifests = pageManifests.getOrPut(currentPageUrl) {
             Collections.newSetFromMap(ConcurrentHashMap())
         }
@@ -191,11 +210,62 @@ class MediaSnifferClient(
             }
         }.getOrNull() ?: return
 
-        val rawVariants = if (HlsPlaylistParser.isMasterPlaylist(bodyText)) {
-            HlsPlaylistParser.parseMasterPlaylist(url, bodyText).variants.map {
-                HlsVariantInfo(it.url, it.bandwidth, it.resolution, it.codecs)
+        val parsedMaster = if (HlsPlaylistParser.isMasterPlaylist(bodyText)) {
+            HlsPlaylistParser.parseMasterPlaylist(url, bodyText)
+        } else null
+
+        if (parsedMaster != null) {
+            parsedMaster.subtitleTracks.forEach { sub ->
+                val lang = sub.language ?: sub.name
+                val subDisplay = buildSubtitleDisplayName(sub.url, sub.name, sub.language, "vtt")
+                val subMedia = SniffedMedia(
+                    url = sub.url,
+                    sourcePageUrl = currentPageUrl,
+                    mediaType = DownloadType.HLS,
+                    mimeType = "text/vtt",
+                    displayName = subDisplay,
+                    totalBytes = -1L,
+                    headers = headersMap,
+                    isSubtitle = true,
+                    language = lang
+                )
+                _detectedMedia.update { list ->
+                    if (list.none { it.url == subMedia.url }) list + subMedia else list
+                }
             }
-        } else emptyList()
+        }
+
+        val rawVariants = parsedMaster?.variants?.map {
+            HlsVariantInfo(it.url, it.bandwidth, it.resolution, it.codecs)
+        } ?: emptyList()
+
+        if (parsedMaster == null) {
+            val parsedMedia = HlsPlaylistParser.parseMediaPlaylist(url, bodyText)
+            val isSubPlaylist = parsedMedia.segments.isNotEmpty() && parsedMedia.segments.all {
+                isSubtitleUrl(it.url)
+            }
+            if (isSubPlaylist) {
+                val lang = hintLang ?: hintLabel ?: inferLanguageFromUrl(url)
+                val subDisplay = buildSubtitleDisplayName(url, hintLabel, lang, "vtt")
+                val subMedia = SniffedMedia(
+                    url = url,
+                    sourcePageUrl = currentPageUrl,
+                    mediaType = DownloadType.HLS,
+                    mimeType = "text/vtt",
+                    displayName = subDisplay,
+                    totalBytes = -1L,
+                    headers = headersMap,
+                    durationSec = parsedMedia.segments.sumOf { it.durationSec },
+                    isSubtitle = true,
+                    language = lang
+                )
+                _detectedMedia.update { list ->
+                    if (list.none { it.url == subMedia.url }) list + subMedia else list
+                }
+                return
+            }
+        }
+
         val displayName = extractDisplayNameFromUrl(url, "stream.m3u8")
 
         var durationSec = 0.0
@@ -288,7 +358,12 @@ class MediaSnifferClient(
         }
     }
 
-    private suspend fun processProgressiveCandidate(url: String, headersMap: Map<String, String>) {
+    private suspend fun processProgressiveCandidate(
+        url: String,
+        headersMap: Map<String, String>,
+        hintLang: String? = null,
+        hintLabel: String? = null
+    ) {
         val okHeadersBuilder = Headers.Builder()
         headersMap.forEach { (k, v) -> okHeadersBuilder.add(k, v) }
         val okHeaders = okHeadersBuilder.build()
@@ -299,28 +374,42 @@ class MediaSnifferClient(
 
         val mime = probeResult.mimeType.lowercase(Locale.ROOT)
         if (mime.contains("mpegurl")) {
-            processHlsCandidate(url, headersMap)
+            processHlsCandidate(url, headersMap, hintLang, hintLabel)
             return
         }
 
+        val isSub = isSubtitleUrl(probeResult.finalUrl) || isSubtitleUrl(url) || isSubtitleMime(mime)
         val isMediaMime = mime.startsWith("video/") || mime.startsWith("audio/") ||
-            mime == "application/octet-stream"
+            mime == "application/octet-stream" || isSub
 
         if (probeResult.totalBytes <= 0 && !isMediaMime) {
             return
         }
 
-        val displayName = probeResult.suggestedFilename
-            ?: extractDisplayNameFromUrl(url, "media")
+        val ext = subtitleExtFromUrlOrMime(probeResult.finalUrl, mime)
+        val lang = if (isSub) (hintLang ?: hintLabel ?: inferLanguageFromUrl(probeResult.finalUrl)) else null
+        val displayName = if (isSub) {
+            probeResult.suggestedFilename ?: buildSubtitleDisplayName(probeResult.finalUrl, hintLabel, lang, ext)
+        } else {
+            probeResult.suggestedFilename ?: extractDisplayNameFromUrl(url, "media")
+        }
+
+        val resolvedMime = if (isSub && (mime == "application/octet-stream" || mime.startsWith("text/plain"))) {
+            subtitleMimeForExt(ext)
+        } else {
+            probeResult.mimeType
+        }
 
         val media = SniffedMedia(
             url = probeResult.finalUrl,
             sourcePageUrl = currentPageUrl,
             mediaType = DownloadType.HTTP,
-            mimeType = probeResult.mimeType,
+            mimeType = resolvedMime,
             displayName = displayName,
             totalBytes = probeResult.totalBytes,
-            headers = headersMap
+            headers = headersMap,
+            isSubtitle = isSub,
+            language = lang
         )
 
         // Check explicit "Update Link" rebind flow if active
@@ -382,6 +471,10 @@ class MediaSnifferClient(
             "m3u8", "mpd"
         )
 
+        private val SUBTITLE_EXTENSIONS = setOf(
+            "vtt", "srt", "ass", "ssa", "ttml", "dfxp"
+        )
+
         private val SEGMENT_EXTENSIONS = setOf("ts", "m4s")
 
         private val BYTE_RANGE_PARAMS = setOf(
@@ -390,16 +483,82 @@ class MediaSnifferClient(
 
         fun isCandidateMediaUrl(url: String, requestHeaders: Map<String, String>): Boolean {
             val secFetchDest = requestHeaders["Sec-Fetch-Dest"]?.lowercase(Locale.ROOT)
-            if (secFetchDest == "video" || secFetchDest == "audio") return true
+            if (secFetchDest == "video" || secFetchDest == "audio" || secFetchDest == "track") return true
 
             val accept = requestHeaders["Accept"]?.lowercase(Locale.ROOT)
-            if (accept?.contains("video/") == true || accept?.contains("audio/") == true) return true
+            if (accept?.contains("video/") == true || accept?.contains("audio/") == true || accept?.contains("text/vtt") == true) return true
 
             val path = runCatching<String?> {
                 url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
             }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
             val ext = path.substringAfterLast('.', "")
-            return ext in MEDIA_EXTENSIONS || ext in SEGMENT_EXTENSIONS
+            return ext in MEDIA_EXTENSIONS || ext in SEGMENT_EXTENSIONS || isSubtitleUrl(url)
+        }
+
+        fun isSubtitleUrl(url: String): Boolean {
+            val path = runCatching<String?> {
+                url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
+            }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+            val ext = path.substringAfterLast('.', "")
+            if (ext in SUBTITLE_EXTENSIONS) return true
+            val lowerUrl = url.lowercase(Locale.ROOT)
+            return lowerUrl.contains("format=vtt") || lowerUrl.contains("fmt=vtt") || lowerUrl.contains("type=vtt") || lowerUrl.contains(".vtt?") || lowerUrl.contains(".srt?")
+        }
+
+        fun isSubtitleMime(mime: String): Boolean {
+            val m = mime.lowercase(Locale.ROOT)
+            return m.contains("text/vtt") || m.contains("application/x-subrip") || m.contains("text/srt") ||
+                m.contains("ttml+xml") || m.contains("x-ssa") || m.contains("subtitle")
+        }
+
+        fun subtitleExtFromUrlOrMime(url: String, mime: String): String {
+            val path = runCatching<String?> {
+                url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
+            }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+            val ext = path.substringAfterLast('.', "")
+            if (ext in SUBTITLE_EXTENSIONS) return ext
+            val m = mime.lowercase(Locale.ROOT)
+            return when {
+                m.contains("subrip") || m.contains("srt") -> "srt"
+                m.contains("ttml") -> "ttml"
+                m.contains("ssa") || m.contains("ass") -> "ass"
+                else -> "vtt"
+            }
+        }
+
+        fun subtitleMimeForExt(ext: String): String = when (ext.lowercase(Locale.ROOT)) {
+            "srt" -> "application/x-subrip"
+            "ttml", "dfxp" -> "application/ttml+xml"
+            "ass", "ssa" -> "text/x-ssa"
+            else -> "text/vtt"
+        }
+
+        fun inferLanguageFromUrl(url: String): String? {
+            val parsed = url.toHttpUrlOrNull()
+            if (parsed != null) {
+                for (param in listOf("lang", "hl", "locale", "language", "lng")) {
+                    parsed.queryParameter(param)?.takeIf { it.isNotBlank() }?.let { return it }
+                }
+            }
+            val file = url.substringBefore('?').substringBefore('#').substringAfterLast('/')
+            val parts = file.split('.', '_', '-')
+            if (parts.size >= 2) {
+                val candidate = parts[parts.size - 2].lowercase(Locale.ROOT)
+                if (candidate.length in 2..3 && candidate.all { it.isLetter() } && candidate !in SUBTITLE_EXTENSIONS) {
+                    return candidate
+                }
+            }
+            return null
+        }
+
+        fun buildSubtitleDisplayName(url: String, label: String?, lang: String?, ext: String): String {
+            val rawName = extractDisplayNameFromUrl(url, "subtitle.$ext").substringBeforeLast('.')
+            val cleanLang = (lang ?: label)?.trim()?.replace(Regex("[^a-zA-Z0-9_-]"), "")?.takeIf { it.isNotBlank() }
+            return if (cleanLang != null && !rawName.endsWith(".$cleanLang", ignoreCase = true)) {
+                "$rawName.$cleanLang.$ext"
+            } else {
+                "$rawName.$ext"
+            }
         }
 
         fun isSegmentUrl(url: String): Boolean {
@@ -408,6 +567,9 @@ class MediaSnifferClient(
             }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
             val ext = path.substringAfterLast('.', "")
             if (ext in SEGMENT_EXTENSIONS) return true
+            if (ext in SUBTITLE_EXTENSIONS && (path.contains("/seg") || path.contains("segment") || path.contains("chunk") || path.contains("part"))) {
+                return true
+            }
             return path.contains("/segment") || path.contains("/seg-")
         }
 

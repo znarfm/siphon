@@ -1,46 +1,70 @@
 package com.siphon.app.ui.theme
 
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 
-// Expressive M3 Palette (Deep Precision Teal + Electric Cyan Accent + Warm Muted Neutrals)
-val DarkPrimary = Color(0xFF4EE8B6)            // Vibrant Mint / Electric Aqua
-val DarkOnPrimary = Color(0xFF003828)
-val DarkPrimaryContainer = Color(0xFF00513B)
-val DarkOnPrimaryContainer = Color(0xFF6FFBCE)
+enum class AppColorSeed(val title: String, val swatch: Color) {
+    DYNAMIC("Auto", Color(0xFF6750A4)),
+    SAPPHIRE("Blue", Color(0xFF3B82F6)),
+    VIOLET("Violet", Color(0xFF8B5CF6)),
+    ROSE("Rose", Color(0xFFF43F5E)),
+    AMBER("Amber", Color(0xFFF59E0B)),
+    EMERALD("Teal", Color(0xFF10B981));
 
-val DarkSecondary = Color(0xFFB1CCC1)
-val DarkOnSecondary = Color(0xFF1D352D)
-val DarkSecondaryContainer = Color(0xFF334B43)
-val DarkOnSecondaryContainer = Color(0xFFCCE8DD)
+    fun toLightScheme(): ColorScheme {
+        val primary = lerp(swatch, Color.Black, 0.25f)
+        val container = lerp(swatch, Color.White, 0.82f)
+        val onContainer = lerp(swatch, Color.Black, 0.70f)
+        return lightColorScheme(
+            primary = primary,
+            onPrimary = Color.White,
+            primaryContainer = container,
+            onPrimaryContainer = onContainer,
+            secondary = primary.copy(alpha = 0.85f),
+            onSecondary = Color.White,
+            secondaryContainer = container.copy(alpha = 0.7f),
+            onSecondaryContainer = onContainer,
+            tertiary = primary,
+            onTertiary = Color.White,
+            background = Color(0xFFF8FAFC),
+            onBackground = Color(0xFF0F172A),
+            surface = Color(0xFFFFFFFF),
+            onSurface = Color(0xFF0F172A),
+            surfaceVariant = Color(0xFFE2E8F0),
+            onSurfaceVariant = Color(0xFF475569),
+            outline = Color(0xFF64748B)
+        )
+    }
 
-val DarkTertiary = Color(0xFFA5CDEB)
-val DarkOnTertiary = Color(0xFF06354D)
-
-val DarkBackground = Color(0xFF0F1513)          // Deep OLED Charcoal-Green tint
-val DarkOnBackground = Color(0xFFDEE4E0)
-val DarkSurface = Color(0xFF121916)
-val DarkOnSurface = Color(0xFFDEE4E0)
-val DarkSurfaceVariant = Color(0xFF1F2B25)
-val DarkOnSurfaceVariant = Color(0xFFA2B0A9)
-val DarkOutline = Color(0xFF3E4F47)
-
-val LightPrimary = Color(0xFF006C50)
-val LightOnPrimary = Color(0xFFFFFFFF)
-val LightPrimaryContainer = Color(0xFF6FFBCE)
-val LightOnPrimaryContainer = Color(0xFF002116)
-
-val LightSecondary = Color(0xFF4C635A)
-val LightOnSecondary = Color(0xFFFFFFFF)
-val LightSecondaryContainer = Color(0xFFCEE9DC)
-val LightOnSecondaryContainer = Color(0xFF092018)
-
-val LightBackground = Color(0xFFF6FBF6)
-val LightOnBackground = Color(0xFF171D1A)
-val LightSurface = Color(0xFFFFFFFF)
-val LightOnSurface = Color(0xFF171D1A)
-val LightSurfaceVariant = Color(0xFFDBE5DF)
-val LightOnSurfaceVariant = Color(0xFF404944)
-val LightOutline = Color(0xFF707974)
+    fun toDarkScheme(): ColorScheme {
+        val primary = lerp(swatch, Color.White, 0.28f)
+        val onPrimary = lerp(swatch, Color.Black, 0.72f)
+        val container = lerp(swatch, Color.Black, 0.45f)
+        val onContainer = lerp(swatch, Color.White, 0.82f)
+        return darkColorScheme(
+            primary = primary,
+            onPrimary = onPrimary,
+            primaryContainer = container,
+            onPrimaryContainer = onContainer,
+            secondary = primary.copy(alpha = 0.85f),
+            onSecondary = onPrimary,
+            secondaryContainer = container.copy(alpha = 0.65f),
+            onSecondaryContainer = onContainer,
+            tertiary = primary,
+            onTertiary = onPrimary,
+            background = Color(0xFF0F141A),
+            onBackground = Color(0xFFE2E8F0),
+            surface = Color(0xFF131A22),
+            onSurface = Color(0xFFE2E8F0),
+            surfaceVariant = Color(0xFF1E293B),
+            onSurfaceVariant = Color(0xFF94A3B8),
+            outline = Color(0xFF334155)
+        )
+    }
+}
 
 // State colors with refined luminance for dark and light modes
 val StateActive = Color(0xFF00E676)

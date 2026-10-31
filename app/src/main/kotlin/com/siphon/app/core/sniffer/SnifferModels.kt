@@ -21,5 +21,7 @@ data class SniffedMedia(
     val totalBytes: Long, // -1 if unknown or master playlist
     val headers: Map<String, String>,
     val variants: List<HlsVariantInfo> = emptyList(),
-    val durationSec: Double = 0.0
+    val durationSec: Double = 0.0,
+    val isSubtitle: Boolean = false,
+    val language: String? = null
 )

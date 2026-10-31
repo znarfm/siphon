@@ -19,6 +19,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.material3.AlertDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -78,6 +80,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
@@ -90,7 +93,50 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.siphon.app.core.sniffer.MediaSnifferClient
 import com.siphon.app.data.db.DownloadEntity
+import com.siphon.app.ui.theme.AppColorSeed
 import com.siphon.app.ui.theme.AppThemeMode
+
+private const val DARK_MODE_INJECT_JS = """
+(function() {
+    var applyDark = function() {
+        var root = document.head || document.documentElement;
+        if (!root) return;
+        if (!document.getElementById('__siphon_dark_mode')) {
+            var s = document.createElement('style');
+            s.id = '__siphon_dark_mode';
+            s.textContent = ':root { color-scheme: dark !important; } html { filter: invert(90%) hue-rotate(180deg) !important; background-color: #121212 !important; } img, video, iframe, canvas, svg, picture, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
+            root.appendChild(s);
+        }
+    };
+    applyDark();
+    if (!window.__siphon_dark_observer && document.documentElement) {
+        window.__siphon_dark_observer = new MutationObserver(function() { applyDark(); });
+        window.__siphon_dark_observer.observe(document.documentElement, { childList: true, subtree: true });
+    }
+})();
+"""
+
+private const val DARK_MODE_REMOVE_JS = """
+(function() {
+    if (window.__siphon_dark_observer) {
+        window.__siphon_dark_observer.disconnect();
+        window.__siphon_dark_observer = null;
+    }
+    var s = document.getElementById('__siphon_dark_mode');
+    if (s) s.remove();
+})();
+"""
+
+private fun applyWebDarkModeToWebView(webView: WebView, enabled: Boolean) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        @Suppress("DEPRECATION")
+        webView.settings.forceDark = if (enabled) WebSettings.FORCE_DARK_ON else WebSettings.FORCE_DARK_OFF
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        webView.settings.isAlgorithmicDarkeningAllowed = enabled
+    }
+    webView.evaluateJavascript(if (enabled) DARK_MODE_INJECT_JS else DARK_MODE_REMOVE_JS, null)
+}
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -105,9 +151,11 @@ fun BrowserScreen(
     isBarsVisible: Boolean = true,
     isWebDarkMode: Boolean = false,
     themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    colorSeed: AppColorSeed = AppColorSeed.DYNAMIC,
     onToggleBars: (Boolean) -> Unit = {},
     onToggleWebDarkMode: () -> Unit = {},
     onSetThemeMode: (AppThemeMode) -> Unit = {},
+    onSetColorSeed: (AppColorSeed) -> Unit = {},
     onNavigateUrl: (String) -> Unit,
     onToggleAdBlock: () -> Unit,
     onOpenSniffer: () -> Unit,
@@ -127,44 +175,32 @@ fun BrowserScreen(
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
     var pendingPopupUrl by remember { mutableStateOf<String?>(null) }
+    var lastTabSwitchMs by remember { mutableStateOf(0L) }
     val focusManager = LocalFocusManager.current
     val clipboardManager = LocalClipboardManager.current
     val currentActiveTabId = rememberUpdatedState(activeTabId)
     val currentBarsVisible = rememberUpdatedState(isBarsVisible)
+    val currentWebDarkMode = rememberUpdatedState(isWebDarkMode)
+    val currentLastTabSwitchMs = rememberUpdatedState(lastTabSwitchMs)
 
-    LaunchedEffect(isWebDarkMode) {
+    val isSystemDark = isSystemInDarkTheme()
+    val isAppDark = when (themeMode) {
+        AppThemeMode.SYSTEM -> isSystemDark
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK, AppThemeMode.AMOLED -> true
+    }
+    val surfaceColorArgb = MaterialTheme.colorScheme.background.toArgb()
+    val webViewBgArgb = if (isWebDarkMode || isAppDark) surfaceColorArgb else android.graphics.Color.WHITE
+
+    LaunchedEffect(isWebDarkMode, webViewBgArgb) {
         webViewMap.values.forEach { webView ->
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                @Suppress("DEPRECATION")
-                webView.settings.forceDark = if (isWebDarkMode) WebSettings.FORCE_DARK_ON else WebSettings.FORCE_DARK_OFF
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                webView.settings.isAlgorithmicDarkeningAllowed = isWebDarkMode
-            }
-            val js = if (isWebDarkMode) {
-                """
-                (function() {
-                    if (!document.getElementById('__siphon_dark_mode')) {
-                        var s = document.createElement('style');
-                        s.id = '__siphon_dark_mode';
-                        s.textContent = '@media (prefers-color-scheme: dark) { :root { color-scheme: dark; } } html { filter: invert(90%) hue-rotate(180deg) !important; background-color: #121212 !important; } img, video, canvas, svg, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
-                        (document.head || document.documentElement).appendChild(s);
-                    }
-                })()
-                """.trimIndent()
-            } else {
-                """
-                (function() {
-                    var s = document.getElementById('__siphon_dark_mode');
-                    if (s) s.remove();
-                })()
-                """.trimIndent()
-            }
-            webView.evaluateJavascript(js, null)
+            webView.setBackgroundColor(webViewBgArgb)
+            applyWebDarkModeToWebView(webView, isWebDarkMode)
         }
     }
 
-    LaunchedEffect(activeTabId) {
+    LaunchedEffect(activeTabId, tabs.size) {
+        lastTabSwitchMs = android.os.SystemClock.elapsedRealtime()
         onToggleBars(true)
     }
 
@@ -176,42 +212,54 @@ fun BrowserScreen(
 
     val activeWebView = webViewMap[activeTabId]
 
-    LaunchedEffect(activeTabId, activeWebView) {
-        onRegisterDomScan?.invoke {
-            val webView = webViewMap[activeTabId] ?: return@invoke
-            val js = """
-                (function() {
-                    var urls = [];
-                    document.querySelectorAll('video, audio, source').forEach(function(el) {
-                        if (el.src) urls.push(el.src);
-                        if (el.currentSrc) urls.push(el.currentSrc);
+    val domScanAction: (WebView) -> Unit = { webView ->
+        val js = """
+            (function() {
+                var items = [];
+                document.querySelectorAll('video, audio, source').forEach(function(el) {
+                    if (el.src) items.push({url: el.src});
+                    if (el.currentSrc) items.push({url: el.currentSrc});
+                });
+                document.querySelectorAll('track').forEach(function(el) {
+                    if (el.src) items.push({url: el.src, lang: el.srclang || '', label: el.label || ''});
+                });
+                if (window.performance && window.performance.getEntriesByType) {
+                    window.performance.getEntriesByType('resource').forEach(function(r) {
+                        if (r.name && (r.name.includes('.m3u8') || r.name.includes('.mp4') || r.name.includes('.vtt') || r.name.includes('.srt') || r.name.includes('.ass') || r.name.includes('.ttml') || r.initiatorType === 'video' || r.initiatorType === 'audio' || r.initiatorType === 'track')) {
+                            items.push({url: r.name});
+                        }
                     });
-                    if (window.performance && window.performance.getEntriesByType) {
-                        window.performance.getEntriesByType('resource').forEach(function(r) {
-                            if (r.name && (r.name.includes('.m3u8') || r.name.includes('.mp4') || r.initiatorType === 'video' || r.initiatorType === 'audio')) {
-                                urls.push(r.name);
-                            }
-                        });
-                    }
-                    return JSON.stringify(Array.from(new Set(urls)));
-                })()
-            """.trimIndent()
-            webView.evaluateJavascript(js) { json ->
-                if (!json.isNullOrBlank() && json != "null" && json != "[]") {
-                    val cleanJson = if (json.startsWith("\"") && json.endsWith("\"")) {
-                        org.json.JSONTokener(json).nextValue().toString()
-                    } else json
-                    runCatching {
-                        val array = org.json.JSONArray(cleanJson)
-                        for (i in 0 until array.length()) {
-                            val mediaUrl = array.getString(i)
+                }
+                return JSON.stringify(items);
+            })()
+        """.trimIndent()
+        webView.evaluateJavascript(js) { json ->
+            if (!json.isNullOrBlank() && json != "null" && json != "[]") {
+                val cleanJson = if (json.startsWith("\"") && json.endsWith("\"")) {
+                    org.json.JSONTokener(json).nextValue().toString()
+                } else json
+                runCatching {
+                    val array = org.json.JSONArray(cleanJson)
+                    for (i in 0 until array.length()) {
+                        val obj = array.optJSONObject(i)
+                        if (obj != null) {
+                            val mediaUrl = obj.optString("url")
+                            val lang = obj.optString("lang").takeIf { it.isNotBlank() }
+                            val label = obj.optString("label").takeIf { it.isNotBlank() }
                             if (mediaUrl.isNotBlank()) {
-                                snifferClient.inspectCandidate(mediaUrl)
+                                snifferClient.inspectCandidate(mediaUrl, emptyMap(), lang, label)
                             }
                         }
                     }
                 }
             }
+        }
+    }
+
+    LaunchedEffect(activeTabId, activeWebView) {
+        onRegisterDomScan?.invoke {
+            val webView = webViewMap[activeTabId] ?: return@invoke
+            domScanAction(webView)
         }
     }
 
@@ -235,6 +283,17 @@ fun BrowserScreen(
         snifferClient.onNavigationStateChanged = { back, forward ->
             canGoBack = back
             canGoForward = forward
+        }
+        snifferClient.onWebViewPageStarted = { view, _ ->
+            if (currentWebDarkMode.value) {
+                applyWebDarkModeToWebView(view, true)
+            }
+        }
+        snifferClient.onWebViewPageFinished = { view, _ ->
+            if (currentWebDarkMode.value) {
+                applyWebDarkModeToWebView(view, true)
+            }
+            domScanAction(view)
         }
     }
 
@@ -524,6 +583,55 @@ fun BrowserScreen(
                                     }
                                 }
 
+                                val availableSeeds = remember {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                        AppColorSeed.entries
+                                    } else {
+                                        AppColorSeed.entries.filter { it != AppColorSeed.DYNAMIC }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    availableSeeds.forEach { seed ->
+                                        val effectiveSelected = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && colorSeed == AppColorSeed.DYNAMIC) {
+                                            seed == AppColorSeed.SAPPHIRE
+                                        } else {
+                                            seed == colorSeed
+                                        }
+                                        if (seed == AppColorSeed.DYNAMIC) {
+                                            FilterChip(
+                                                selected = effectiveSelected,
+                                                onClick = { onSetColorSeed(seed) },
+                                                label = { Text("Monet", fontSize = 10.sp) },
+                                                shape = CircleShape,
+                                                colors = FilterChipDefaults.filterChipColors(
+                                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                                )
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(22.dp)
+                                                    .clip(CircleShape)
+                                                    .background(seed.swatch)
+                                                    .border(
+                                                        width = if (effectiveSelected) 2.5.dp else 1.dp,
+                                                        color = if (effectiveSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                                                        shape = CircleShape
+                                                    )
+                                                    .clickable { onSetColorSeed(seed) }
+                                            )
+                                        }
+                                    }
+                                }
+
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                                 DropdownMenuItem(
@@ -652,6 +760,7 @@ fun BrowserScreen(
                                     ViewGroup.LayoutParams.MATCH_PARENT,
                                     ViewGroup.LayoutParams.MATCH_PARENT
                                 )
+                                setBackgroundColor(webViewBgArgb)
                                 settings.apply {
                                     javaScriptEnabled = true
                                     domStorageEnabled = true
@@ -664,16 +773,16 @@ fun BrowserScreen(
                                     javaScriptCanOpenWindowsAutomatically = true
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                                         @Suppress("DEPRECATION")
-                                        forceDark = if (isWebDarkMode) WebSettings.FORCE_DARK_ON else WebSettings.FORCE_DARK_OFF
+                                        forceDark = if (currentWebDarkMode.value) WebSettings.FORCE_DARK_ON else WebSettings.FORCE_DARK_OFF
                                     }
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        isAlgorithmicDarkeningAllowed = isWebDarkMode
+                                        isAlgorithmicDarkeningAllowed = currentWebDarkMode.value
                                     }
                                 }
                                 webViewClient = snifferClient
                                 webChromeClient = object : WebChromeClient() {
                                     override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                                        if (tab.id == activeTabId) {
+                                        if (tab.id == currentActiveTabId.value) {
                                             pageProgress = newProgress
                                             canGoBack = view?.canGoBack() == true
                                             canGoForward = view?.canGoForward() == true
@@ -683,18 +792,8 @@ fun BrowserScreen(
                                                 onNavigateUrl(vUrl)
                                             }
                                         }
-                                        if (isWebDarkMode && newProgress >= 15) {
-                                            val js = """
-                                                (function() {
-                                                    if (!document.getElementById('__siphon_dark_mode')) {
-                                                        var s = document.createElement('style');
-                                                        s.id = '__siphon_dark_mode';
-                                                        s.textContent = '@media (prefers-color-scheme: dark) { :root { color-scheme: dark; } } html { filter: invert(90%) hue-rotate(180deg) !important; background-color: #121212 !important; } img, video, canvas, svg, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
-                                                        (document.head || document.documentElement).appendChild(s);
-                                                    }
-                                                })()
-                                            """.trimIndent()
-                                            view?.evaluateJavascript(js, null)
+                                        if (currentWebDarkMode.value && view != null && newProgress >= 10) {
+                                            applyWebDarkModeToWebView(view, true)
                                         }
                                     }
 
@@ -702,7 +801,7 @@ fun BrowserScreen(
                                         val vUrl = view?.url ?: tab.url
                                         val vTitle = title.orEmpty()
                                         onUpdateTabMeta(vUrl, vTitle)
-                                        if (tab.id == activeTabId && !vUrl.isNullOrBlank() && !isUrlBarFocused && vUrl != urlTextFieldValue.text) {
+                                        if (tab.id == currentActiveTabId.value && !vUrl.isNullOrBlank() && !isUrlBarFocused && vUrl != urlTextFieldValue.text) {
                                             urlTextFieldValue = TextFieldValue(vUrl)
                                             onNavigateUrl(vUrl)
                                         }
@@ -751,10 +850,15 @@ fun BrowserScreen(
                                 }
                                 setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
                                     if (tab.id == currentActiveTabId.value) {
+                                        val elapsedSinceTabSwitch = android.os.SystemClock.elapsedRealtime() - currentLastTabSwitchMs.value
+                                        if (elapsedSinceTabSwitch < 700L) {
+                                            if (!currentBarsVisible.value) onToggleBars(true)
+                                            return@setOnScrollChangeListener
+                                        }
                                         val dy = scrollY - oldScrollY
                                         if (scrollY <= 10) {
                                             if (!currentBarsVisible.value) onToggleBars(true)
-                                        } else if (dy > 15) {
+                                        } else if (dy > 15 && oldScrollY > 0) {
                                             if (currentBarsVisible.value) onToggleBars(false)
                                         } else if (dy < -15) {
                                             if (!currentBarsVisible.value) onToggleBars(true)
@@ -767,6 +871,7 @@ fun BrowserScreen(
                             webView
                         },
                         update = { webView ->
+                            webView.setBackgroundColor(webViewBgArgb)
                             webViewMap[tab.id] = webView
                         },
                         modifier = Modifier.fillMaxSize()

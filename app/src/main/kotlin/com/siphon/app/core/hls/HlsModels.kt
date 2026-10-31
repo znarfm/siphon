@@ -15,6 +15,12 @@ data class ParsedHlsAudioTrack(
     val isDefault: Boolean = false
 )
 
+data class ParsedHlsSubtitleTrack(
+    val name: String,
+    val language: String? = null,
+    val url: String
+)
+
 data class ParsedHlsSegment(
     val trackIndex: Int,
     val chunkIndex: Int,
@@ -29,7 +35,8 @@ data class ParsedHlsSegment(
 data class ParsedMasterPlaylist(
     val masterUrl: String,
     val variants: List<ParsedHlsVariant>,
-    val audioTracks: List<ParsedHlsAudioTrack>
+    val audioTracks: List<ParsedHlsAudioTrack>,
+    val subtitleTracks: List<ParsedHlsSubtitleTrack> = emptyList()
 )
 
 data class ParsedMediaPlaylist(

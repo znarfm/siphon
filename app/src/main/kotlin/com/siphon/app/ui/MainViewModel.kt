@@ -93,6 +93,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     val themeMode: StateFlow<com.siphon.app.ui.theme.AppThemeMode> = _themeMode.asStateFlow()
 
+    private val _colorSeed = MutableStateFlow(
+        runCatching {
+            com.siphon.app.ui.theme.AppColorSeed.valueOf(
+                prefs.getString("pref_color_seed", com.siphon.app.ui.theme.AppColorSeed.DYNAMIC.name)
+                    ?: com.siphon.app.ui.theme.AppColorSeed.DYNAMIC.name
+            )
+        }.getOrDefault(com.siphon.app.ui.theme.AppColorSeed.DYNAMIC)
+    )
+    val colorSeed: StateFlow<com.siphon.app.ui.theme.AppColorSeed> = _colorSeed.asStateFlow()
+
     private val _isWebDarkMode = MutableStateFlow(
         prefs.getBoolean("pref_web_dark_mode", false)
     )
@@ -101,6 +111,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setThemeMode(mode: com.siphon.app.ui.theme.AppThemeMode) {
         _themeMode.value = mode
         prefs.edit().putString("pref_theme_mode", mode.name).apply()
+    }
+
+    fun setColorSeed(seed: com.siphon.app.ui.theme.AppColorSeed) {
+        _colorSeed.value = seed
+        prefs.edit().putString("pref_color_seed", seed.name).apply()
     }
 
     fun toggleWebDarkMode() {

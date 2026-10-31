@@ -11,28 +11,26 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.zIndex
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,11 +40,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import com.siphon.app.data.db.DownloadState
 import com.siphon.app.ui.browser.BrowserScreen
@@ -71,7 +75,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by viewModel.themeMode.collectAsState()
-            SiphonTheme(themeMode = themeMode) {
+            val colorSeed by viewModel.colorSeed.collectAsState()
+            SiphonTheme(themeMode = themeMode, colorSeed = colorSeed) {
                 MainContent(viewModel = viewModel)
             }
         }
@@ -118,6 +123,7 @@ fun MainContent(viewModel: MainViewModel) {
     val isAdBlockEnabled by viewModel.isAdBlockEnabled.collectAsState()
     val isWebDarkMode by viewModel.isWebDarkMode.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
+    val colorSeed by viewModel.colorSeed.collectAsState()
     val isSnifferSheetOpen by viewModel.isSnifferSheetOpen.collectAsState()
     val downloads by viewModel.downloads.collectAsState()
     val chunksMap by viewModel.chunksMap.collectAsState()
@@ -128,99 +134,7 @@ fun MainContent(viewModel: MainViewModel) {
         it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED
     }
 
-    Scaffold(
-        bottomBar = {
-            AnimatedVisibility(
-                visible = isBarsVisible || currentTab != AppTab.BROWSER,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                Surface(
-                    tonalElevation = 6.dp,
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    shape = RoundedCornerShape(26.dp),
-                    modifier = Modifier
-                        .padding(horizontal = 48.dp, vertical = 6.dp)
-                        .fillMaxWidth()
-                        .height(48.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        val isBrowser = currentTab == AppTab.BROWSER
-                        Surface(
-                            color = if (isBrowser) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                            shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .clickable { viewModel.selectTab(AppTab.BROWSER) }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                BadgedBox(badge = {
-                                    if (detectedMedia.isNotEmpty()) {
-                                        Badge(
-                                            containerColor = MaterialTheme.colorScheme.primary,
-                                            contentColor = MaterialTheme.colorScheme.onPrimary
-                                        ) {
-                                            Text(detectedMedia.size.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                                        }
-                                    }
-                                }) {
-                                    Text("🌐", fontSize = 16.sp)
-                                }
-                                Text(
-                                    "Browser",
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isBrowser) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isBrowser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        val isQueue = currentTab == AppTab.QUEUE
-                        Surface(
-                            color = if (isQueue) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                            shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .clickable { viewModel.selectTab(AppTab.QUEUE) }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                BadgedBox(badge = {
-                                    if (activeDownloadsCount > 0) {
-                                        Badge(
-                                            containerColor = MaterialTheme.colorScheme.tertiary,
-                                            contentColor = MaterialTheme.colorScheme.onTertiary
-                                        ) {
-                                            Text(activeDownloadsCount.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                                        }
-                                    }
-                                }) {
-                                    Text("📥", fontSize = 16.sp)
-                                }
-                                Text(
-                                    "Downloads",
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isQueue) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isQueue) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    ) { innerPadding ->
+    Scaffold { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -245,9 +159,11 @@ fun MainContent(viewModel: MainViewModel) {
                     isBarsVisible = isBarsVisible,
                     isWebDarkMode = isWebDarkMode,
                     themeMode = themeMode,
+                    colorSeed = colorSeed,
                     onToggleBars = { isBarsVisible = it },
                     onToggleWebDarkMode = { viewModel.toggleWebDarkMode() },
                     onSetThemeMode = { viewModel.setThemeMode(it) },
+                    onSetColorSeed = { viewModel.setColorSeed(it) },
                     onNavigateUrl = { viewModel.setBrowserUrl(it) },
                     onToggleAdBlock = { viewModel.toggleAdBlock() },
                     onOpenSniffer = { viewModel.openSnifferSheet() },
@@ -281,6 +197,119 @@ fun MainContent(viewModel: MainViewModel) {
                 }
             }
 
+            // Floating Stained-Glass Pill Bottom Bar
+            AnimatedVisibility(
+                visible = isBarsVisible || currentTab != AppTab.BROWSER,
+                enter = slideInVertically(initialOffsetY = { it * 2 }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it * 2 }) + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 14.dp)
+                    .zIndex(3f)
+            ) {
+                val glassBrush = Brush.linearGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.76f),
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f),
+                        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.38f),
+                        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.76f)
+                    )
+                )
+                val borderBrush = Brush.linearGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                        Color.White.copy(alpha = 0.28f),
+                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.50f)
+                    )
+                )
+
+                Box(
+                    modifier = Modifier
+                        .shadow(elevation = 14.dp, shape = CircleShape, spotColor = MaterialTheme.colorScheme.primary)
+                        .clip(CircleShape)
+                        .background(glassBrush)
+                        .border(width = 1.2.dp, brush = borderBrush, shape = CircleShape)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .wrapContentWidth()
+                        .height(42.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val isBrowser = currentTab == AppTab.BROWSER
+                        Surface(
+                            color = if (isBrowser) MaterialTheme.colorScheme.primary.copy(alpha = 0.24f) else Color.Transparent,
+                            border = if (isBrowser) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) else null,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable { viewModel.selectTab(AppTab.BROWSER) }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                BadgedBox(badge = {
+                                    if (detectedMedia.isNotEmpty()) {
+                                        Badge(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                        ) {
+                                            Text(detectedMedia.size.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                        }
+                                    }
+                                }) {
+                                    Text("🌐", fontSize = 15.sp)
+                                }
+                                Text(
+                                    "Browser",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isBrowser) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isBrowser) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        val isQueue = currentTab == AppTab.QUEUE
+                        Surface(
+                            color = if (isQueue) MaterialTheme.colorScheme.primary.copy(alpha = 0.24f) else Color.Transparent,
+                            border = if (isQueue) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) else null,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable { viewModel.selectTab(AppTab.QUEUE) }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                BadgedBox(badge = {
+                                    if (activeDownloadsCount > 0) {
+                                        Badge(
+                                            containerColor = MaterialTheme.colorScheme.tertiary,
+                                            contentColor = MaterialTheme.colorScheme.onTertiary
+                                        ) {
+                                            Text(activeDownloadsCount.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                        }
+                                    }
+                                }) {
+                                    Text("📥", fontSize = 15.sp)
+                                }
+                                Text(
+                                    "Downloads",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isQueue) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isQueue) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             val activeTabTitle = browserTabs.firstOrNull { it.id == activeTabId }?.title
 
             SnifferSheet(
@@ -291,16 +320,19 @@ fun MainContent(viewModel: MainViewModel) {
                 onDismiss = { viewModel.closeSnifferSheet() },
                 onClearMedia = { viewModel.clearDetectedMedia() },
                 onRefreshMedia = { viewModel.refreshDetectedMedia() },
-                onDownloadMedia = { media, variantUrl, customFilename ->
+                onDownloadSelected = { requests ->
                     val target = rebindTarget
                     if (target != null) {
-                        viewModel.rebindDownload(target, media, variantUrl)
+                        val first = requests.firstOrNull() ?: return@SnifferSheet
+                        viewModel.rebindDownload(target, first.media, first.selectedVariantUrl)
                     } else {
-                        viewModel.startDownload(
-                            media = media,
-                            customDisplayName = customFilename,
-                            selectedVariantUrl = variantUrl
-                        )
+                        requests.forEach { req ->
+                            viewModel.startDownload(
+                                media = req.media,
+                                customDisplayName = req.customFileName,
+                                selectedVariantUrl = req.selectedVariantUrl
+                            )
+                        }
                     }
                 }
             )

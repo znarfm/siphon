@@ -11,6 +11,7 @@ object HlsPlaylistParser {
     fun parseMasterPlaylist(baseUrl: String, content: String): ParsedMasterPlaylist {
         val variants = mutableListOf<ParsedHlsVariant>()
         val audioTracks = mutableListOf<ParsedHlsAudioTrack>()
+        val subtitleTracks = mutableListOf<ParsedHlsSubtitleTrack>()
 
         val lines = content.lines()
         var currentBandwidth: Long = 0
@@ -37,6 +38,20 @@ object HlsPlaylistParser {
                                 name = name,
                                 url = resolveUri(baseUrl, uri),
                                 isDefault = isDefault
+                            )
+                        )
+                    }
+                } else if (type.equals("SUBTITLES", ignoreCase = true)) {
+                    val name = extractAttribute(line, "NAME") ?: "Subtitle"
+                    val language = extractAttribute(line, "LANGUAGE")
+                    val uri = extractAttribute(line, "URI")
+
+                    if (!uri.isNullOrBlank()) {
+                        subtitleTracks.add(
+                            ParsedHlsSubtitleTrack(
+                                name = name,
+                                language = language,
+                                url = resolveUri(baseUrl, uri)
                             )
                         )
                     }
@@ -68,7 +83,8 @@ object HlsPlaylistParser {
         return ParsedMasterPlaylist(
             masterUrl = baseUrl,
             variants = variants.sortedByDescending { it.bandwidth },
-            audioTracks = audioTracks
+            audioTracks = audioTracks,
+            subtitleTracks = subtitleTracks
         )
     }
 
