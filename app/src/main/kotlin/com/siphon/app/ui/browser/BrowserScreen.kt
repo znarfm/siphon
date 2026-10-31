@@ -381,7 +381,10 @@ fun BrowserScreen(
 
     BackHandler(enabled = isUrlBarFocused || canGoBack) {
         if (isUrlBarFocused) {
+            isUrlBarFocused = false
             focusManager.clearFocus()
+            val cur = activeWebView?.url ?: currentUrl
+            urlTextFieldValue = TextFieldValue(cur)
         } else {
             activeWebView?.goBack()
         }
@@ -526,6 +529,7 @@ fun BrowserScreen(
                                 ),
                                 keyboardActions = KeyboardActions(
                                     onGo = {
+                                        isUrlBarFocused = false
                                         focusManager.clearFocus()
                                         val target = sanitizeUrl(urlTextFieldValue.text)
                                         onNavigateUrl(target)
@@ -584,6 +588,7 @@ fun BrowserScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         TextButton(
                             onClick = {
+                                isUrlBarFocused = false
                                 focusManager.clearFocus()
                                 val cur = activeWebView?.url ?: currentUrl
                                 urlTextFieldValue = TextFieldValue(cur)
@@ -897,6 +902,7 @@ fun BrowserScreen(
                                             title = bm.title,
                                             url = bm.url,
                                             onSelect = {
+                                                isUrlBarFocused = false
                                                 focusManager.clearFocus()
                                                 urlTextFieldValue = TextFieldValue(bm.url)
                                                 onNavigateUrl(bm.url)
@@ -914,6 +920,7 @@ fun BrowserScreen(
                                             title = hi.title,
                                             url = hi.url,
                                             onSelect = {
+                                                isUrlBarFocused = false
                                                 focusManager.clearFocus()
                                                 urlTextFieldValue = TextFieldValue(hi.url)
                                                 onNavigateUrl(hi.url)
