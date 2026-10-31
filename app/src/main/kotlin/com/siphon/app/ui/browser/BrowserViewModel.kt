@@ -100,6 +100,7 @@ class BrowserViewModel(
     val colorSeed: StateFlow<AppColorSeed> = _colorSeed.asStateFlow()
 
     var onRequestDomScan: (() -> Unit)? = null
+    var onRequestPageReload: (() -> Unit)? = null
 
     init {
         viewModelScope.launch {
@@ -246,6 +247,7 @@ class BrowserViewModel(
 
     fun refreshDetectedMedia() {
         snifferClient.clearDetectedMedia()
+        onRequestPageReload?.invoke()
         onRequestDomScan?.invoke()
         val curUrl = _browserUrl.value
         if (curUrl.isNotBlank()) {

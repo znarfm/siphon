@@ -24,5 +24,6 @@ data class SniffedMedia(
     val durationSec: Double = 0.0,
     val isSubtitle: Boolean = false,
     val isAudio: Boolean = false,
-    val language: String? = null
+    val language: String? = null,
+    val detectedAt: Long = System.currentTimeMillis()
 )

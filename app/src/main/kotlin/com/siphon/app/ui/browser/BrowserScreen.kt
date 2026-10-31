@@ -192,6 +192,7 @@ fun BrowserScreen(
     onRefreshAdblock: (AdblockConfig) -> Unit = {},
     onUpdateTabMeta: (url: String, title: String) -> Unit,
     onRegisterDomScan: (((() -> Unit) -> Unit))? = null,
+    onRegisterPageReload: (((() -> Unit) -> Unit))? = null,
     onDownloadDirectMedia: ((url: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -295,6 +296,10 @@ fun BrowserScreen(
         onRegisterDomScan?.invoke {
             val webView = webViewMap[activeTabId] ?: return@invoke
             domScanAction(webView)
+        }
+        onRegisterPageReload?.invoke {
+            val webView = webViewMap[activeTabId] ?: return@invoke
+            webView.reload()
         }
     }
 

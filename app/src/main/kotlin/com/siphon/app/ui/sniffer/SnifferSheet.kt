@@ -1,5 +1,6 @@
 package com.siphon.app.ui.sniffer
 
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -7,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,12 +25,15 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -41,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,6 +63,25 @@ data class SelectedMediaRequest(
     val customFileName: String
 )
 
+enum class SnifferFilter(val label: String) {
+    ALL("All"),
+    HLS("HLS"),
+    DIRECT("Direct")
+}
+
+enum class SnifferSort(val label: String) {
+    RECENCY("Recency"),
+    SIZE("Size"),
+    NAME("Name")
+}
+
+private fun isCurrentTabMedia(sourceUrl: String, activeUrl: String?): Boolean {
+    if (activeUrl.isNullOrBlank() || sourceUrl.isBlank()) return false
+    val activeHost = runCatching { Uri.parse(activeUrl).host?.lowercase() }.getOrNull()
+    val sourceHost = runCatching { Uri.parse(sourceUrl).host?.lowercase() }.getOrNull()
+    return activeHost != null && activeHost == sourceHost
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SnifferSheet(
@@ -64,6 +89,7 @@ fun SnifferSheet(
     detectedMedia: List<SniffedMedia>,
     rebindTarget: DownloadEntity?,
     activeTabTitle: String? = null,
+    activeTabUrl: String? = null,
     onDismiss: () -> Unit,
     onDownloadSelected: (List<SelectedMediaRequest>) -> Unit,
     onClearMedia: () -> Unit,
@@ -73,6 +99,10 @@ fun SnifferSheet(
     if (!isOpen) return
 
     var useTabTitleAsFilename by remember { mutableStateOf(true) }
+    var activeFilter by remember { mutableStateOf(SnifferFilter.ALL) }
+    var activeSort by remember { mutableStateOf(SnifferSort.RECENCY) }
+    var sortDropdownExpanded by remember { mutableStateOf(false) }
+
     val selectedIds = remember { mutableStateMapOf<String, Boolean>() }
     val selectedVariants = remember { mutableStateMapOf<String, HlsVariantInfo?>() }
     val customNames = remember { mutableStateMapOf<String, String>() }
@@ -106,6 +136,19 @@ fun SnifferSheet(
         }
     }
 
+    val filteredAndSortedMedia = remember(detectedMedia, activeFilter, activeSort) {
+        val filtered = when (activeFilter) {
+            SnifferFilter.ALL -> detectedMedia
+            SnifferFilter.HLS -> detectedMedia.filter { it.mediaType == DownloadType.HLS }
+            SnifferFilter.DIRECT -> detectedMedia.filter { it.mediaType == DownloadType.HTTP }
+        }
+        when (activeSort) {
+            SnifferSort.RECENCY -> filtered.sortedByDescending { it.detectedAt }
+            SnifferSort.SIZE -> filtered.sortedByDescending { it.totalBytes }
+            SnifferSort.NAME -> filtered.sortedBy { it.displayName.lowercase() }
+        }
+    }
+
     val selectedMediaList = detectedMedia.filter { selectedIds[it.id] == true }
 
     ModalBottomSheet(
@@ -131,17 +174,17 @@ fun SnifferSheet(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (detectedMedia.size > 1 && rebindTarget == null) {
-                        val allSelected = selectedMediaList.size == detectedMedia.size
+                    if (filteredAndSortedMedia.size > 1 && rebindTarget == null) {
+                        val allSelected = selectedMediaList.size == filteredAndSortedMedia.size
                         TextButton(
                             onClick = {
                                 if (allSelected) {
                                     selectedIds.clear()
                                 } else {
-                                    detectedMedia.forEach { selectedIds[it.id] = true }
+                                    filteredAndSortedMedia.forEach { selectedIds[it.id] = true }
                                 }
                             },
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(if (allSelected) "Deselect All" else "Select All", fontSize = 12.sp)
                         }
@@ -152,14 +195,14 @@ fun SnifferSheet(
                                 selectedIds.clear()
                                 onClearMedia()
                             },
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text("Clear", fontSize = 12.sp)
                         }
                     }
                     TextButton(
                         onClick = onRefreshMedia,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text("Refresh", fontSize = 12.sp)
                     }
@@ -176,25 +219,70 @@ fun SnifferSheet(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { useTabTitleAsFilename = !useTabTitleAsFilename }
                     .padding(vertical = 2.dp)
             ) {
-                Checkbox(
-                    checked = useTabTitleAsFilename,
-                    onCheckedChange = { useTabTitleAsFilename = it }
-                )
-                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "Use tab title as filename by default",
-                    style = MaterialTheme.typography.bodySmall
+                    text = "Tab title as filename",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium
                 )
+                Switch(
+                    checked = useTabTitleAsFilename,
+                    onCheckedChange = { useTabTitleAsFilename = it },
+                    modifier = Modifier.scale(0.8f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SnifferFilter.values().forEach { filter ->
+                        FilterChip(
+                            selected = activeFilter == filter,
+                            onClick = { activeFilter = filter },
+                            label = { Text(filter.label, fontSize = 11.sp) },
+                            modifier = Modifier.height(30.dp)
+                        )
+                    }
+                }
+
+                Box {
+                    OutlinedButton(
+                        onClick = { sortDropdownExpanded = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Text("Sort: ${activeSort.label}", fontSize = 11.sp)
+                    }
+                    DropdownMenu(
+                        expanded = sortDropdownExpanded,
+                        onDismissRequest = { sortDropdownExpanded = false }
+                    ) {
+                        SnifferSort.values().forEach { sort ->
+                            DropdownMenuItem(
+                                text = { Text(sort.label, fontSize = 12.sp) },
+                                onClick = {
+                                    activeSort = sort
+                                    sortDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            if (detectedMedia.isEmpty()) {
+            if (filteredAndSortedMedia.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -202,7 +290,11 @@ fun SnifferSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No audio, video, or subtitle tracks detected yet.\nPlay media in the browser or tap Refresh to sniff.",
+                        text = if (detectedMedia.isEmpty()) {
+                            "No audio, video, or subtitle tracks detected yet.\nPlay media in the browser or tap Refresh to sniff."
+                        } else {
+                            "No media tracks match the selected filter."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -214,14 +306,16 @@ fun SnifferSheet(
                         .height(340.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(detectedMedia, key = { it.id }) { media ->
+                    items(filteredAndSortedMedia, key = { it.id }) { media ->
                         val isSelected = selectedIds[media.id] == true
                         val currentVariant = selectedVariants[media.id] ?: media.variants.firstOrNull()
                         val currentFileName = customNames[media.id] ?: media.displayName
+                        val isCurrentTab = isCurrentTabMedia(media.sourcePageUrl, activeTabUrl)
 
                         SniffedMediaItemCard(
                             media = media,
                             isSelected = isSelected,
+                            isCurrentTab = isCurrentTab,
                             selectedVariant = currentVariant,
                             fileName = currentFileName,
                             onToggleSelect = {
@@ -316,6 +410,7 @@ private fun buildDefaultFileName(
 private fun SniffedMediaItemCard(
     media: SniffedMedia,
     isSelected: Boolean,
+    isCurrentTab: Boolean = false,
     selectedVariant: HlsVariantInfo?,
     fileName: String,
     onToggleSelect: () -> Unit,
@@ -352,14 +447,36 @@ private fun SniffedMediaItemCard(
                 Spacer(modifier = Modifier.width(6.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = (if (media.isAudio) "🎵 " else if (media.isSubtitle) "💬 " else "🎬 ") + media.displayName,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = (if (media.isAudio) "🎵 " else if (media.isSubtitle) "💬 " else "🎬 ") + media.displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (isCurrentTab) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "Current",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(3.dp))
 

@@ -279,7 +279,8 @@ fun MainContent(
                     onClearHistory = { browserViewModel.clearHistory() },
                     onRefreshAdblock = { browserViewModel.refreshAdblockSubscriptions(it) },
                     onUpdateTabMeta = { url, title -> browserViewModel.updateActiveTabMeta(url, title) },
-                    onRegisterDomScan = { scanner -> browserViewModel.onRequestDomScan = scanner }
+                    onRegisterDomScan = { scanner -> browserViewModel.onRequestDomScan = scanner },
+                    onRegisterPageReload = { reloader -> browserViewModel.onRequestPageReload = reloader }
                 )
             }
 
@@ -448,6 +449,7 @@ fun MainContent(
                 detectedMedia = detectedMedia,
                 rebindTarget = rebindTarget,
                 activeTabTitle = activeTabTitle,
+                activeTabUrl = browserUrl,
                 onDismiss = { browserViewModel.closeSnifferSheet() },
                 onClearMedia = { browserViewModel.clearDetectedMedia() },
                 onRefreshMedia = { browserViewModel.refreshDetectedMedia() },
