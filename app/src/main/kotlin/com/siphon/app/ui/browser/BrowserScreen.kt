@@ -5,8 +5,12 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.os.Message
+import androidx.compose.material3.AlertDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -87,7 +91,7 @@ fun BrowserScreen(
     onToggleAdBlock: () -> Unit,
     onOpenSniffer: () -> Unit,
     onCancelRebind: () -> Unit,
-    onNewTab: () -> Unit,
+    onNewTab: (url: String) -> Unit,
     onSelectTab: (String) -> Unit,
     onCloseTab: (String) -> Unit,
     onUpdateTabMeta: (url: String, title: String) -> Unit,
@@ -99,6 +103,7 @@ fun BrowserScreen(
     var pageProgress by remember { mutableIntStateOf(100) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
+    var pendingPopupUrl by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
 
     val activeWebView = webViewMap[activeTabId]
@@ -403,7 +408,7 @@ fun BrowserScreen(
 
                         item {
                             FilledTonalButton(
-                                onClick = onNewTab,
+                                onClick = { onNewTab("https://google.com") },
                                 shape = CircleShape,
                                 modifier = Modifier.size(32.dp),
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
@@ -441,6 +446,8 @@ fun BrowserScreen(
                                     loadWithOverviewMode = true
                                     mediaPlaybackRequiresUserGesture = false
                                     mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                                    setSupportMultipleWindows(true)
+                                    javaScriptCanOpenWindowsAutomatically = true
                                 }
                                 webViewClient = snifferClient
                                 webChromeClient = object : WebChromeClient() {
@@ -466,6 +473,47 @@ fun BrowserScreen(
                                             onNavigateUrl(vUrl)
                                         }
                                     }
+
+                                    override fun onCreateWindow(
+                                        view: WebView?,
+                                        isDialog: Boolean,
+                                        isUserGesture: Boolean,
+                                        resultMsg: Message?
+                                    ): Boolean {
+                                        if (resultMsg == null || view == null) return false
+                                        val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
+                                        val tempWebView = WebView(view.context).apply {
+                                            settings.javaScriptEnabled = true
+                                            webViewClient = object : WebViewClient() {
+                                                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                                    request?.url?.toString()?.takeIf { it.isNotBlank() }?.let {
+                                                        pendingPopupUrl = it
+                                                    }
+                                                    post { destroy() }
+                                                    return true
+                                                }
+
+                                                @Deprecated("Deprecated in Java")
+                                                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                                                    url?.takeIf { it.isNotBlank() }?.let {
+                                                        pendingPopupUrl = it
+                                                    }
+                                                    post { destroy() }
+                                                    return true
+                                                }
+
+                                                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                                    url?.takeIf { it.isNotBlank() }?.let {
+                                                        pendingPopupUrl = it
+                                                    }
+                                                    post { destroy() }
+                                                }
+                                            }
+                                        }
+                                        transport.webView = tempWebView
+                                        resultMsg.sendToTarget()
+                                        return true
+                                    }
                                 }
                                 loadUrl(tab.url)
                             }
@@ -479,6 +527,51 @@ fun BrowserScreen(
                     )
                 }
             }
+        }
+
+        if (pendingPopupUrl != null) {
+            val urlToOpen = pendingPopupUrl!!
+            AlertDialog(
+                onDismissRequest = { pendingPopupUrl = null },
+                title = { Text("Open Popup") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("A page wants to open:")
+                        Text(
+                            text = urlToOpen,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            onNewTab(urlToOpen)
+                            pendingPopupUrl = null
+                        }
+                    ) {
+                        Text("New Tab")
+                    }
+                },
+                dismissButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { pendingPopupUrl = null }) {
+                            Text("Cancel")
+                        }
+                        FilledTonalButton(
+                            onClick = {
+                                activeWebView?.loadUrl(urlToOpen)
+                                pendingPopupUrl = null
+                            }
+                        ) {
+                            Text("Current Tab")
+                        }
+                    }
+                }
+            )
         }
     }
 }

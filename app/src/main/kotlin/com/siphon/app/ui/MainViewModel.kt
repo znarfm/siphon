@@ -69,7 +69,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _activeTabId = MutableStateFlow(initialTab.id)
     val activeTabId = _activeTabId.asStateFlow()
 
-    private val _browserUrl = MutableStateFlow("https://en.wikipedia.org")
+    private val _browserUrl = MutableStateFlow("https://google.com")
     val browserUrl = _browserUrl.asStateFlow()
 
     private val _isSnifferSheetOpen = MutableStateFlow(false)
@@ -136,7 +136,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun openNewBrowserTab(url: String = "https://en.wikipedia.org") {
+    fun openNewBrowserTab(url: String = "https://google.com") {
         val newTab = com.siphon.app.ui.browser.BrowserTab(url = url)
         _browserTabs.value = _browserTabs.value + newTab
         _activeTabId.value = newTab.id

@@ -19,10 +19,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
-import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -37,6 +36,7 @@ import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import javax.crypto.Cipher
 import javax.crypto.CipherInputStream
 import javax.crypto.spec.IvParameterSpec
@@ -310,7 +310,7 @@ class HlsQueueEngine(
         try {
             // Background Merger: wakes immediately whenever any worker finishes a segment,
             // assembly merges all contiguous finished segments in strict sequence without blocking workers.
-            val mergerJob = kotlinx.coroutines.launch(Dispatchers.IO) {
+            val mergerJob = launch(Dispatchers.IO) {
                 var uncommittedSegments = 0
                 while (isActive && nextMergeChunkIndex < segments.size) {
                     var mergedAny = false
@@ -362,7 +362,7 @@ class HlsQueueEngine(
             // Continuous Worker Pool: Pull from shared queue without batch waiting barriers
             val concurrency = maxParallelSegments.coerceIn(4, 8)
             val workers = (0 until concurrency).map {
-                kotlinx.coroutines.launch(Dispatchers.IO) {
+                launch(Dispatchers.IO) {
                     while (isActive) {
                         val segment = segmentQueue.poll() ?: break
                         val segFile = File(workDir, "seg_${trackIndex}_${segment.chunkIndex}.tmp")

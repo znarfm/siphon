@@ -184,7 +184,7 @@ fun MainContent(viewModel: MainViewModel) {
                     onToggleAdBlock = { viewModel.toggleAdBlock() },
                     onOpenSniffer = { viewModel.openSnifferSheet() },
                     onCancelRebind = { viewModel.cancelRebindFlow() },
-                    onNewTab = { viewModel.openNewBrowserTab() },
+                    onNewTab = { viewModel.openNewBrowserTab(it) },
                     onSelectTab = { viewModel.switchBrowserTab(it) },
                     onCloseTab = { viewModel.closeBrowserTab(it) },
                     onUpdateTabMeta = { url, title -> viewModel.updateActiveTabMeta(url, title) }

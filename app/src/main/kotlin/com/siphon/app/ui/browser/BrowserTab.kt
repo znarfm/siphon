@@ -4,6 +4,6 @@ import java.util.UUID
 
 data class BrowserTab(
     val id: String = UUID.randomUUID().toString(),
-    val url: String = "https://en.wikipedia.org",
+    val url: String = "https://google.com",
     val title: String = "New Tab"
 )
