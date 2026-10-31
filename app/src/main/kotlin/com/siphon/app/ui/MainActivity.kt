@@ -90,6 +90,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainContent(viewModel: MainViewModel) {
     val currentTab by viewModel.currentTab.collectAsState()
+    val browserTabs by viewModel.browserTabs.collectAsState()
+    val activeTabId by viewModel.activeTabId.collectAsState()
     val browserUrl by viewModel.browserUrl.collectAsState()
     val detectedMedia by viewModel.detectedMedia.collectAsState()
     val rebindTarget by viewModel.rebindTarget.collectAsState()
@@ -153,6 +155,8 @@ fun MainContent(viewModel: MainViewModel) {
             ) {
                 BrowserScreen(
                     currentUrl = browserUrl,
+                    tabs = browserTabs,
+                    activeTabId = activeTabId,
                     snifferClient = viewModel.snifferClient,
                     detectedMediaCount = detectedMedia.size,
                     isAdBlockEnabled = isAdBlockEnabled,
@@ -160,7 +164,11 @@ fun MainContent(viewModel: MainViewModel) {
                     onNavigateUrl = { viewModel.setBrowserUrl(it) },
                     onToggleAdBlock = { viewModel.toggleAdBlock() },
                     onOpenSniffer = { viewModel.openSnifferSheet() },
-                    onCancelRebind = { viewModel.cancelRebindFlow() }
+                    onCancelRebind = { viewModel.cancelRebindFlow() },
+                    onNewTab = { viewModel.openNewBrowserTab() },
+                    onSelectTab = { viewModel.switchBrowserTab(it) },
+                    onCloseTab = { viewModel.closeBrowserTab(it) },
+                    onUpdateTabMeta = { url, title -> viewModel.updateActiveTabMeta(url, title) }
                 )
             }
 

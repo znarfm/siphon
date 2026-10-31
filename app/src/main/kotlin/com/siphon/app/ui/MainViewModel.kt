@@ -62,6 +62,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentTab = MutableStateFlow(AppTab.BROWSER)
     val currentTab = _currentTab.asStateFlow()
 
+    private val initialTab = com.siphon.app.ui.browser.BrowserTab()
+    private val _browserTabs = MutableStateFlow<List<com.siphon.app.ui.browser.BrowserTab>>(listOf(initialTab))
+    val browserTabs = _browserTabs.asStateFlow()
+
+    private val _activeTabId = MutableStateFlow(initialTab.id)
+    val activeTabId = _activeTabId.asStateFlow()
+
     private val _browserUrl = MutableStateFlow("https://en.wikipedia.org")
     val browserUrl = _browserUrl.asStateFlow()
 
@@ -123,6 +130,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setBrowserUrl(url: String) {
         _browserUrl.value = url
+        val curId = _activeTabId.value
+        _browserTabs.value = _browserTabs.value.map {
+            if (it.id == curId) it.copy(url = url) else it
+        }
+    }
+
+    fun openNewBrowserTab(url: String = "https://en.wikipedia.org") {
+        val newTab = com.siphon.app.ui.browser.BrowserTab(url = url)
+        _browserTabs.value = _browserTabs.value + newTab
+        _activeTabId.value = newTab.id
+        _browserUrl.value = url
+        _currentTab.value = AppTab.BROWSER
+    }
+
+    fun switchBrowserTab(tabId: String) {
+        val target = _browserTabs.value.firstOrNull { it.id == tabId } ?: return
+        _activeTabId.value = tabId
+        _browserUrl.value = target.url
+        _currentTab.value = AppTab.BROWSER
+    }
+
+    fun closeBrowserTab(tabId: String) {
+        val currentList = _browserTabs.value
+        if (currentList.size <= 1) {
+            // Reset the only tab to default home
+            val resetTab = com.siphon.app.ui.browser.BrowserTab(id = tabId, url = "https://en.wikipedia.org", title = "New Tab")
+            _browserTabs.value = listOf(resetTab)
+            _activeTabId.value = tabId
+            _browserUrl.value = resetTab.url
+            return
+        }
+        val remaining = currentList.filter { it.id != tabId }
+        _browserTabs.value = remaining
+        if (_activeTabId.value == tabId) {
+            val nextTab = remaining.last()
+            _activeTabId.value = nextTab.id
+            _browserUrl.value = nextTab.url
+        }
+    }
+
+    fun updateActiveTabMeta(url: String, title: String) {
+        val curId = _activeTabId.value
+        _browserUrl.value = url
+        _browserTabs.value = _browserTabs.value.map {
+            if (it.id == curId) it.copy(url = url, title = title.ifBlank { "Tab" }) else it
+        }
     }
 
     fun toggleAdBlock() {
