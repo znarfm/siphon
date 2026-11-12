@@ -247,7 +247,6 @@ siphon/
 │   │   │   └── res/                         # Vector drawables, adaptive launcher icons, XMLs
 │   │   └── test/                            # Unit tests for core engines, parser, filters
 │   └── build.gradle.kts                     # App module configuration (API 29-35, Compose, Room)
-├── docs/                                    # Technical architecture & audit documentation
 ├── gradle/                                  # Gradle wrapper and version catalog (libs.versions.toml)
 ├── scripts/
 │   └── setup-signing.sh                     # Keystore & GitHub Secrets setup script
@@ -255,7 +254,6 @@ siphon/
 │   ├── ci.yml                               # CI workflow: lint, unit test, assemble debug
 │   └── build.yml                            # Build & Release workflow: tags/dispatch, signed APK, GitHub Release
 ├── handoff.md                               # Architectural decisions & implementation rationale
-├── PLAN.md                                  # Implementation roadmap & milestone checklist
 └── README.md                                # Project documentation
 ```
 

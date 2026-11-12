@@ -43,29 +43,6 @@ import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TaskDetailsSheet(
-
-    download: DownloadEntity,
-    chunks: List<ChunkEntity>,
-    onDismiss: () -> Unit,
-    onShare: () -> Unit,
-    onCopyStreamUrl: () -> Unit,
-    onCopyPageUrl: () -> Unit,
-    onOpenFile: () -> Unit,
-    onRename: () -> Unit
-) {
-    TaskInspectorBottomSheet(
-        download = download,
-        chunks = chunks,
-        onDismiss = onDismiss,
-        onShare = onShare,
-        onCopyStreamUrl = onCopyStreamUrl,
-        onCopyPageUrl = onCopyPageUrl,
-        onOpenFile = onOpenFile,
-        onRename = onRename
-    )
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

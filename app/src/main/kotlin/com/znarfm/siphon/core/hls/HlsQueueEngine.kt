@@ -1,10 +1,6 @@
 package com.znarfm.siphon.core.hls
 
 import android.content.Context
-import android.media.MediaCodec
-import android.media.MediaExtractor
-import android.media.MediaFormat
-import android.media.MediaMuxer
 import android.net.Uri
 import com.znarfm.siphon.core.network.HeadersCodec
 import com.znarfm.siphon.core.network.HttpStatusException
@@ -35,7 +31,6 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
-import java.nio.channels.FileChannel
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import javax.crypto.Cipher
