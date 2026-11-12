@@ -14,54 +14,36 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FloatingToolbarDefaults
-import androidx.compose.material3.HorizontalFloatingToolbar
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.znarfm.siphon.SiphonApp
 import com.znarfm.siphon.data.db.DownloadState
+import com.znarfm.siphon.ui.browser.BookmarksScreen
 import com.znarfm.siphon.ui.browser.BrowserScreen
+import com.znarfm.siphon.ui.browser.BrowserSettingsScreen
 import com.znarfm.siphon.ui.browser.BrowserViewModel
+import com.znarfm.siphon.ui.browser.HistoryScreen
+import com.znarfm.siphon.ui.browser.NEW_TAB_URL
+import com.znarfm.siphon.ui.browser.TabSwitcherScreen
+import com.znarfm.siphon.ui.queue.ConcurrencySettingsDialog
 import com.znarfm.siphon.ui.queue.QueueScreen
 import com.znarfm.siphon.ui.queue.QueueViewModel
 import com.znarfm.siphon.ui.sniffer.SnifferSheet
@@ -70,9 +52,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-enum class AppTab {
+enum class AppScreen {
     BROWSER,
-    QUEUE
+    QUEUE,
+    TAB_SWITCHER,
+    BOOKMARKS,
+    HISTORY,
+    SETTINGS
 }
 
 class MainActivity : ComponentActivity() {
@@ -85,11 +71,11 @@ class MainActivity : ComponentActivity() {
         (application as SiphonApp).container.viewModelFactory
     }
 
-    private val _currentTab = MutableStateFlow(AppTab.BROWSER)
-    val currentTab = _currentTab.asStateFlow()
+    private val _currentScreen = MutableStateFlow(AppScreen.BROWSER)
+    val currentScreen = _currentScreen.asStateFlow()
 
-    fun selectTab(tab: AppTab) {
-        _currentTab.value = tab
+    fun selectScreen(screen: AppScreen) {
+        _currentScreen.value = screen
     }
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -107,13 +93,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by browserViewModel.themeMode.collectAsStateWithLifecycle()
             val colorSeed by browserViewModel.colorSeed.collectAsStateWithLifecycle()
-            val tab by currentTab.collectAsStateWithLifecycle()
+            val screen by currentScreen.collectAsStateWithLifecycle()
             SiphonTheme(themeMode = themeMode, colorSeed = colorSeed) {
                 MainContent(
                     browserViewModel = browserViewModel,
                     queueViewModel = queueViewModel,
-                    currentTab = tab,
-                    onSelectTab = { selectTab(it) }
+                    currentScreen = screen,
+                    onSelectScreen = { selectScreen(it) }
                 )
             }
         }
@@ -129,16 +115,16 @@ class MainActivity : ComponentActivity() {
 
         when (intent.action) {
             "com.znarfm.siphon.action.SHORTCUT_INCOGNITO" -> {
-                selectTab(AppTab.BROWSER)
-                browserViewModel.openNewBrowserTab("https://google.com", isIncognito = true, switchImmediately = true)
+                selectScreen(AppScreen.BROWSER)
+                browserViewModel.openNewBrowserTab(NEW_TAB_URL, isIncognito = true, switchImmediately = true)
                 return
             }
             "com.znarfm.siphon.action.SHORTCUT_QUEUE" -> {
-                selectTab(AppTab.QUEUE)
+                selectScreen(AppScreen.QUEUE)
                 return
             }
             "com.znarfm.siphon.action.SHORTCUT_PASTE_SNIFF" -> {
-                selectTab(AppTab.BROWSER)
+                selectScreen(AppScreen.BROWSER)
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                 val clipText = clipboard?.primaryClip?.let { clip ->
                     if (clip.itemCount > 0) clip.getItemAt(0).text?.toString() else null
@@ -156,7 +142,7 @@ class MainActivity : ComponentActivity() {
 
         val url = extractUrlFromIntent(intent)
         if (!url.isNullOrBlank()) {
-            selectTab(AppTab.BROWSER)
+            selectScreen(AppScreen.BROWSER)
             browserViewModel.loadUrlAndOpenSniffer(url)
         }
     }
@@ -214,15 +200,19 @@ class MainActivity : ComponentActivity() {
 fun MainContent(
     browserViewModel: BrowserViewModel,
     queueViewModel: QueueViewModel,
-    currentTab: AppTab,
-    onSelectTab: (AppTab) -> Unit
+    currentScreen: AppScreen,
+    onSelectScreen: (AppScreen) -> Unit
 ) {
     val context = LocalContext.current
     var isBarsVisible by remember { mutableStateOf(true) }
+    var showAdblockDialog by remember { mutableStateOf(false) }
+    var showDownloadSettingsDialog by remember { mutableStateOf(false) }
 
     val browserTabs by browserViewModel.browserTabs.collectAsStateWithLifecycle()
     val activeTabId by browserViewModel.activeTabId.collectAsStateWithLifecycle()
     val browserUrl by browserViewModel.browserUrl.collectAsStateWithLifecycle()
+    val tabThumbnails by browserViewModel.tabThumbnails.collectAsStateWithLifecycle()
+    val lastClosedTab by browserViewModel.lastClosedTab.collectAsStateWithLifecycle()
     val detectedMedia by browserViewModel.detectedMedia.collectAsStateWithLifecycle()
     val rebindTarget by browserViewModel.rebindTarget.collectAsStateWithLifecycle()
     val isAdBlockEnabled by browserViewModel.isAdBlockEnabled.collectAsStateWithLifecycle()
@@ -251,13 +241,15 @@ fun MainContent(
 
     var backProgress by remember { mutableFloatStateOf(0f) }
 
-    PredictiveBackHandler(enabled = currentTab == AppTab.QUEUE && !queueIsSelectionMode) { progress ->
+    PredictiveBackHandler(
+        enabled = currentScreen != AppScreen.BROWSER && !(currentScreen == AppScreen.QUEUE && queueIsSelectionMode)
+    ) { progress ->
         try {
             progress.collect { backEvent ->
                 backProgress = backEvent.progress
             }
             backProgress = 0f
-            onSelectTab(AppTab.BROWSER)
+            onSelectScreen(AppScreen.BROWSER)
         } catch (e: CancellationException) {
             backProgress = 0f
         }
@@ -269,7 +261,7 @@ fun MainContent(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            val isBrowserVisible = currentTab == AppTab.BROWSER
+            val isBrowserVisible = currentScreen == AppScreen.BROWSER
 
             Box(
                 modifier = Modifier
@@ -283,6 +275,7 @@ fun MainContent(
                     activeTabId = activeTabId,
                     snifferClient = browserViewModel.snifferClient,
                     detectedMediaCount = detectedMedia.size,
+                    activeDownloadCount = activeDownloadsCount,
                     isAdBlockEnabled = isAdBlockEnabled,
                     rebindTarget = rebindTarget,
                     isBarsVisible = isBarsVisible,
@@ -295,6 +288,9 @@ fun MainContent(
                     history = history,
                     adblockRuleCount = adblockRuleCount,
                     adblockConfig = adblockConfig,
+                    searchEngineBase = browserPrefs.searchEngine,
+                    showAdblockDialog = showAdblockDialog,
+                    onShowAdblockDialogChange = { showAdblockDialog = it },
                     onToggleBars = { isBarsVisible = it },
                     onToggleWebDarkMode = { browserViewModel.toggleWebDarkMode() },
                     onToggleDesktopMode = { browserViewModel.toggleDesktopMode() },
@@ -336,11 +332,17 @@ fun MainContent(
                     },
                     onUpdateTabMeta = { url, title -> browserViewModel.updateActiveTabMeta(url, title) },
                     onRegisterDomScan = { scanner -> browserViewModel.onRequestDomScan = scanner },
-                    onRegisterPageReload = { reloader -> browserViewModel.onRequestPageReload = reloader }
+                    onRegisterPageReload = { reloader -> browserViewModel.onRequestPageReload = reloader },
+                    onOpenTabSwitcher = { onSelectScreen(AppScreen.TAB_SWITCHER) },
+                    onOpenDownloads = { onSelectScreen(AppScreen.QUEUE) },
+                    onOpenBookmarks = { onSelectScreen(AppScreen.BOOKMARKS) },
+                    onOpenHistory = { onSelectScreen(AppScreen.HISTORY) },
+                    onOpenSettings = { onSelectScreen(AppScreen.SETTINGS) },
+                    onCaptureThumbnail = { tabId, bitmap -> browserViewModel.updateTabThumbnail(tabId, bitmap) }
                 )
             }
 
-            if (currentTab == AppTab.QUEUE) {
+            if (currentScreen != AppScreen.BROWSER) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -352,159 +354,134 @@ fun MainContent(
                         }
                         .zIndex(2f)
                 ) {
-                    QueueScreen(
-                        downloads = downloads,
-                        chunksMap = chunksMap,
-                        maxConcurrentDownloads = concurrencySettings.maxDownloads,
-                        workersPerDownload = concurrencySettings.workers,
-                        bandwidthLimitBytes = concurrencySettings.bandwidthLimit,
-                        isWifiOnly = concurrencySettings.wifiOnly,
-                        selectedFilter = queueFilter,
-                        onSelectFilter = { queueViewModel.setFilter(it) },
-                        selectedSort = queueSortOption,
-                        onSelectSort = { queueViewModel.setSortOption(it) },
-                        searchQuery = queueSearchQuery,
-                        onSearchQueryChange = { queueViewModel.setSearchQuery(it) },
-                        isSelectionMode = queueIsSelectionMode,
-                        onSetSelectionMode = { queueViewModel.setSelectionMode(it) },
-                        selectedIds = queueSelectedIds,
-                        onToggleSelectId = { queueViewModel.toggleSelection(it) },
-                        onSelectAllIds = { queueViewModel.selectAll(it) },
-                        onClearSelection = { queueViewModel.clearSelection() },
-                        onPause = { queueViewModel.pauseDownload(it) },
-                        onResume = { queueViewModel.resumeDownload(it) },
-                        onCancel = { queueViewModel.cancelDownload(it) },
-                        onDelete = { id, deleteFile -> queueViewModel.deleteDownload(id, deleteFile) },
-                        onRebind = { download ->
-                            onSelectTab(AppTab.BROWSER)
-                            browserViewModel.startRebindFlow(download)
-                        },
-                        onSaveSettings = { maxD, w, limit, wifi -> queueViewModel.setConcurrency(maxD, w, limit, wifi) },
-                        onClearCompleted = { queueViewModel.clearCompleted() },
-                        onPauseAll = { queueViewModel.pauseAll() },
-                        onResumeAll = { queueViewModel.resumeAll() },
-                        onRetry = { queueViewModel.retryDownload(it) },
-                        onRename = { id, name -> queueViewModel.renameDownload(id, name) },
-                        onBulkDelete = { ids, deleteFiles -> queueViewModel.bulkDelete(ids, deleteFiles) },
-                        onBulkCancel = { ids -> queueViewModel.bulkCancel(ids) }
-                    )
+                    when (currentScreen) {
+                        AppScreen.QUEUE -> {
+                            QueueScreen(
+                                downloads = downloads,
+                                chunksMap = chunksMap,
+                                maxConcurrentDownloads = concurrencySettings.maxDownloads,
+                                workersPerDownload = concurrencySettings.workers,
+                                bandwidthLimitBytes = concurrencySettings.bandwidthLimit,
+                                isWifiOnly = concurrencySettings.wifiOnly,
+                                selectedFilter = queueFilter,
+                                onSelectFilter = { queueViewModel.setFilter(it) },
+                                selectedSort = queueSortOption,
+                                onSelectSort = { queueViewModel.setSortOption(it) },
+                                searchQuery = queueSearchQuery,
+                                onSearchQueryChange = { queueViewModel.setSearchQuery(it) },
+                                isSelectionMode = queueIsSelectionMode,
+                                onSetSelectionMode = { queueViewModel.setSelectionMode(it) },
+                                selectedIds = queueSelectedIds,
+                                onToggleSelectId = { queueViewModel.toggleSelection(it) },
+                                onSelectAllIds = { queueViewModel.selectAll(it) },
+                                onClearSelection = { queueViewModel.clearSelection() },
+                                onPause = { queueViewModel.pauseDownload(it) },
+                                onResume = { queueViewModel.resumeDownload(it) },
+                                onCancel = { queueViewModel.cancelDownload(it) },
+                                onDelete = { id, deleteFile -> queueViewModel.deleteDownload(id, deleteFile) },
+                                onRebind = { download ->
+                                    onSelectScreen(AppScreen.BROWSER)
+                                    browserViewModel.startRebindFlow(download)
+                                },
+                                onSaveSettings = { maxD, w, limit, wifi -> queueViewModel.setConcurrency(maxD, w, limit, wifi) },
+                                onClearCompleted = { queueViewModel.clearCompleted() },
+                                onPauseAll = { queueViewModel.pauseAll() },
+                                onResumeAll = { queueViewModel.resumeAll() },
+                                onRetry = { queueViewModel.retryDownload(it) },
+                                onRename = { id, name -> queueViewModel.renameDownload(id, name) },
+                                onBulkDelete = { ids, deleteFiles -> queueViewModel.bulkDelete(ids, deleteFiles) },
+                                onBulkCancel = { ids -> queueViewModel.bulkCancel(ids) },
+                                onNavigateBack = { onSelectScreen(AppScreen.BROWSER) }
+                            )
+                        }
+                        AppScreen.TAB_SWITCHER -> {
+                            TabSwitcherScreen(
+                                tabs = browserTabs,
+                                activeTabId = activeTabId,
+                                thumbnails = tabThumbnails,
+                                lastClosedTab = lastClosedTab,
+                                onSelectTab = { id ->
+                                    browserViewModel.switchBrowserTab(id)
+                                    onSelectScreen(AppScreen.BROWSER)
+                                },
+                                onCloseTab = { browserViewModel.closeBrowserTab(it) },
+                                onUndoCloseTab = { browserViewModel.undoCloseTab() },
+                                onDismissUndo = { browserViewModel.dismissUndoCloseTab() },
+                                onNewTab = { isIncognito ->
+                                    browserViewModel.openNewBrowserTab(
+                                        url = NEW_TAB_URL,
+                                        isIncognito = isIncognito,
+                                        switchImmediately = true
+                                    )
+                                    onSelectScreen(AppScreen.BROWSER)
+                                },
+                                onCloseAllTabs = { incognitoOnly -> browserViewModel.closeAllTabs(incognitoOnly) },
+                                onDismiss = { onSelectScreen(AppScreen.BROWSER) }
+                            )
+                        }
+                        AppScreen.BOOKMARKS -> {
+                            BookmarksScreen(
+                                bookmarks = bookmarks,
+                                onOpenUrl = { url, inNewTab, isIncognito ->
+                                    if (inNewTab || isIncognito) {
+                                        browserViewModel.openNewBrowserTab(url, isIncognito = isIncognito, switchImmediately = true)
+                                    } else {
+                                        browserViewModel.setBrowserUrl(url)
+                                    }
+                                    onSelectScreen(AppScreen.BROWSER)
+                                },
+                                onDeleteBookmark = { browserViewModel.deleteBookmark(it) },
+                                onBack = { onSelectScreen(AppScreen.BROWSER) }
+                            )
+                        }
+                        AppScreen.HISTORY -> {
+                            HistoryScreen(
+                                history = history,
+                                onOpenUrl = { url, inNewTab, isIncognito ->
+                                    if (inNewTab || isIncognito) {
+                                        browserViewModel.openNewBrowserTab(url, isIncognito = isIncognito, switchImmediately = true)
+                                    } else {
+                                        browserViewModel.setBrowserUrl(url)
+                                    }
+                                    onSelectScreen(AppScreen.BROWSER)
+                                },
+                                onDeleteHistory = { browserViewModel.deleteHistory(it) },
+                                onClearHistory = { browserViewModel.clearHistory() },
+                                onBack = { onSelectScreen(AppScreen.BROWSER) }
+                            )
+                        }
+                        AppScreen.SETTINGS -> {
+                            BrowserSettingsScreen(
+                                browserPreferences = browserPrefs,
+                                themeMode = themeMode,
+                                colorSeed = colorSeed,
+                                isAdBlockEnabled = isAdBlockEnabled,
+                                adblockRuleCount = adblockRuleCount,
+                                onSetSearchEngine = { browserViewModel.setSearchEngine(it) },
+                                onSetThemeMode = { browserViewModel.setThemeMode(it) },
+                                onSetColorSeed = { browserViewModel.setColorSeed(it) },
+                                onToggleAdBlock = { browserViewModel.toggleAdBlock() },
+                                onOpenAdblockSubscriptions = { showAdblockDialog = true },
+                                onOpenDownloadSettings = { showDownloadSettingsDialog = true },
+                                onClearHistory = { browserViewModel.clearHistory() },
+                                onBack = { onSelectScreen(AppScreen.BROWSER) }
+                            )
+                        }
+                        AppScreen.BROWSER -> Unit
+                    }
                 }
             }
 
-            // Material 3 Expressive HorizontalFloatingToolbar Bottom Bar
-            AnimatedVisibility(
-                visible = isBarsVisible || currentTab != AppTab.BROWSER,
-                enter = slideInVertically(initialOffsetY = { it * 2 }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it * 2 }) + fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 14.dp)
-                    .zIndex(3f)
-            ) {
-                HorizontalFloatingToolbar(
-                    expanded = true,
-                    floatingActionButton = {
-                        FloatingToolbarDefaults.VibrantFloatingActionButton(
-                            onClick = { browserViewModel.openSnifferSheet() }
-                        ) {
-                            BadgedBox(badge = {
-                                if (detectedMedia.isNotEmpty()) {
-                                    Badge(
-                                        containerColor = MaterialTheme.colorScheme.error,
-                                        contentColor = MaterialTheme.colorScheme.onError
-                                    ) {
-                                        Text(detectedMedia.size.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                                    }
-                                }
-                            }) {
-                                Text("⚡", fontSize = 18.sp)
-                            }
-                        }
-                    },
-                    colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
-                    content = {
-                        val isBrowser = currentTab == AppTab.BROWSER
-                        val browserCornerRadius by animateDpAsState(
-                            targetValue = if (isBrowser) 14.dp else 22.dp,
-                            animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
-                        )
-                        val browserBgColor by animateColorAsState(
-                            targetValue = if (isBrowser) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
-                        )
-                        val browserFgColor by animateColorAsState(
-                            targetValue = if (isBrowser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
-                        )
-
-                        Surface(
-                            color = browserBgColor,
-                            shape = RoundedCornerShape(browserCornerRadius),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(browserCornerRadius))
-                                .clickable { onSelectTab(AppTab.BROWSER) }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text("🌐", fontSize = 15.sp)
-                                Text(
-                                    "Browser",
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isBrowser) FontWeight.Bold else FontWeight.Medium,
-                                    color = browserFgColor
-                                )
-                            }
-                        }
-
-                        val isQueue = currentTab == AppTab.QUEUE
-                        val queueCornerRadius by animateDpAsState(
-                            targetValue = if (isQueue) 14.dp else 22.dp,
-                            animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
-                        )
-                        val queueBgColor by animateColorAsState(
-                            targetValue = if (isQueue) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
-                        )
-                        val queueFgColor by animateColorAsState(
-                            targetValue = if (isQueue) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
-                        )
-
-                        Surface(
-                            color = queueBgColor,
-                            shape = RoundedCornerShape(queueCornerRadius),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(queueCornerRadius))
-                                .clickable { onSelectTab(AppTab.QUEUE) }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                BadgedBox(badge = {
-                                    if (activeDownloadsCount > 0) {
-                                        Badge(
-                                            containerColor = MaterialTheme.colorScheme.tertiary,
-                                            contentColor = MaterialTheme.colorScheme.onTertiary
-                                        ) {
-                                            Text(activeDownloadsCount.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                                        }
-                                    }
-                                }) {
-                                    Text("📥", fontSize = 15.sp)
-                                }
-                                Text(
-                                    "Downloads",
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isQueue) FontWeight.Bold else FontWeight.Medium,
-                                    color = queueFgColor
-                                )
-                            }
-                        }
+            if (showDownloadSettingsDialog) {
+                ConcurrencySettingsDialog(
+                    currentMaxDownloads = concurrencySettings.maxDownloads,
+                    currentWorkers = concurrencySettings.workers,
+                    currentBandwidthLimit = concurrencySettings.bandwidthLimit,
+                    currentWifiOnly = concurrencySettings.wifiOnly,
+                    onDismiss = { showDownloadSettingsDialog = false },
+                    onConfirm = { maxD, w, limit, wifi ->
+                        queueViewModel.setConcurrency(maxD, w, limit, wifi)
+                        showDownloadSettingsDialog = false
                     }
                 )
             }

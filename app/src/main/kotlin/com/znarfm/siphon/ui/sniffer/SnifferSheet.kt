@@ -19,6 +19,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.ClearAll
+import androidx.compose.material.icons.rounded.Deselect
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SelectAll
+import androidx.compose.material.icons.rounded.Subtitles
+import androidx.compose.material.icons.rounded.VideoFile
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -27,6 +36,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -243,6 +253,12 @@ fun SnifferSheet(
                             },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                         ) {
+                            Icon(
+                                imageVector = if (allSelected) Icons.Rounded.Deselect else Icons.Rounded.SelectAll,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(if (allSelected) "Deselect All" else "Select All", fontSize = 12.sp)
                         }
                     }
@@ -254,6 +270,12 @@ fun SnifferSheet(
                             },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                         ) {
+                            Icon(
+                                imageVector = Icons.Rounded.ClearAll,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text("Clear", fontSize = 12.sp)
                         }
                     }
@@ -261,6 +283,12 @@ fun SnifferSheet(
                         onClick = onRefreshMedia,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                     ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text("Refresh", fontSize = 12.sp)
                     }
                     if (rebindTarget != null) {
@@ -450,7 +478,11 @@ fun SnifferSheet(
                                             checked = batchSplitMenuExpanded,
                                             onCheckedChange = { batchSplitMenuExpanded = it }
                                         ) {
-                                            Text("▾", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                            Icon(
+                                                imageVector = Icons.Rounded.ArrowDropDown,
+                                                contentDescription = "More options",
+                                                modifier = Modifier.size(18.dp)
+                                            )
                                         }
 
                                         DropdownMenu(
@@ -579,8 +611,20 @@ private fun SniffedMediaItemCard(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
+                        val mediaIcon = when {
+                            media.isAudio -> Icons.Rounded.AudioFile
+                            media.isSubtitle -> Icons.Rounded.Subtitles
+                            else -> Icons.Rounded.VideoFile
+                        }
+                        Icon(
+                            imageVector = mediaIcon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = (if (media.isAudio) "🎵 " else if (media.isSubtitle) "💬 " else "🎬 ") + media.displayName,
+                            text = media.displayName,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,

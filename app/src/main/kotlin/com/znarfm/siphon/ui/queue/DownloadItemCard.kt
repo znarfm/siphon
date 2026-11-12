@@ -18,6 +18,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.HourglassTop
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -25,6 +39,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -254,13 +269,13 @@ fun DownloadItemCard(
                         DownloadState.COMPLETED -> ({ openCompletedFile(context, download) })
                     }
 
-                    val primaryLabel = when (download.state) {
-                        DownloadState.ACTIVE, DownloadState.QUEUED -> "⏸ Pause"
-                        DownloadState.MERGING -> "⏳ Merging…"
-                        DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK -> "▶ Resume"
-                        DownloadState.FAILED, DownloadState.CANCELLED -> "↻ Retry"
-                        DownloadState.AUTH_EXPIRED -> "🔗 Update Link"
-                        DownloadState.COMPLETED -> "📂 Open"
+                    val (primaryIcon, primaryLabel) = when (download.state) {
+                        DownloadState.ACTIVE, DownloadState.QUEUED -> Icons.Rounded.Pause to "Pause"
+                        DownloadState.MERGING -> Icons.Rounded.HourglassTop to "Merging…"
+                        DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK -> Icons.Rounded.PlayArrow to "Resume"
+                        DownloadState.FAILED, DownloadState.CANCELLED -> Icons.Rounded.Refresh to "Retry"
+                        DownloadState.AUTH_EXPIRED -> Icons.Rounded.Link to "Update Link"
+                        DownloadState.COMPLETED -> Icons.Rounded.FolderOpen to "Open"
                     }
 
                     val chevronRotation by animateFloatAsState(
@@ -274,6 +289,12 @@ fun DownloadItemCard(
                                 onClick = primaryAction,
                                 enabled = download.state != DownloadState.MERGING
                             ) {
+                                Icon(
+                                    imageVector = primaryIcon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = primaryLabel,
                                     fontSize = 11.sp,
@@ -287,11 +308,12 @@ fun DownloadItemCard(
                                     checked = isMenuExpanded,
                                     onCheckedChange = { isMenuExpanded = it }
                                 ) {
-                                    Text(
-                                        text = "▾",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.rotate(chevronRotation)
+                                    Icon(
+                                        imageVector = Icons.Rounded.ArrowDropDown,
+                                        contentDescription = "More actions",
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .rotate(chevronRotation)
                                     )
                                 }
 
@@ -301,7 +323,14 @@ fun DownloadItemCard(
                                 ) {
                                     val isTerminal = download.state == DownloadState.COMPLETED || download.state == DownloadState.CANCELLED
                                     DropdownMenuItem(
-                                        text = { Text(if (isTerminal) "🗑 Delete Download" else "❌ Cancel Download") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = if (isTerminal) Icons.Rounded.DeleteOutline else Icons.Rounded.Cancel,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        },
+                                        text = { Text(if (isTerminal) "Delete Download" else "Cancel Download") },
                                         onClick = {
                                             isMenuExpanded = false
                                             if (isTerminal) onDelete() else onCancel()
@@ -309,7 +338,14 @@ fun DownloadItemCard(
                                     )
                                     if (isCompleted || !download.destinationUri.isNullOrBlank()) {
                                         DropdownMenuItem(
-                                            text = { Text("📤 Share File") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Share,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            },
+                                            text = { Text("Share File") },
                                             onClick = {
                                                 isMenuExpanded = false
                                                 onShare()
@@ -317,7 +353,14 @@ fun DownloadItemCard(
                                         )
                                     }
                                     DropdownMenuItem(
-                                        text = { Text("🔗 Copy Stream URL") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Link,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        },
+                                        text = { Text("Copy Stream URL") },
                                         onClick = {
                                             isMenuExpanded = false
                                             onCopyStreamUrl()
@@ -325,7 +368,14 @@ fun DownloadItemCard(
                                     )
                                     if (!download.sourcePageUrl.isNullOrBlank()) {
                                         DropdownMenuItem(
-                                            text = { Text("🌐 Copy Page URL") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Language,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            },
+                                            text = { Text("Copy Page URL") },
                                             onClick = {
                                                 isMenuExpanded = false
                                                 onCopyPageUrl()
@@ -333,14 +383,28 @@ fun DownloadItemCard(
                                         )
                                     }
                                     DropdownMenuItem(
-                                        text = { Text("✏️ Rename") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Edit,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        },
+                                        text = { Text("Rename") },
                                         onClick = {
                                             isMenuExpanded = false
                                             onRenameClick()
                                         }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("ℹ️ Inspect Details") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Info,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        },
+                                        text = { Text("Inspect Details") },
                                         onClick = {
                                             isMenuExpanded = false
                                             onCardClick()

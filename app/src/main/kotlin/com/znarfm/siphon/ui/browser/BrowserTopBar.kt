@@ -56,15 +56,6 @@ enum class QuickSearchFilter {
     ALL, BOOKMARKS, HISTORY
 }
 
-fun sanitizeUrl(input: String): String {
-    val trimmed = input.trim()
-    return when {
-        trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
-        trimmed.contains(".") && !trimmed.contains(" ") -> "https://$trimmed"
-        else -> "https://www.google.com/search?q=" + Uri.encode(trimmed)
-    }
-}
-
 @Composable
 fun BrowserTopBar(
     canGoBack: Boolean,

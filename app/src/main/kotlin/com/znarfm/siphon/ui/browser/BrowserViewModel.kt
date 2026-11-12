@@ -2,6 +2,7 @@ package com.znarfm.siphon.ui.browser
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.znarfm.siphon.core.adblock.AdblockConfig
@@ -55,8 +56,15 @@ class BrowserViewModel(
     private val _activeTabId = MutableStateFlow(initialTab.id)
     val activeTabId = _activeTabId.asStateFlow()
 
-    private val _browserUrl = MutableStateFlow("https://google.com")
+    private val _browserUrl = MutableStateFlow(NEW_TAB_URL)
     val browserUrl = _browserUrl.asStateFlow()
+
+    private val _tabThumbnails = MutableStateFlow<Map<String, ImageBitmap>>(emptyMap())
+    val tabThumbnails: StateFlow<Map<String, ImageBitmap>> = _tabThumbnails.asStateFlow()
+
+    private val _lastClosedTab = MutableStateFlow<BrowserTab?>(null)
+    val lastClosedTab: StateFlow<BrowserTab?> = _lastClosedTab.asStateFlow()
+    private var lastClosedTabIndex: Int = -1
 
     val isCurrentUrlBookmarked: StateFlow<Boolean> = browserRepository.isUrlBookmarked(_browserUrl)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -138,7 +146,7 @@ class BrowserViewModel(
     }
 
     fun openNewBrowserTab(
-        url: String = "https://google.com",
+        url: String = NEW_TAB_URL,
         isIncognito: Boolean = false,
         switchImmediately: Boolean = true
     ) {
@@ -158,12 +166,24 @@ class BrowserViewModel(
         snifferClient.updateCurrentPageUrl(target.url)
     }
 
+    fun updateTabThumbnail(tabId: String, bitmap: ImageBitmap) {
+        _tabThumbnails.value = _tabThumbnails.value + (tabId to bitmap)
+    }
+
     fun closeBrowserTab(tabId: String) {
         val currentList = _browserTabs.value
+        val closedIndex = currentList.indexOfFirst { it.id == tabId }
+        if (closedIndex == -1) return
+
+        val closedTab = currentList[closedIndex]
+        _lastClosedTab.value = closedTab
+        lastClosedTabIndex = closedIndex
+        _tabThumbnails.value = _tabThumbnails.value - tabId
+
         if (currentList.size <= 1) {
-            val resetTab = BrowserTab(id = tabId, url = "https://en.wikipedia.org", title = "New Tab")
+            val resetTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
             _browserTabs.value = listOf(resetTab)
-            _activeTabId.value = tabId
+            _activeTabId.value = resetTab.id
             _browserUrl.value = resetTab.url
             snifferClient.updateCurrentPageUrl(resetTab.url)
             return
@@ -175,6 +195,57 @@ class BrowserViewModel(
             _activeTabId.value = nextTab.id
             _browserUrl.value = nextTab.url
             snifferClient.updateCurrentPageUrl(nextTab.url)
+        }
+    }
+
+    fun undoCloseTab() {
+        val tabToRestore = _lastClosedTab.value ?: return
+        val currentList = _browserTabs.value
+        val insertIndex = lastClosedTabIndex.coerceIn(0, currentList.size)
+        val updatedList = currentList.toMutableList().apply {
+            add(insertIndex, tabToRestore)
+        }
+        _browserTabs.value = updatedList
+        _activeTabId.value = tabToRestore.id
+        _browserUrl.value = tabToRestore.url
+        snifferClient.updateCurrentPageUrl(tabToRestore.url)
+        _lastClosedTab.value = null
+        lastClosedTabIndex = -1
+    }
+
+    fun dismissUndoCloseTab() {
+        _lastClosedTab.value = null
+        lastClosedTabIndex = -1
+    }
+
+    fun closeAllTabs(incognitoOnly: Boolean = false) {
+        val currentList = _browserTabs.value
+        if (incognitoOnly) {
+            val closedIds = currentList.filter { it.isIncognito }.map { it.id }.toSet()
+            _tabThumbnails.value = _tabThumbnails.value - closedIds
+            val remaining = currentList.filter { !it.isIncognito }
+            if (remaining.isEmpty()) {
+                val freshTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
+                _browserTabs.value = listOf(freshTab)
+                _activeTabId.value = freshTab.id
+                _browserUrl.value = freshTab.url
+                snifferClient.updateCurrentPageUrl(freshTab.url)
+            } else {
+                _browserTabs.value = remaining
+                if (remaining.none { it.id == _activeTabId.value }) {
+                    val nextTab = remaining.last()
+                    _activeTabId.value = nextTab.id
+                    _browserUrl.value = nextTab.url
+                    snifferClient.updateCurrentPageUrl(nextTab.url)
+                }
+            }
+        } else {
+            _tabThumbnails.value = emptyMap()
+            val freshTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
+            _browserTabs.value = listOf(freshTab)
+            _activeTabId.value = freshTab.id
+            _browserUrl.value = freshTab.url
+            snifferClient.updateCurrentPageUrl(freshTab.url)
         }
     }
 

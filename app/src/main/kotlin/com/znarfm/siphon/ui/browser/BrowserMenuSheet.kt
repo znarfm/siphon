@@ -1,39 +1,54 @@
 package com.znarfm.siphon.ui.browser
 
-import android.os.Build
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.DesktopWindows
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.FindInPage
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.PrivacyTip
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,222 +56,324 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.ClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.znarfm.siphon.core.adblock.AdblockConfig
 import com.znarfm.siphon.core.adblock.FastHostFilter
-import com.znarfm.siphon.ui.theme.AppColorSeed
-import com.znarfm.siphon.ui.theme.AppThemeMode
 
 @Composable
 fun BrowserMenuSheet(
     isMenuOpen: Boolean,
     onDismissRequest: () -> Unit,
+    canGoBack: Boolean,
+    canGoForward: Boolean,
+    isLoading: Boolean,
+    isBookmarked: Boolean,
     adblockRuleCount: Int,
+    activeDownloadCount: Int,
     isWebDarkMode: Boolean,
     isDesktopMode: Boolean,
     isAdBlockEnabled: Boolean,
-    themeMode: AppThemeMode,
-    colorSeed: AppColorSeed,
-    currentUrl: String,
-    clipboardManager: ClipboardManager,
+    onBack: () -> Unit,
+    onForward: () -> Unit,
+    onToggleBookmark: () -> Unit,
+    onShare: () -> Unit,
+    onOpenPageInfo: () -> Unit,
+    onReloadOrStop: () -> Unit,
+    onNewTab: () -> Unit,
     onNewIncognitoTab: () -> Unit,
-    onOpenBookmarksAndHistory: () -> Unit,
-    onOpenAdblockDialog: () -> Unit,
+    onOpenBookmarks: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onOpenDownloads: () -> Unit,
+    onOpenFindInPage: () -> Unit,
     onToggleWebDarkMode: () -> Unit,
     onToggleDesktopMode: () -> Unit,
     onToggleAdBlock: () -> Unit,
-    onSetThemeMode: (AppThemeMode) -> Unit,
-    onSetColorSeed: (AppColorSeed) -> Unit
+    onOpenAdblockDialog: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
-    DropdownMenu(
-        expanded = isMenuOpen,
-        onDismissRequest = onDismissRequest
+    if (!isMenuOpen) return
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        dragHandle = null
     ) {
-        DropdownMenuItem(
-            text = { Text("🕶 New Incognito Tab", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
-            onClick = {
-                onDismissRequest()
-                onNewIncognitoTab()
-            }
-        )
-
-        DropdownMenuItem(
-            text = { Text("⭐ Bookmarks & History", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
-            onClick = {
-                onDismissRequest()
-                onOpenBookmarksAndHistory()
-            }
-        )
-
-        DropdownMenuItem(
-            text = {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 12.dp)
+        ) {
+            // Top Quick-Action Icon Row
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("🛡 Adblock Rules", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Text("$adblockRuleCount", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    IconButton(
+                        onClick = {
+                            onDismissRequest()
+                            onBack()
+                        },
+                        enabled = canGoBack
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            onDismissRequest()
+                            onForward()
+                        },
+                        enabled = canGoForward
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = "Forward"
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            onDismissRequest()
+                            onToggleBookmark()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (isBookmarked) Icons.Rounded.Star else Icons.Outlined.StarBorder,
+                            contentDescription = if (isBookmarked) "Remove bookmark" else "Bookmark",
+                            tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            onDismissRequest()
+                            onShare()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Share,
+                            contentDescription = "Share"
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            onDismissRequest()
+                            onOpenPageInfo()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Info,
+                            contentDescription = "Page Info"
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            onDismissRequest()
+                            onReloadOrStop()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (isLoading) Icons.Rounded.Close else Icons.Rounded.Refresh,
+                            contentDescription = if (isLoading) "Stop" else "Reload"
+                        )
+                    }
                 }
-            },
-            onClick = {
-                onDismissRequest()
-                onOpenAdblockDialog()
             }
-        )
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            // Tab & Navigation Items
+            BrowserMenuItemRow(
+                icon = Icons.Rounded.Add,
+                title = "New tab",
+                onClick = {
+                    onDismissRequest()
+                    onNewTab()
+                }
+            )
 
-        DropdownMenuItem(
-            text = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("🌙 Web Dark Mode", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            BrowserMenuItemRow(
+                icon = Icons.Rounded.PrivacyTip,
+                title = "New incognito tab",
+                onClick = {
+                    onDismissRequest()
+                    onNewIncognitoTab()
+                }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            BrowserMenuItemRow(
+                icon = Icons.Rounded.Star,
+                title = "Bookmarks",
+                onClick = {
+                    onDismissRequest()
+                    onOpenBookmarks()
+                }
+            )
+
+            BrowserMenuItemRow(
+                icon = Icons.Rounded.History,
+                title = "History",
+                onClick = {
+                    onDismissRequest()
+                    onOpenHistory()
+                }
+            )
+
+            BrowserMenuItemRow(
+                icon = Icons.Rounded.Download,
+                title = "Downloads",
+                onClick = {
+                    onDismissRequest()
+                    onOpenDownloads()
+                },
+                trailingContent = if (activeDownloadCount > 0) {
+                    {
+                        Badge(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ) {
+                            Text(
+                                text = activeDownloadCount.toString(),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else null
+            )
+
+            BrowserMenuItemRow(
+                icon = Icons.Rounded.FindInPage,
+                title = "Find in page",
+                onClick = {
+                    onDismissRequest()
+                    onOpenFindInPage()
+                }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            // Toggles
+            BrowserMenuItemRow(
+                icon = Icons.Rounded.DarkMode,
+                title = "Web Dark Mode",
+                onClick = onToggleWebDarkMode,
+                trailingContent = {
                     Switch(
                         checked = isWebDarkMode,
-                        onCheckedChange = { onToggleWebDarkMode() },
-                        modifier = Modifier.scale(0.8f)
+                        onCheckedChange = { onToggleWebDarkMode() }
                     )
                 }
-            },
-            onClick = onToggleWebDarkMode
-        )
+            )
 
-        DropdownMenuItem(
-            text = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("🖥 Desktop Site", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            BrowserMenuItemRow(
+                icon = Icons.Rounded.DesktopWindows,
+                title = "Desktop site",
+                onClick = onToggleDesktopMode,
+                trailingContent = {
                     Switch(
                         checked = isDesktopMode,
-                        onCheckedChange = { onToggleDesktopMode() },
-                        modifier = Modifier.scale(0.8f)
+                        onCheckedChange = { onToggleDesktopMode() }
                     )
                 }
-            },
-            onClick = onToggleDesktopMode
-        )
+            )
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-        Text(
-            text = "🎨 App Theme",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 2.dp)
-        ) {
-            val themeModes = AppThemeMode.entries
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                themeModes.forEachIndexed { index, mode ->
-                    val isSelected = mode == themeMode
-                    SegmentedButton(
-                        selected = isSelected,
-                        onClick = { onSetThemeMode(mode) },
-                        shape = SegmentedButtonDefaults.itemShape(index, themeModes.size),
-                        label = { Text(mode.title, fontSize = 10.sp) }
-                    )
-                }
-            }
-        }
-
-        val availableSeeds = remember {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                AppColorSeed.entries
-            } else {
-                AppColorSeed.entries.filter { it != AppColorSeed.DYNAMIC }
-            }
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            availableSeeds.forEach { seed ->
-                val effectiveSelected = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && colorSeed == AppColorSeed.DYNAMIC) {
-                    seed == AppColorSeed.SAPPHIRE
-                } else {
-                    seed == colorSeed
-                }
-                if (seed == AppColorSeed.DYNAMIC) {
-                    FilterChip(
-                        selected = effectiveSelected,
-                        onClick = { onSetColorSeed(seed) },
-                        label = { Text("Monet", fontSize = 10.sp) },
-                        shape = CircleShape,
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+            BrowserMenuItemRow(
+                icon = Icons.Rounded.Shield,
+                title = "Ad Blocker",
+                onClick = onToggleAdBlock,
+                trailingContent = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AssistChip(
+                            onClick = {
+                                onDismissRequest()
+                                onOpenAdblockDialog()
+                            },
+                            label = {
+                                Text(
+                                    text = "$adblockRuleCount rules",
+                                    fontSize = 11.sp
+                                )
+                            }
                         )
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(22.dp)
-                            .clip(CircleShape)
-                            .background(seed.swatch)
-                            .border(
-                                width = if (effectiveSelected) 2.5.dp else 1.dp,
-                                color = if (effectiveSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
-                                shape = CircleShape
-                            )
-                            .clickable { onSetColorSeed(seed) }
-                    )
+                        Switch(
+                            checked = isAdBlockEnabled,
+                            onCheckedChange = { onToggleAdBlock() }
+                        )
+                    }
                 }
-            }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            BrowserMenuItemRow(
+                icon = Icons.Rounded.Settings,
+                title = "Settings",
+                onClick = {
+                    onDismissRequest()
+                    onOpenSettings()
+                }
+            )
         }
+    }
+}
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-        DropdownMenuItem(
-            text = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("🛡 Ad Blocker", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Switch(
-                        checked = isAdBlockEnabled,
-                        onCheckedChange = { onToggleAdBlock() },
-                        modifier = Modifier.scale(0.8f)
-                    )
-                }
-            },
-            onClick = onToggleAdBlock
+@Composable
+private fun BrowserMenuItemRow(
+    icon: ImageVector,
+    title: String,
+    onClick: () -> Unit,
+    trailingContent: (@Composable () -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(22.dp)
         )
-
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-        DropdownMenuItem(
-            text = { Text("📋 Copy Link", fontSize = 13.sp) },
-            onClick = {
-                onDismissRequest()
-                clipboardManager.setText(AnnotatedString(currentUrl))
-            }
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
         )
+        if (trailingContent != null) {
+            Spacer(modifier = Modifier.width(12.dp))
+            trailingContent()
+        }
     }
 }
 
@@ -280,6 +397,13 @@ fun AdblockSubscriptionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Rounded.Shield,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
         title = { Text("Adblock Subscriptions", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {

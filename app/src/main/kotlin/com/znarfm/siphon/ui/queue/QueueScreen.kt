@@ -22,6 +22,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -29,6 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -49,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.znarfm.siphon.data.db.ChunkEntity
@@ -92,6 +102,7 @@ fun QueueScreen(
     onRename: (Long, String) -> Unit,
     onBulkDelete: (List<Long>, Boolean) -> Unit,
     onBulkCancel: (List<Long>) -> Unit,
+    onNavigateBack: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -153,13 +164,13 @@ fun QueueScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // Header Surface
+        // Header Surface (Chrome Android Downloads TopAppBar + M3 Expressive styling)
         Surface(
             tonalElevation = 3.dp,
             shape = ExpressiveShapeTokens.HeaderSheetShape,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
                 if (isSelectionMode) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -172,17 +183,24 @@ fun QueueScreen(
                                 onSetSelectionMode(false)
                                 onClearSelection()
                             }) {
-                                Text("✕", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Exit selection mode"
+                                )
                             }
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "$selectedCount selected",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
                             )
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
                             val allSelected = filteredList.isNotEmpty() && filteredList.all { selectedIds.contains(it.id) }
                             TextButton(onClick = {
                                 if (allSelected) {
@@ -219,71 +237,104 @@ fun QueueScreen(
                 } else {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Back"
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 4.dp)
+                        ) {
                             Text(
-                                text = "Download Queue",
-                                style = MaterialTheme.typography.titleMedium,
+                                text = "Downloads",
+                                style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "$activeCount active • $maxConcurrentDownloads max • $workersPerDownload workers" +
                                     (if (bandwidthLimitBytes > 0) " • ${bandwidthLimitBytes / (1024 * 1024)} MB/s" else "") +
                                     (if (isWifiOnly) " • Wi-Fi" else ""),
                                 style = MaterialTheme.typography.bodySmall.merge(TabularNumberStyle),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            IconButton(onClick = { isSearchExpanded = !isSearchExpanded }) {
-                                Text("🔍", fontSize = 15.sp)
-                            }
-                            FilledTonalButton(
-                                onClick = { showSettingsDialog = true },
-                                shape = ExpressiveShapeTokens.PillShape,
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Text("Settings", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
+                        IconButton(onClick = { isSearchExpanded = !isSearchExpanded }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Search,
+                                contentDescription = "Search downloads"
+                            )
+                        }
+                        IconButton(onClick = { showSettingsDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Settings,
+                                contentDescription = "Download settings"
+                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (activeCount > 0) {
-                            FilledTonalButton(
-                                onClick = onPauseAll,
-                                shape = ExpressiveShapeTokens.PillShape,
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                            ) {
-                                Text("⏸ Pause All", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (activeCount > 0 || pausedCount > 0 || completedCount > 0) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (activeCount > 0) {
+                                FilledTonalButton(
+                                    onClick = onPauseAll,
+                                    shape = ExpressiveShapeTokens.PillShape,
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Pause,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Pause All", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            } else if (pausedCount > 0) {
+                                FilledTonalButton(
+                                    onClick = onResumeAll,
+                                    shape = ExpressiveShapeTokens.PillShape,
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Resume All", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
-                        } else if (pausedCount > 0) {
-                            FilledTonalButton(
-                                onClick = onResumeAll,
-                                shape = ExpressiveShapeTokens.PillShape,
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                            ) {
-                                Text("▶ Resume All", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
 
-                        if (completedCount > 0) {
-                            OutlinedButton(
-                                onClick = onClearCompleted,
-                                shape = ExpressiveShapeTokens.PillShape,
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text("Clear Done", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            if (completedCount > 0) {
+                                OutlinedButton(
+                                    onClick = onClearCompleted,
+                                    shape = ExpressiveShapeTokens.PillShape,
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DeleteSweep,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Clear Done", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -312,7 +363,11 @@ fun QueueScreen(
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { onSearchQueryChange("") }) {
-                                Text("✕", fontSize = 12.sp)
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Clear search",
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                     },
