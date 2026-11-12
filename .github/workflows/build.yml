@@ -51,11 +51,12 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "Decoding release keystore from secret..."
-            echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
+            echo "$KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/release.keystore"
+            cp "$GITHUB_WORKSPACE/release.keystore" app/release.keystore
           else
             echo "No KEYSTORE_BASE64 secret configured. Generating fallback CI signing keystore..."
             keytool -genkeypair -v \
-              -keystore app/release.keystore \
+              -keystore "$GITHUB_WORKSPACE/release.keystore" \
               -alias "${KEY_ALIAS:-siphon}" \
               -keyalg RSA \
               -keysize 2048 \
@@ -63,11 +64,13 @@ jobs:
               -storepass "${KEYSTORE_PASSWORD:-android}" \
               -keypass "${KEY_PASSWORD:-android}" \
               -dname "CN=Siphon CI, O=Siphon, C=US"
+            cp "$GITHUB_WORKSPACE/release.keystore" app/release.keystore
           fi
+          ls -la "$GITHUB_WORKSPACE/release.keystore" app/release.keystore
 
       - name: Build Release APK
         env:
-          KEYSTORE_FILE: app/release.keystore
+          KEYSTORE_FILE: ${{ github.workspace }}/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'android' }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'siphon' }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}

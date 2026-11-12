@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -35,8 +36,17 @@ android {
             val storeFilePath = keystoreProperties.getProperty("storeFile")
                 ?: System.getenv("KEYSTORE_FILE")
             val resolvedStoreFile = storeFilePath?.let { path ->
-                val file = file(path)
-                if (file.isAbsolute) file else rootProject.file(path)
+                val rawFile = File(path)
+                if (rawFile.isAbsolute && rawFile.exists()) {
+                    rawFile
+                } else {
+                    listOf(
+                        rootProject.file(path),
+                        project.file(path),
+                        rootProject.file("app/$path"),
+                        rawFile
+                    ).firstOrNull { it.exists() } ?: rootProject.file(path)
+                }
             }
 
             val storePasswordProp = keystoreProperties.getProperty("storePassword")
@@ -51,11 +61,13 @@ android {
                 !keyAliasProp.isNullOrBlank() &&
                 !keyPasswordProp.isNullOrBlank()
             ) {
+                logger.lifecycle("Release signing configured with keystore: ${resolvedStoreFile.absolutePath} (alias: $keyAliasProp)")
                 storeFile = resolvedStoreFile
                 storePassword = storePasswordProp
                 keyAlias = keyAliasProp
                 keyPassword = keyPasswordProp
             } else {
+                logger.warn("Release signing not configured: fileExists=${resolvedStoreFile?.exists()} (path=$storeFilePath, resolved=${resolvedStoreFile?.absolutePath}), hasStorePass=${!storePasswordProp.isNullOrBlank()}, hasAlias=${!keyAliasProp.isNullOrBlank()}, hasKeyPass=${!keyPasswordProp.isNullOrBlank()}")
                 val debugStore = getByName("debug").storeFile
                 if (debugStore != null && debugStore.exists()) {
                     initWith(getByName("debug"))
@@ -74,6 +86,9 @@ android {
             val releaseConfig = signingConfigs.getByName("release")
             if (releaseConfig.storeFile != null && releaseConfig.storeFile!!.exists()) {
                 signingConfig = releaseConfig
+                logger.lifecycle("Release buildType: assigned signingConfig 'release' (storeFile=${releaseConfig.storeFile})")
+            } else {
+                logger.warn("Release buildType: release signingConfig omitted (storeFile=${releaseConfig.storeFile})")
             }
             isMinifyEnabled = true
             isShrinkResources = true
