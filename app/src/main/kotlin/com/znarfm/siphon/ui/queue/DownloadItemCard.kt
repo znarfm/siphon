@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.HourglassTop
+import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Link
@@ -163,6 +164,7 @@ fun DownloadItemCard(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 val isHls = download.type == DownloadType.HLS
+                val isTorrent = download.type == DownloadType.TORRENT
                 val totalSegments = chunks.size
                 val completedSegments = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
                 val progressFraction = computeProgress(download, chunks)
@@ -178,12 +180,39 @@ fun DownloadItemCard(
 
                 // Subtitle: Type & Size / Progress (using fontFeatureSettings = "tnum" to eliminate jitter)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = if (isHls) "HLS Stream" else "Multi-Chunk HTTP",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    if (isTorrent) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = CircleShape
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Hub,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = "TORRENT",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = if (isHls) "HLS Stream" else "Multi-Chunk HTTP",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
 
                     if (download.state == DownloadState.MERGING) {
                         Spacer(modifier = Modifier.width(6.dp))
@@ -198,6 +227,17 @@ fun DownloadItemCard(
                         val progressDetail = when {
                             download.state == DownloadState.COMPLETED -> {
                                 " • ${formatFileSize(if (download.totalBytes > 0) download.totalBytes else downloadedBytes)} (100%)"
+                            }
+                            isTorrent -> {
+                                when {
+                                    download.totalBytes > 0L -> {
+                                        " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%)"
+                                    }
+                                    download.state == DownloadState.ACTIVE || download.state == DownloadState.QUEUED -> {
+                                        " • Fetching metadata…"
+                                    }
+                                    else -> ""
+                                }
                             }
                             isHls -> {
                                 val totalStr = if (estTotal > 0L) " of ~${formatFileSize(estTotal)}" else ""
@@ -215,11 +255,13 @@ fun DownloadItemCard(
                             }
                         }
 
-                        Text(
-                            text = progressDetail,
-                            style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (progressDetail.isNotEmpty()) {
+                            Text(
+                                text = progressDetail,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 

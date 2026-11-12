@@ -4,9 +4,11 @@ import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import androidx.documentfile.provider.DocumentFile
 import java.io.Closeable
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -53,10 +55,13 @@ class DownloadStorageProvider(context: Context) {
     fun createDestination(
         displayName: String,
         mimeType: String,
-        customTreeUri: Uri? = null
+        customTreeUri: Uri? = null,
+        categorySubfolder: String? = null
     ): Uri {
         val safeName = sanitizeDisplayName(displayName)
         val safeMime = mimeType.ifBlank { "application/octet-stream" }
+        val folder = categorySubfolder?.takeIf { it.isNotBlank() }
+            ?: SmartRouting.resolveCategoryFolder(safeName, safeMime)
 
         val effectiveTreeUri = customTreeUri ?: appContext
             .getSharedPreferences("siphon_prefs", Context.MODE_PRIVATE)
@@ -65,16 +70,23 @@ class DownloadStorageProvider(context: Context) {
             ?.let { Uri.parse(it) }
 
         if (effectiveTreeUri != null) {
-            val safResult = runCatching { createSafDocument(effectiveTreeUri, safeName, safeMime) }
+            val safResult = runCatching {
+                createSafDocument(effectiveTreeUri, safeName, safeMime, folder)
+            }
             if (safResult.isSuccess) {
                 return safResult.getOrThrow()
             }
         }
 
+        val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/Siphon/$folder"
+        val existingNames = queryMediaStoreExistingNames(relativePath, "$relativePath/")
+        val uniqueName = SmartRouting.resolveUniqueName(safeName, existingNames)
+
         val nowSeconds = System.currentTimeMillis() / 1000L
         val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, safeName)
+            put(MediaStore.Downloads.DISPLAY_NAME, uniqueName)
             put(MediaStore.Downloads.MIME_TYPE, safeMime)
+            put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
             put(MediaStore.Downloads.IS_PENDING, 1)
             put(MediaStore.Downloads.DATE_EXPIRES, nowSeconds + PENDING_EXPIRY_SECONDS)
         }
@@ -203,11 +215,52 @@ class DownloadStorageProvider(context: Context) {
         }.getOrDefault(false)
     }
 
-    private fun createSafDocument(treeUri: Uri, displayName: String, mimeType: String): Uri {
-        val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
-        val parentDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId)
-        return DocumentsContract.createDocument(resolver, parentDocUri, mimeType, displayName)
-            ?: throw IOException("Failed to create SAF document '$displayName' in $treeUri")
+    private fun createSafDocument(
+        treeUri: Uri,
+        displayName: String,
+        mimeType: String,
+        categorySubfolder: String
+    ): Uri {
+        val rootDir = DocumentFile.fromTreeUri(appContext, treeUri)
+            ?: throw IOException("Unable to access SAF tree URI: $treeUri")
+
+        val targetDir = rootDir.findFile(categorySubfolder)?.takeIf { it.isDirectory }
+            ?: rootDir.createDirectory(categorySubfolder)
+            ?: throw IOException("Failed to create SAF subfolder '$categorySubfolder' in $treeUri")
+
+        val existingNames = targetDir.listFiles().mapNotNull { it.name }.toSet()
+        val uniqueName = SmartRouting.resolveUniqueName(displayName, existingNames)
+
+        val createdFile = targetDir.createFile(mimeType, uniqueName)
+            ?: throw IOException("Failed to create SAF document '$uniqueName' in $treeUri/$categorySubfolder")
+        return createdFile.uri
+    }
+
+    private fun queryMediaStoreExistingNames(
+        relativePath: String,
+        relativePathWithSlash: String
+    ): Set<String> {
+        val names = HashSet<String>()
+        val projection = arrayOf(MediaStore.Downloads.DISPLAY_NAME)
+        val selection = "${MediaStore.Downloads.RELATIVE_PATH} = ? OR ${MediaStore.Downloads.RELATIVE_PATH} = ?"
+        val selectionArgs = arrayOf(relativePath, relativePathWithSlash)
+        runCatching {
+            resolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )?.use { cursor ->
+                val nameIdx = cursor.getColumnIndex(MediaStore.Downloads.DISPLAY_NAME)
+                if (nameIdx >= 0) {
+                    while (cursor.moveToNext()) {
+                        cursor.getString(nameIdx)?.let { names.add(it) }
+                    }
+                }
+            }
+        }
+        return names
     }
 
     private fun isMediaStoreUri(uri: Uri): Boolean =

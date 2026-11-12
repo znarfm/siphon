@@ -13,8 +13,10 @@ import com.znarfm.siphon.data.db.DownloadDao
 import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.db.DownloadType
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.Immutable
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Headers
 import java.io.File
@@ -42,6 +45,8 @@ class DownloadRepository(
     val storage: DownloadStorageProvider,
     val metadataProber: MetadataProber = MetadataProber()
 ) {
+    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val prefs = application.getSharedPreferences(
         DownloadForegroundService.PREFS_NAME,
         Context.MODE_PRIVATE
@@ -110,6 +115,76 @@ class DownloadRepository(
         id
     }
 
+    fun startMagnetDownload(magnetUri: String) {
+        repoScope.launch {
+            val extractedName = runCatching {
+                Uri.parse(magnetUri).getQueryParameter("dn")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { DownloadStorageProvider.sanitizeDisplayName(it) }
+            }.getOrNull() ?: "Magnet Download"
+
+            val entity = DownloadEntity(
+                url = magnetUri,
+                displayName = extractedName,
+                destinationUri = null,
+                mimeType = "application/x-bittorrent",
+                totalBytes = 0L,
+                etag = null,
+                lastModified = null,
+                isResumable = true,
+                type = DownloadType.TORRENT,
+                state = DownloadState.QUEUED,
+                sourcePageUrl = null,
+                headersJson = null
+            )
+
+            val id = dao.insertDownload(entity)
+            val settings = _concurrencySettings.value
+            DownloadForegroundService.startOrResume(
+                context = application,
+                downloadId = id,
+                maxConcurrent = settings.maxDownloads,
+                workers = settings.workers
+            )
+        }
+    }
+
+    fun startTorrentFileDownload(torrentBytes: ByteArray, displayName: String) {
+        repoScope.launch {
+            val torrentsDir = File(application.filesDir, "torrents").apply { mkdirs() }
+            val torrentFile = File(torrentsDir, "${System.currentTimeMillis()}.torrent")
+            torrentFile.writeBytes(torrentBytes)
+
+            val safeName = DownloadStorageProvider.sanitizeDisplayName(
+                displayName.ifBlank { "Torrent Download" }
+            )
+
+            val entity = DownloadEntity(
+                url = torrentFile.absolutePath,
+                displayName = safeName,
+                destinationUri = null,
+                mimeType = "application/x-bittorrent",
+                totalBytes = 0L,
+                etag = null,
+                lastModified = null,
+                isResumable = true,
+                type = DownloadType.TORRENT,
+                state = DownloadState.QUEUED,
+                sourcePageUrl = null,
+                headersJson = null
+            )
+
+            val id = dao.insertDownload(entity)
+            val settings = _concurrencySettings.value
+            DownloadForegroundService.startOrResume(
+                context = application,
+                downloadId = id,
+                maxConcurrent = settings.maxDownloads,
+                workers = settings.workers
+            )
+        }
+    }
+
     fun pauseDownload(id: Long) {
         DownloadForegroundService.pause(application, id)
     }
@@ -150,6 +225,9 @@ class DownloadRepository(
         if (download.type == DownloadType.HLS) {
             val workDir = File(application.cacheDir, "hls_$id")
             workDir.deleteRecursively()
+        } else if (download.type == DownloadType.TORRENT) {
+            val stagingDir = File(application.filesDir, "torrent_staging/$id")
+            stagingDir.deleteRecursively()
         }
         dao.resetChunksToStart(id)
         dao.updateDownloadState(id, DownloadState.QUEUED)
@@ -178,6 +256,13 @@ class DownloadRepository(
         if (entity?.type == DownloadType.HLS) {
             val workDir = File(application.cacheDir, "hls_$id")
             workDir.deleteRecursively()
+        } else if (entity?.type == DownloadType.TORRENT) {
+            val stagingDir = File(application.filesDir, "torrent_staging/$id")
+            stagingDir.deleteRecursively()
+            val sourceFile = File(entity.url)
+            if (sourceFile.exists() && sourceFile.parentFile?.name == "torrents") {
+                sourceFile.delete()
+            }
         }
         dao.deleteDownload(id)
     }

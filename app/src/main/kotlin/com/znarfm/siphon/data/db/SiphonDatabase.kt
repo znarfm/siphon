@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [DownloadEntity::class, ChunkEntity::class, BookmarkEntity::class, HistoryEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class SiphonDatabase : RoomDatabase() {

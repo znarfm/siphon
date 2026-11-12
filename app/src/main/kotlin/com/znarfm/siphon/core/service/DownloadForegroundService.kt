@@ -18,6 +18,7 @@ import androidx.core.app.ServiceCompat
 import com.znarfm.siphon.core.engine.ChunkQueueEngine
 import com.znarfm.siphon.core.hls.HlsQueueEngine
 import com.znarfm.siphon.core.storage.DownloadStorageProvider
+import com.znarfm.siphon.core.torrent.TorrentQueueEngine
 import com.znarfm.siphon.data.db.DownloadDao
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.db.DownloadType
@@ -37,6 +38,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 @Immutable
@@ -58,6 +60,7 @@ class DownloadForegroundService : Service() {
     private lateinit var storage: DownloadStorageProvider
     private lateinit var engine: ChunkQueueEngine
     private lateinit var hlsEngine: HlsQueueEngine
+    private lateinit var torrentEngine: TorrentQueueEngine
     private lateinit var notificationManager: NotificationManager
     private lateinit var connectivityManager: ConnectivityManager
     private var currentWorkers: Int = 6
@@ -118,6 +121,8 @@ class DownloadForegroundService : Service() {
             dao = dao,
             rateBytesPerSec = initialBandwidthLimit
         )
+        torrentEngine = TorrentQueueEngine(applicationContext, dao, storage)
+        torrentEngine.setBandwidthLimit(initialBandwidthLimit)
         notificationManager = getSystemService(NotificationManager::class.java)
         connectivityManager = getSystemService(ConnectivityManager::class.java)
 
@@ -157,6 +162,7 @@ class DownloadForegroundService : Service() {
             val limit = intent.getLongExtra(EXTRA_BANDWIDTH_LIMIT, 0L).coerceAtLeast(0L)
             engine.updateRateLimit(limit)
             hlsEngine.updateRateLimit(limit)
+            torrentEngine.setBandwidthLimit(limit)
         }
         if (intent?.hasExtra(EXTRA_WIFI_ONLY) == true) {
             isWifiOnly = intent.getBooleanExtra(EXTRA_WIFI_ONLY, false)
@@ -270,6 +276,32 @@ class DownloadForegroundService : Service() {
                             }
                         )
                     }
+                } else if (entity.type == DownloadType.TORRENT) {
+                    engine.withDownloadPermit {
+                        val url = entity.url
+                        val isLocalTorrentFile = !url.startsWith("magnet:", ignoreCase = true) &&
+                            !url.startsWith("http://", ignoreCase = true) &&
+                            !url.startsWith("https://", ignoreCase = true)
+                        val torrentBytes = if (isLocalTorrentFile) {
+                            runCatching { File(url).readBytes() }.getOrNull()
+                        } else {
+                            null
+                        }
+                        torrentEngine.execute(
+                            downloadId = downloadId,
+                            magnetOrUrl = url,
+                            torrentBytes = torrentBytes,
+                            onProgress = { progress ->
+                                progressState.update { map ->
+                                    val current = map[downloadId] ?: return@update map
+                                    map + (downloadId to current.copy(
+                                        downloadedBytes = progress.downloadedBytes,
+                                        totalBytes = progress.totalBytes
+                                    ))
+                                }
+                            }
+                        )
+                    }
                 } else {
                     engine.executeWithStorage(
                         downloadId = downloadId,
@@ -300,6 +332,7 @@ class DownloadForegroundService : Service() {
     private fun pauseDownload(downloadId: Long) {
         serviceScope.launch(Dispatchers.IO) {
             withContext(NonCancellable) {
+                torrentEngine.pauseTorrent(downloadId)
                 activeJobs.remove(downloadId)?.cancelAndJoin()
                 dao.updateDownloadState(downloadId, DownloadState.PAUSED)
                 val entity = dao.getDownload(downloadId)
@@ -315,10 +348,16 @@ class DownloadForegroundService : Service() {
     private fun cancelDownload(downloadId: Long) {
         serviceScope.launch(Dispatchers.IO) {
             withContext(NonCancellable) {
+                torrentEngine.cancelTorrent(downloadId)
                 activeJobs.remove(downloadId)?.cancelAndJoin()
                 val entity = dao.getDownload(downloadId)
                 if (entity?.type == DownloadType.HLS) {
                     hlsEngine.cancelAndDelete(downloadId, storage)
+                } else if (entity?.type == DownloadType.TORRENT) {
+                    if (entity.destinationUri != null) {
+                        storage.delete(entity.destinationUri)
+                    }
+                    dao.updateDownloadState(downloadId, DownloadState.CANCELLED)
                 } else {
                     engine.cancelAndDelete(downloadId, storage)
                 }
@@ -333,6 +372,9 @@ class DownloadForegroundService : Service() {
         serviceScope.launch(Dispatchers.IO) {
             withContext(NonCancellable) {
                 val runningIds = activeJobs.keys.toList()
+                for (id in runningIds) {
+                    torrentEngine.pauseTorrent(id)
+                }
                 val jobs = runningIds.mapNotNull { activeJobs.remove(it) }
 
                 withTimeoutOrNull(2500L) {

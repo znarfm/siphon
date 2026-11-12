@@ -7,7 +7,8 @@ import androidx.room.PrimaryKey
 
 enum class DownloadType {
     HTTP,
-    HLS
+    HLS,
+    TORRENT
 }
 
 enum class DownloadState {

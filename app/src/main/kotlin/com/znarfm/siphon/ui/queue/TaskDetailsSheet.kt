@@ -57,6 +57,7 @@ fun TaskInspectorBottomSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val headers = remember(download.headersJson) { HeadersCodec.decode(download.headersJson) }
     val isHls = download.type == DownloadType.HLS
+    val isTorrent = download.type == DownloadType.TORRENT
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -81,7 +82,11 @@ fun TaskInspectorBottomSheet(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = if (isHls) "HLS .m3u8 Stream" else "Progressive HTTP Download",
+                        text = when {
+                            isTorrent -> "BitTorrent / Magnet Download"
+                            isHls -> "HLS .m3u8 Stream"
+                            else -> "Progressive HTTP Download"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -129,12 +134,24 @@ fun TaskInspectorBottomSheet(
             // Technical details
             Text("Stream & Metadata", fontWeight = FontWeight.Bold, fontSize = 13.sp)
             val completedChunks = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
-            val metaText = if (isHls) {
-                "Segments: $completedChunks / ${chunks.size} • MIME: ${download.mimeType.ifBlank { "video/mp4" }}\n" +
-                    "ETag: ${download.etag ?: "None"} • Last-Modified: ${download.lastModified ?: "None"}"
-            } else {
-                "Size: ${formatFileSize(download.totalBytes)} • Resumable: ${if (download.isResumable) "Yes (HTTP 206)" else "No"}\n" +
-                    "Chunks: ${chunks.size} positional workers • MIME: ${download.mimeType.ifBlank { "binary/octet-stream" }}"
+            val metaText = when {
+                isTorrent -> {
+                    val sizeLabel = if (download.totalBytes > 0L) formatFileSize(download.totalBytes) else "Fetching metadata…"
+                    val chunkSuffix = if (chunks.isNotEmpty()) "\nPieces: $completedChunks / ${chunks.size}" else ""
+                    "Size: $sizeLabel • Type: BitTorrent$chunkSuffix"
+                }
+                isHls -> {
+                    "Segments: $completedChunks / ${chunks.size} • MIME: ${download.mimeType.ifBlank { "video/mp4" }}\n" +
+                        "ETag: ${download.etag ?: "None"} • Last-Modified: ${download.lastModified ?: "None"}"
+                }
+                else -> {
+                    val chunkLine = if (chunks.isNotEmpty()) {
+                        "\nChunks: ${chunks.size} positional workers • MIME: ${download.mimeType.ifBlank { "binary/octet-stream" }}"
+                    } else {
+                        "\nMIME: ${download.mimeType.ifBlank { "binary/octet-stream" }}"
+                    }
+                    "Size: ${formatFileSize(download.totalBytes)} • Resumable: ${if (download.isResumable) "Yes (HTTP 206)" else "No"}$chunkLine"
+                }
             }
             Text(
                 text = metaText,

@@ -21,3 +21,6 @@
 -dontwarn org.openjsse.**
 -keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase
 
+# libtorrent4j JNI and wrapper classes
+-keep class org.libtorrent4j.** { *; }
+-dontwarn org.libtorrent4j.**

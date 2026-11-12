@@ -5,8 +5,10 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.PredictiveBackHandler
@@ -14,26 +16,55 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.znarfm.siphon.SiphonApp
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.ui.browser.BookmarksScreen
@@ -47,10 +78,15 @@ import com.znarfm.siphon.ui.queue.ConcurrencySettingsDialog
 import com.znarfm.siphon.ui.queue.QueueScreen
 import com.znarfm.siphon.ui.queue.QueueViewModel
 import com.znarfm.siphon.ui.sniffer.SnifferSheet
+import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.SiphonTheme
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class AppScreen {
     BROWSER,
@@ -71,11 +107,24 @@ class MainActivity : ComponentActivity() {
         (application as SiphonApp).container.viewModelFactory
     }
 
+    private val downloadRepository by lazy {
+        (application as SiphonApp).container.downloadRepository
+    }
+
     private val _currentScreen = MutableStateFlow(AppScreen.BROWSER)
     val currentScreen = _currentScreen.asStateFlow()
 
+    private val _pendingClipboardLink = MutableStateFlow<String?>(null)
+    val pendingClipboardLink: StateFlow<String?> = _pendingClipboardLink.asStateFlow()
+
+    private var lastPromptedClipboardLink: String? = null
+
     fun selectScreen(screen: AppScreen) {
         _currentScreen.value = screen
+    }
+
+    fun dismissClipboardPrompt() {
+        _pendingClipboardLink.value = null
     }
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -94,12 +143,24 @@ class MainActivity : ComponentActivity() {
             val themeMode by browserViewModel.themeMode.collectAsStateWithLifecycle()
             val colorSeed by browserViewModel.colorSeed.collectAsStateWithLifecycle()
             val screen by currentScreen.collectAsStateWithLifecycle()
+            val clipboardLink by pendingClipboardLink.collectAsStateWithLifecycle()
             SiphonTheme(themeMode = themeMode, colorSeed = colorSeed) {
                 MainContent(
                     browserViewModel = browserViewModel,
                     queueViewModel = queueViewModel,
                     currentScreen = screen,
-                    onSelectScreen = { selectScreen(it) }
+                    onSelectScreen = { selectScreen(it) },
+                    pendingClipboardLink = clipboardLink,
+                    onAcceptClipboardLink = { link ->
+                        dismissClipboardPrompt()
+                        if (link.startsWith("magnet:", ignoreCase = true)) {
+                            queueMagnetDownload(link)
+                        } else {
+                            selectScreen(AppScreen.BROWSER)
+                            browserViewModel.loadUrlAndOpenSniffer(link)
+                        }
+                    },
+                    onDismissClipboardLink = { dismissClipboardPrompt() }
                 )
             }
         }
@@ -108,6 +169,61 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIncomingIntent(intent)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            val clipText = clipboard?.primaryClip?.let { clip ->
+                if (clip.itemCount > 0) clip.getItemAt(0).text?.toString() else null
+            }
+            val link = extractLinkFromText(clipText)
+            if (!link.isNullOrBlank() && link != lastPromptedClipboardLink) {
+                lastPromptedClipboardLink = link
+                _pendingClipboardLink.value = link
+            }
+        }
+    }
+
+    private fun queueMagnetDownload(magnetUri: String) {
+        selectScreen(AppScreen.QUEUE)
+        lifecycleScope.launch {
+            downloadRepository.startMagnetDownload(magnetUri)
+        }
+        Toast.makeText(this, "Magnet download queued", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun queueTorrentUri(uri: Uri) {
+        val fileName = resolveFileName(uri) ?: "download.torrent"
+        lifecycleScope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            }
+            if (bytes != null && bytes.isNotEmpty()) {
+                downloadRepository.startTorrentFileDownload(bytes, fileName)
+                selectScreen(AppScreen.QUEUE)
+                Toast.makeText(this@MainActivity, "Torrent queued", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@MainActivity, "Failed to read torrent file", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun resolveFileName(uri: Uri): String? {
+        if (uri.scheme == "content") {
+            runCatching {
+                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0) {
+                            return cursor.getString(idx)
+                        }
+                    }
+                }
+            }
+        }
+        return uri.lastPathSegment?.substringAfterLast('/')
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
@@ -124,57 +240,110 @@ class MainActivity : ComponentActivity() {
                 return
             }
             "com.znarfm.siphon.action.SHORTCUT_PASTE_SNIFF" -> {
-                selectScreen(AppScreen.BROWSER)
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                 val clipText = clipboard?.primaryClip?.let { clip ->
                     if (clip.itemCount > 0) clip.getItemAt(0).text?.toString() else null
                 }
-                val url = extractUrlFromText(clipText)
-                if (!url.isNullOrBlank()) {
-                    browserViewModel.loadUrlAndOpenSniffer(url)
-                } else {
-                    browserViewModel.openSnifferSheet()
-                    Toast.makeText(this, "No URL in clipboard", Toast.LENGTH_SHORT).show()
+                val link = extractLinkFromText(clipText)
+                when {
+                    !link.isNullOrBlank() && link.startsWith("magnet:", ignoreCase = true) -> {
+                        queueMagnetDownload(link)
+                    }
+                    !link.isNullOrBlank() -> {
+                        selectScreen(AppScreen.BROWSER)
+                        browserViewModel.loadUrlAndOpenSniffer(link)
+                    }
+                    else -> {
+                        selectScreen(AppScreen.BROWSER)
+                        browserViewModel.openSnifferSheet()
+                        Toast.makeText(this, "No URL in clipboard", Toast.LENGTH_SHORT).show()
+                    }
                 }
                 return
             }
         }
 
-        val url = extractUrlFromIntent(intent)
-        if (!url.isNullOrBlank()) {
-            selectScreen(AppScreen.BROWSER)
-            browserViewModel.loadUrlAndOpenSniffer(url)
+        val link = extractLinkFromIntent(intent) ?: return
+        when {
+            link.startsWith("magnet:", ignoreCase = true) -> {
+                queueMagnetDownload(link)
+            }
+            link.startsWith("content://", ignoreCase = true) || link.startsWith("file://", ignoreCase = true) -> {
+                queueTorrentUri(Uri.parse(link))
+            }
+            else -> {
+                selectScreen(AppScreen.BROWSER)
+                browserViewModel.loadUrlAndOpenSniffer(link)
+            }
         }
     }
 
-    private fun extractUrlFromIntent(intent: Intent): String? {
+    private fun extractLinkFromIntent(intent: Intent): String? {
         val data = intent.dataString
-        if (!data.isNullOrBlank() && (data.startsWith("http://") || data.startsWith("https://"))) {
-            return data
+        if (!data.isNullOrBlank()) {
+            val lower = data.lowercase()
+            if (lower.startsWith("magnet:") ||
+                lower.startsWith("http://") ||
+                lower.startsWith("https://") ||
+                lower.startsWith("content://") ||
+                lower.startsWith("file://")
+            ) {
+                return data
+            }
+        }
+
+        val streamUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        }
+        if (streamUri != null) {
+            val streamStr = streamUri.toString()
+            if (streamStr.startsWith("content://", ignoreCase = true) ||
+                streamStr.startsWith("file://", ignoreCase = true)
+            ) {
+                return streamStr
+            }
         }
 
         val text = intent.getStringExtra(Intent.EXTRA_TEXT)
-        extractUrlFromText(text)?.let { return it }
+        extractLinkFromText(text)?.let { return it }
 
         val clip = intent.clipData
         if (clip != null && clip.itemCount > 0) {
             for (i in 0 until clip.itemCount) {
                 val item = clip.getItemAt(i)
                 val uriStr = item.uri?.toString()
-                if (!uriStr.isNullOrBlank() && (uriStr.startsWith("http://") || uriStr.startsWith("https://"))) {
-                    return uriStr
+                if (!uriStr.isNullOrBlank()) {
+                    val lower = uriStr.lowercase()
+                    if (lower.startsWith("magnet:") ||
+                        lower.startsWith("http://") ||
+                        lower.startsWith("https://") ||
+                        lower.startsWith("content://") ||
+                        lower.startsWith("file://")
+                    ) {
+                        return uriStr
+                    }
                 }
-                extractUrlFromText(item.text?.toString())?.let { return it }
+                extractLinkFromText(item.text?.toString())?.let { return it }
             }
         }
 
-        extractUrlFromText(intent.getStringExtra(Intent.EXTRA_SUBJECT))?.let { return it }
+        extractLinkFromText(intent.getStringExtra(Intent.EXTRA_SUBJECT))?.let { return it }
 
         return null
     }
 
     companion object {
-        private val urlRegex = Regex("""https?://[^\s<>"'{}|\\^`]+""")
+        private val magnetRegex = Regex("""magnet:\?[^\s<>"']+""", RegexOption.IGNORE_CASE)
+        private val urlRegex = Regex("""https?://[^\s<>"'{}|\\^`]+""", RegexOption.IGNORE_CASE)
+
+        fun extractLinkFromText(text: String?): String? {
+            if (text.isNullOrBlank()) return null
+            magnetRegex.find(text)?.value?.trimEnd('.', ',', ')', ']', ';', '!')?.let { return it }
+            return urlRegex.find(text)?.value?.trimEnd('.', ',', ')', ']', ';', '!')
+        }
 
         fun extractUrlFromText(text: String?): String? {
             if (text.isNullOrBlank()) return null
@@ -201,7 +370,10 @@ fun MainContent(
     browserViewModel: BrowserViewModel,
     queueViewModel: QueueViewModel,
     currentScreen: AppScreen,
-    onSelectScreen: (AppScreen) -> Unit
+    onSelectScreen: (AppScreen) -> Unit,
+    pendingClipboardLink: String? = null,
+    onAcceptClipboardLink: (String) -> Unit = {},
+    onDismissClipboardLink: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var isBarsVisible by remember { mutableStateOf(true) }
@@ -513,6 +685,108 @@ fun MainContent(
                     }
                 }
             )
+
+            AnimatedVisibility(
+                visible = !pendingClipboardLink.isNullOrBlank(),
+                enter = slideInVertically { -it } + fadeIn(),
+                exit = slideOutVertically { -it } + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .zIndex(10f)
+            ) {
+                pendingClipboardLink?.let { link ->
+                    ClipboardDetectionBanner(
+                        link = link,
+                        onAccept = { onAcceptClipboardLink(link) },
+                        onDismiss = onDismissClipboardLink
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClipboardDetectionBanner(
+    link: String,
+    onAccept: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isMagnet = link.startsWith("magnet:", ignoreCase = true)
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = ExpressiveShapeTokens.RestingCardShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 6.dp,
+        shadowElevation = 8.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isMagnet) Icons.Rounded.Hub else Icons.Rounded.ContentPaste,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isMagnet) "Magnet Link Detected" else "Link in Clipboard",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = link,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    shape = ExpressiveShapeTokens.PillShape
+                ) {
+                    Text("Dismiss")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                FilledTonalButton(
+                    onClick = onAccept,
+                    shape = ExpressiveShapeTokens.PillShape
+                ) {
+                    Text(
+                        text = if (isMagnet) "Download Magnet" else "Sniff / Open",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
     }
 }
