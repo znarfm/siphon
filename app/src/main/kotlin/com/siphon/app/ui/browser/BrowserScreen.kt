@@ -14,7 +14,10 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -32,6 +35,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
@@ -66,6 +72,7 @@ import com.siphon.app.data.db.DownloadEntity
 import com.siphon.app.data.db.HistoryEntity
 import com.siphon.app.ui.theme.AppColorSeed
 import com.siphon.app.ui.theme.AppThemeMode
+import kotlinx.coroutines.CancellationException
 
 private const val DARK_MODE_INJECT_JS = """
 (function() {
@@ -208,6 +215,22 @@ fun BrowserScreen(
     var canGoForward by remember { mutableStateOf(false) }
     var pendingPopupUrl by remember { mutableStateOf<String?>(null) }
     var contextMenuTarget by remember { mutableStateOf<ContextMenuTarget?>(null) }
+    var filePathCallback by remember { mutableStateOf<android.webkit.ValueCallback<Array<Uri>>?>(null) }
+
+    val fileChooserLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        filePathCallback?.onReceiveValue(uris.toTypedArray())
+        filePathCallback = null
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        filePathCallback?.onReceiveValue(uris.toTypedArray())
+        filePathCallback = null
+    }
+
     val focusManager = LocalFocusManager.current
     val clipboardManager = LocalClipboardManager.current
     val currentActiveTabId = rememberUpdatedState(activeTabId)
@@ -349,11 +372,21 @@ fun BrowserScreen(
         urlTextFieldValue = TextFieldValue(cur)
     }
 
-    BackHandler(enabled = isUrlBarFocused || canGoBack) {
-        if (isUrlBarFocused) {
-            handleCancelFocus()
-        } else {
-            activeWebView?.goBack()
+    var backGestureProgress by remember { mutableFloatStateOf(0f) }
+
+    PredictiveBackHandler(enabled = isUrlBarFocused || canGoBack) { progress ->
+        try {
+            progress.collect { backEvent ->
+                backGestureProgress = backEvent.progress
+            }
+            backGestureProgress = 0f
+            if (isUrlBarFocused) {
+                handleCancelFocus()
+            } else {
+                activeWebView?.goBack()
+            }
+        } catch (e: CancellationException) {
+            backGestureProgress = 0f
         }
     }
 
@@ -369,9 +402,15 @@ fun BrowserScreen(
     Column(modifier = modifier.fillMaxSize()) {
         AnimatedVisibility(
             visible = isBarsVisible || isUrlBarFocused,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut(),
-            modifier = Modifier.zIndex(2f)
+            enter = expandVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(),
+            exit = shrinkVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeOut(),
+            modifier = Modifier
+                .zIndex(2f)
+                .graphicsLayer {
+                    val s = 1f - (backGestureProgress * 0.04f)
+                    scaleX = s
+                    scaleY = s
+                }
         ) {
             Column {
                 // "Update Link" 403 Rebind Banner
@@ -498,6 +537,11 @@ fun BrowserScreen(
                 .weight(1f)
                 .fillMaxWidth()
                 .background(Color(webViewBgArgb))
+                .graphicsLayer {
+                    val s = 1f - (backGestureProgress * 0.04f)
+                    scaleX = s
+                    scaleY = s
+                }
         ) {
             if (isUrlBarFocused) {
                 Box(
@@ -687,6 +731,37 @@ fun BrowserScreen(
                                             transport.webView = popupWebView
                                             resultMsg.sendToTarget()
                                             return true
+                                        }
+
+                                        override fun onShowFileChooser(
+                                            webView: WebView?,
+                                            callback: android.webkit.ValueCallback<Array<Uri>>?,
+                                            fileChooserParams: FileChooserParams?
+                                        ): Boolean {
+                                            filePathCallback?.onReceiveValue(null)
+                                            filePathCallback = callback
+
+                                            val acceptTypes = fileChooserParams?.acceptTypes?.filter { it.isNotBlank() }.orEmpty()
+                                            return try {
+                                                if (acceptTypes.isNotEmpty() && acceptTypes.all { it.startsWith("image/") || it.startsWith("video/") }) {
+                                                    runCatching {
+                                                        photoPickerLauncher.launch(
+                                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                                        )
+                                                    }.onFailure {
+                                                        fileChooserLauncher.launch(arrayOf("*/*"))
+                                                    }
+                                                } else {
+                                                    fileChooserLauncher.launch(
+                                                        if (acceptTypes.isNotEmpty()) acceptTypes.toTypedArray() else arrayOf("*/*")
+                                                    )
+                                                }
+                                                true
+                                            } catch (e: Exception) {
+                                                filePathCallback?.onReceiveValue(null)
+                                                filePathCallback = null
+                                                false
+                                            }
                                         }
                                     }
                                 }

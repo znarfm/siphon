@@ -39,10 +39,13 @@ import com.siphon.app.data.db.ChunkEntity
 import com.siphon.app.data.db.ChunkState
 import com.siphon.app.data.db.DownloadEntity
 import com.siphon.app.data.db.DownloadType
+import com.siphon.app.ui.theme.ExpressiveShapeTokens
+import com.siphon.app.ui.theme.TabularNumberStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskDetailsSheet(
+
     download: DownloadEntity,
     chunks: List<ChunkEntity>,
     onDismiss: () -> Unit,
@@ -158,7 +161,12 @@ fun TaskInspectorBottomSheet(
                 "Size: ${formatFileSize(download.totalBytes)} • Resumable: ${if (download.isResumable) "Yes (HTTP 206)" else "No"}\n" +
                     "Chunks: ${chunks.size} positional workers • MIME: ${download.mimeType.ifBlank { "binary/octet-stream" }}"
             }
-            Text(text = metaText, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = metaText,
+                fontSize = 12.sp,
+                style = MaterialTheme.typography.bodySmall.merge(TabularNumberStyle),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             // Captured Headers
             if (headers.size > 0) {
@@ -180,7 +188,7 @@ fun TaskInspectorBottomSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Quick actions
+            // Quick actions with Expressive pill buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -188,23 +196,23 @@ fun TaskInspectorBottomSheet(
                 OutlinedButton(
                     onClick = onRename,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = ExpressiveShapeTokens.PillShape
                 ) {
-                    Text("Rename", fontSize = 11.sp)
+                    Text("Rename", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
                 OutlinedButton(
                     onClick = onCopyStreamUrl,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = ExpressiveShapeTokens.PillShape
                 ) {
-                    Text("Stream URL", fontSize = 11.sp)
+                    Text("Stream URL", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
                 OutlinedButton(
                     onClick = onCopyPageUrl,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = ExpressiveShapeTokens.PillShape
                 ) {
-                    Text("Page URL", fontSize = 11.sp)
+                    Text("Page URL", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
 
@@ -212,6 +220,7 @@ fun TaskInspectorBottomSheet(
         }
     }
 }
+
 
 fun openCompletedFile(context: Context, download: DownloadEntity) {
     val uriStr = download.destinationUri

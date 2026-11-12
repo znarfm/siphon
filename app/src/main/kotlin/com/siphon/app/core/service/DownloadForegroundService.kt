@@ -35,9 +35,11 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 
+@Immutable
 data class TransferProgress(
     val downloadId: Long,
     val title: String,
@@ -200,6 +202,9 @@ class DownloadForegroundService : Service() {
      * Android 14 (API 34) FGS timeout callback.
      */
     override fun onTimeout(startId: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            DownloadUidtJobService.scheduleFallback(this)
+        }
         pauseAllDownloads(postTimeoutResumeNotif = true, stopStartId = startId)
     }
 
@@ -209,6 +214,9 @@ class DownloadForegroundService : Service() {
      * marks tasks PAUSED, and posts a tap-to-resume notification before stopping.
      */
     override fun onTimeout(startId: Int, fgsType: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            DownloadUidtJobService.scheduleFallback(this)
+        }
         pauseAllDownloads(postTimeoutResumeNotif = true, stopStartId = startId)
     }
 
@@ -239,6 +247,8 @@ class DownloadForegroundService : Service() {
             resumeAllDownloads()
             return
         }
+
+        SiphonTileService.requestTileUpdate(this)
 
         val job = serviceScope.launch(Dispatchers.IO) {
             val entity = dao.getDownload(downloadId) ?: return@launch
@@ -274,11 +284,13 @@ class DownloadForegroundService : Service() {
                     )
                 }
                 postTerminalStatusNotification(entity.id, entity.displayName, finalState)
+                SiphonTileService.requestTileUpdate(this@DownloadForegroundService)
             } finally {
                 withContext(NonCancellable) {
                     activeJobs.remove(downloadId)
                     progressState.update { it - downloadId }
                     stopForegroundIfIdle()
+                    SiphonTileService.requestTileUpdate(this@DownloadForegroundService)
                 }
             }
         }
@@ -295,6 +307,7 @@ class DownloadForegroundService : Service() {
                     postResumeNotification(entity.id, entity.displayName, isTimeout = false)
                 }
                 stopForegroundIfIdle()
+                SiphonTileService.requestTileUpdate(this@DownloadForegroundService)
             }
         }
     }
@@ -311,6 +324,7 @@ class DownloadForegroundService : Service() {
                 }
                 notificationManager.cancel(statusNotificationId(downloadId))
                 stopForegroundIfIdle()
+                SiphonTileService.requestTileUpdate(this@DownloadForegroundService)
             }
         }
     }
@@ -339,6 +353,7 @@ class DownloadForegroundService : Service() {
                 progressState.value = emptyMap()
                 ServiceCompat.stopForeground(this@DownloadForegroundService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                 stopSelf(stopStartId)
+                SiphonTileService.requestTileUpdate(this@DownloadForegroundService)
             }
         }
     }
@@ -559,6 +574,7 @@ class DownloadForegroundService : Service() {
         const val PREF_WORKERS_PER_DOWNLOAD = "workers_per_download"
         const val PREF_BANDWIDTH_LIMIT_BYTES = "bandwidth_limit_bytes"
         const val PREF_WIFI_ONLY = "wifi_only"
+        const val PREF_CUSTOM_DOWNLOAD_URI = "pref_custom_download_uri"
 
         const val ACTION_START_OR_RESUME = "com.siphon.app.action.START_OR_RESUME"
         const val ACTION_PAUSE = "com.siphon.app.action.PAUSE"

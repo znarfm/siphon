@@ -1,5 +1,6 @@
 package com.siphon.app.data.db
 
+import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -11,6 +12,7 @@ enum class ChunkState {
     MERGED
 }
 
+@Immutable
 @Entity(
     tableName = "download_chunks",
     primaryKeys = ["downloadId", "trackIndex", "chunkIndex"],

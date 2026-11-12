@@ -1,8 +1,10 @@
 package com.siphon.app.core.sniffer
 
+import androidx.compose.runtime.Immutable
 import com.siphon.app.data.db.DownloadType
 import java.util.UUID
 
+@Immutable
 data class HlsVariantInfo(
     val url: String,
     val bandwidth: Long = 0,
@@ -11,6 +13,7 @@ data class HlsVariantInfo(
     val estimatedBytes: Long = -1L
 )
 
+@Immutable
 data class SniffedMedia(
     val id: String = UUID.randomUUID().toString(),
     val url: String,

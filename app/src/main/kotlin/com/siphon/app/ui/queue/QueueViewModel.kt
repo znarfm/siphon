@@ -151,7 +151,25 @@ class QueueViewModel(
         setSelectionMode(false)
     }
 
-    fun setConcurrency(maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean) {
-        downloadRepository.updateConcurrency(maxDownloads, workers, bandwidthLimit, wifiOnly)
+    fun setConcurrency(
+        maxDownloads: Int,
+        workers: Int,
+        bandwidthLimit: Long,
+        wifiOnly: Boolean,
+        customDownloadUri: String? = concurrencySettings.value.customDownloadUri
+    ) {
+        downloadRepository.updateConcurrency(maxDownloads, workers, bandwidthLimit, wifiOnly, customDownloadUri)
+    }
+
+    fun setCustomDownloadUri(uri: String?) {
+        val current = concurrencySettings.value
+        downloadRepository.updateConcurrency(
+            maxDownloads = current.maxDownloads,
+            workers = current.workers,
+            bandwidthLimit = current.bandwidthLimit,
+            wifiOnly = current.wifiOnly,
+            customDownloadUri = uri
+        )
     }
 }
+

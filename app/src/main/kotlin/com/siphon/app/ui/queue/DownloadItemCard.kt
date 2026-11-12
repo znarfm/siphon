@@ -1,6 +1,8 @@
 package com.siphon.app.ui.queue
 
 import android.content.Context
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -17,20 +19,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SplitButtonDefaults
+import androidx.compose.material3.SplitButtonLayout
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -60,7 +63,7 @@ import com.siphon.app.ui.theme.StatePaused
 import com.siphon.app.ui.theme.StateWaiting
 import java.util.Locale
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun DownloadItemCard(
     download: DownloadEntity,
@@ -85,12 +88,25 @@ fun DownloadItemCard(
     var isMenuExpanded by remember { mutableStateOf(false) }
     val isCompleted = download.state == DownloadState.COMPLETED
 
+    // Morph the card corner radius using animateDpAsState with fastSpatialSpec based on state & isSelected
+    val targetCornerRadius = when {
+        isSelected -> 26.dp
+        download.state == DownloadState.ACTIVE || download.state == DownloadState.MERGING -> 22.dp
+        else -> 18.dp
+    }
+    val animatedCornerRadius by animateDpAsState(
+        targetValue = targetCornerRadius,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "cardCornerMorph"
+    )
+    val cardShape = RoundedCornerShape(animatedCornerRadius)
+
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(20.dp),
+        shape = cardShape,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(cardShape)
             .combinedClickable(
                 onClick = onCardClick,
                 onLongClick = onCardLongClick
@@ -109,7 +125,7 @@ fun DownloadItemCard(
             }
 
             Column(modifier = Modifier.weight(1f)) {
-                // Header: Display Name, State Badge & Overflow Menu
+                // Header: Display Name & State Badge
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -128,61 +144,6 @@ fun DownloadItemCard(
                     Spacer(modifier = Modifier.width(6.dp))
 
                     StateBadge(state = download.state)
-
-                    // 3-dots Menu for URL & File Sharing (Item 3)
-                    Box {
-                        IconButton(
-                            onClick = { isMenuExpanded = true },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Text("⋮", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        DropdownMenu(
-                            expanded = isMenuExpanded,
-                            onDismissRequest = { isMenuExpanded = false }
-                        ) {
-                            if (isCompleted || !download.destinationUri.isNullOrBlank()) {
-                                DropdownMenuItem(
-                                    text = { Text("📤 Share File") },
-                                    onClick = {
-                                        isMenuExpanded = false
-                                        onShare()
-                                    }
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text("🔗 Copy Stream URL") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    onCopyStreamUrl()
-                                }
-                            )
-                            if (!download.sourcePageUrl.isNullOrBlank()) {
-                                DropdownMenuItem(
-                                    text = { Text("🌐 Copy Page URL") },
-                                    onClick = {
-                                        isMenuExpanded = false
-                                        onCopyPageUrl()
-                                    }
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text("✏️ Rename") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    onRenameClick()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("ℹ️ Inspect Details") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    onCardClick()
-                                }
-                            )
-                        }
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -201,7 +162,7 @@ fun DownloadItemCard(
                     download.totalBytes
                 }
 
-                // Subtitle: Type & Size / Progress
+                // Subtitle: Type & Size / Progress (using fontFeatureSettings = "tnum" to eliminate jitter)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = if (isHls) "HLS Stream" else "Multi-Chunk HTTP",
@@ -210,39 +171,56 @@ fun DownloadItemCard(
                         color = MaterialTheme.colorScheme.primary
                     )
 
-                    val progressDetail = when {
-                        download.state == DownloadState.MERGING -> " • Remuxing MP4… Saving to storage…"
-                        download.state == DownloadState.COMPLETED -> {
-                            " • ${formatFileSize(if (download.totalBytes > 0) download.totalBytes else downloadedBytes)} (100%)"
-                        }
-                        isHls -> {
-                            val totalStr = if (estTotal > 0L) " of ~${formatFileSize(estTotal)}" else ""
-                            if (totalSegments > 0) {
-                                " • ${formatFileSize(downloadedBytes)}$totalStr · $completedSegments/$totalSegments segs ($progressPercent%)"
-                            } else {
-                                " • ${formatFileSize(downloadedBytes)}$totalStr ($progressPercent%)"
+                    if (download.state == DownloadState.MERGING) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        LoadingIndicator(modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Remuxing MP4… Saving to storage…",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        val progressDetail = when {
+                            download.state == DownloadState.COMPLETED -> {
+                                " • ${formatFileSize(if (download.totalBytes > 0) download.totalBytes else downloadedBytes)} (100%)"
+                            }
+                            isHls -> {
+                                val totalStr = if (estTotal > 0L) " of ~${formatFileSize(estTotal)}" else ""
+                                if (totalSegments > 0) {
+                                    " • ${formatFileSize(downloadedBytes)}$totalStr · $completedSegments/$totalSegments segs ($progressPercent%)"
+                                } else {
+                                    " • ${formatFileSize(downloadedBytes)}$totalStr ($progressPercent%)"
+                                }
+                            }
+                            download.totalBytes > 0L -> {
+                                " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%)"
+                            }
+                            else -> {
+                                " • " + formatFileSize(download.totalBytes)
                             }
                         }
-                        download.totalBytes > 0L -> {
-                            " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%)"
-                        }
-                        else -> {
-                            " • " + formatFileSize(download.totalBytes)
-                        }
-                    }
 
-                    Text(
-                        text = progressDetail,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                        Text(
+                            text = progressDetail,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Segmented Chunk Progress Bar
-                if (download.state == DownloadState.MERGING || (download.state == DownloadState.ACTIVE && chunks.isEmpty())) {
-                    LinearProgressIndicator(
+                // Progress Bar: LinearWavyProgressIndicator for MERGING or ACTIVE with empty chunks
+                if (download.state == DownloadState.MERGING) {
+                    LinearWavyProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                    )
+                } else if (download.state == DownloadState.ACTIVE && chunks.isEmpty()) {
+                    LinearWavyProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
@@ -251,7 +229,7 @@ fun DownloadItemCard(
                 } else if (chunks.isNotEmpty()) {
                     SegmentedChunkBar(chunks = chunks, totalBytes = download.totalBytes, isHls = isHls)
                 } else {
-                    LinearProgressIndicator(
+                    LinearWavyProgressIndicator(
                         progress = { progressFraction },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -262,91 +240,123 @@ fun DownloadItemCard(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Action Buttons
+                // Unified Material 3 Expressive SplitButtonLayout
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    when (download.state) {
-                        DownloadState.ACTIVE, DownloadState.QUEUED -> {
-                            Button(
-                                onClick = onPause,
-                                shape = RoundedCornerShape(16.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-                            ) {
-                                Text("Pause", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        DownloadState.MERGING -> {
-                            FilledTonalButton(
-                                onClick = {},
-                                enabled = false,
-                                shape = RoundedCornerShape(16.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-                            ) {
-                                Text("Merging…", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK -> {
-                            Button(
-                                onClick = onResume,
-                                shape = RoundedCornerShape(16.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-                            ) {
-                                Text("Resume", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        // One-Tap Retry for Failed/Cancelled Tasks (Item 4)
-                        DownloadState.FAILED, DownloadState.CANCELLED -> {
-                            Button(
-                                onClick = onRetry,
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(16.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-                            ) {
-                                Text("Retry", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        DownloadState.AUTH_EXPIRED -> {
-                            Button(
-                                onClick = onRebind,
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                                shape = RoundedCornerShape(16.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-                            ) {
-                                Text("Update Link", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        DownloadState.COMPLETED -> {
-                            Button(
-                                onClick = { openCompletedFile(context, download) },
-                                shape = RoundedCornerShape(16.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-                            ) {
-                                Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
+                    val primaryAction: () -> Unit = when (download.state) {
+                        DownloadState.ACTIVE, DownloadState.QUEUED -> onPause
+                        DownloadState.MERGING -> ({})
+                        DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK -> onResume
+                        DownloadState.FAILED, DownloadState.CANCELLED -> onRetry
+                        DownloadState.AUTH_EXPIRED -> onRebind
+                        DownloadState.COMPLETED -> ({ openCompletedFile(context, download) })
                     }
 
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    OutlinedButton(
-                        onClick = if (download.state == DownloadState.COMPLETED || download.state == DownloadState.CANCELLED) onDelete else onCancel,
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = if (download.state == DownloadState.COMPLETED || download.state == DownloadState.CANCELLED) "Delete" else "Cancel",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    val primaryLabel = when (download.state) {
+                        DownloadState.ACTIVE, DownloadState.QUEUED -> "⏸ Pause"
+                        DownloadState.MERGING -> "⏳ Merging…"
+                        DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK -> "▶ Resume"
+                        DownloadState.FAILED, DownloadState.CANCELLED -> "↻ Retry"
+                        DownloadState.AUTH_EXPIRED -> "🔗 Update Link"
+                        DownloadState.COMPLETED -> "📂 Open"
                     }
+
+                    val chevronRotation by animateFloatAsState(
+                        targetValue = if (isMenuExpanded) 180f else 0f,
+                        label = "splitButtonChevron"
+                    )
+
+                    SplitButtonLayout(
+                        leadingButton = {
+                            SplitButtonDefaults.LeadingButton(
+                                onClick = primaryAction,
+                                enabled = download.state != DownloadState.MERGING
+                            ) {
+                                Text(
+                                    text = primaryLabel,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        },
+                        trailingButton = {
+                            Box {
+                                SplitButtonDefaults.TrailingButton(
+                                    checked = isMenuExpanded,
+                                    onCheckedChange = { isMenuExpanded = it }
+                                ) {
+                                    Text(
+                                        text = "▾",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.rotate(chevronRotation)
+                                    )
+                                }
+
+                                DropdownMenu(
+                                    expanded = isMenuExpanded,
+                                    onDismissRequest = { isMenuExpanded = false }
+                                ) {
+                                    val isTerminal = download.state == DownloadState.COMPLETED || download.state == DownloadState.CANCELLED
+                                    DropdownMenuItem(
+                                        text = { Text(if (isTerminal) "🗑 Delete Download" else "❌ Cancel Download") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            if (isTerminal) onDelete() else onCancel()
+                                        }
+                                    )
+                                    if (isCompleted || !download.destinationUri.isNullOrBlank()) {
+                                        DropdownMenuItem(
+                                            text = { Text("📤 Share File") },
+                                            onClick = {
+                                                isMenuExpanded = false
+                                                onShare()
+                                            }
+                                        )
+                                    }
+                                    DropdownMenuItem(
+                                        text = { Text("🔗 Copy Stream URL") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            onCopyStreamUrl()
+                                        }
+                                    )
+                                    if (!download.sourcePageUrl.isNullOrBlank()) {
+                                        DropdownMenuItem(
+                                            text = { Text("🌐 Copy Page URL") },
+                                            onClick = {
+                                                isMenuExpanded = false
+                                                onCopyPageUrl()
+                                            }
+                                        )
+                                    }
+                                    DropdownMenuItem(
+                                        text = { Text("✏️ Rename") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            onRenameClick()
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("ℹ️ Inspect Details") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            onCardClick()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    )
                 }
             }
         }
     }
 }
+
 
 @Composable
 fun SegmentedChunkBar(

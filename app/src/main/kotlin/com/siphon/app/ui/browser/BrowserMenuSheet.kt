@@ -28,6 +28,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -160,21 +163,19 @@ fun BrowserMenuSheet(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(horizontal = 10.dp, vertical = 2.dp)
         ) {
-            AppThemeMode.entries.forEach { mode ->
-                val isSelected = mode == themeMode
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { onSetThemeMode(mode) },
-                    label = { Text(mode.title, fontSize = 10.sp) },
-                    shape = CircleShape,
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+            val themeModes = AppThemeMode.entries
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                themeModes.forEachIndexed { index, mode ->
+                    val isSelected = mode == themeMode
+                    SegmentedButton(
+                        selected = isSelected,
+                        onClick = { onSetThemeMode(mode) },
+                        shape = SegmentedButtonDefaults.itemShape(index, themeModes.size),
+                        label = { Text(mode.title, fontSize = 10.sp) }
                     )
-                )
+                }
             }
         }
 

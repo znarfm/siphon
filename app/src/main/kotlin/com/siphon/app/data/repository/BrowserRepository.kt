@@ -20,8 +20,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.withContext
 
+@Immutable
 data class BrowserPreferences(
     val desktopMode: Boolean = false,
     val webDarkMode: Boolean = false,

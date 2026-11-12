@@ -1,5 +1,6 @@
 package com.siphon.app.ui.queue
 
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -26,17 +27,22 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,9 +56,11 @@ import androidx.compose.ui.unit.sp
 import com.siphon.app.data.db.ChunkEntity
 import com.siphon.app.data.db.DownloadEntity
 import com.siphon.app.data.db.DownloadState
+import com.siphon.app.ui.theme.ExpressiveShapeTokens
+import com.siphon.app.ui.theme.TabularNumberStyle
 
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun QueueScreen(
     downloads: List<DownloadEntity>,
@@ -90,6 +98,20 @@ fun QueueScreen(
 ) {
     val context = LocalContext.current
     var isSearchExpanded by remember { mutableStateOf(searchQuery.isNotBlank()) }
+
+    var selectionBackProgress by remember { mutableFloatStateOf(0f) }
+    PredictiveBackHandler(enabled = isSelectionMode) { progressFlow ->
+        try {
+            progressFlow.collect { backEvent ->
+                selectionBackProgress = backEvent.progress
+            }
+            onSetSelectionMode(false)
+            onClearSelection()
+        } finally {
+            selectionBackProgress = 0f
+        }
+    }
+
 
     var showSettingsDialog by remember { mutableStateOf(false) }
     var pendingDeleteDownload by remember { mutableStateOf<DownloadEntity?>(null) }
@@ -136,7 +158,7 @@ fun QueueScreen(
         // Header Surface
         Surface(
             tonalElevation = 3.dp,
-            shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+            shape = ExpressiveShapeTokens.HeaderSheetShape,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -179,7 +201,7 @@ fun QueueScreen(
                                     onClick = {
                                         onBulkCancel(selectedIds.toList())
                                     },
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = ExpressiveShapeTokens.PillShape,
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                 ) {
                                     Text("Cancel", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -188,7 +210,7 @@ fun QueueScreen(
                                 Button(
                                     onClick = { showBulkDeleteDialog = true },
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = ExpressiveShapeTokens.PillShape,
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                 ) {
                                     Text("Delete", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -213,7 +235,7 @@ fun QueueScreen(
                                 text = "$activeCount active • $maxConcurrentDownloads max • $workersPerDownload workers" +
                                     (if (bandwidthLimitBytes > 0) " • ${bandwidthLimitBytes / (1024 * 1024)} MB/s" else "") +
                                     (if (isWifiOnly) " • Wi-Fi" else ""),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodySmall.merge(TabularNumberStyle),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -224,7 +246,7 @@ fun QueueScreen(
                             }
                             FilledTonalButton(
                                 onClick = { showSettingsDialog = true },
-                                shape = RoundedCornerShape(16.dp),
+                                shape = ExpressiveShapeTokens.PillShape,
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
                                 Text("Settings", fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -242,7 +264,7 @@ fun QueueScreen(
                         if (activeCount > 0) {
                             FilledTonalButton(
                                 onClick = onPauseAll,
-                                shape = RoundedCornerShape(14.dp),
+                                shape = ExpressiveShapeTokens.PillShape,
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                             ) {
                                 Text("⏸ Pause All", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -250,7 +272,7 @@ fun QueueScreen(
                         } else if (pausedCount > 0) {
                             FilledTonalButton(
                                 onClick = onResumeAll,
-                                shape = RoundedCornerShape(14.dp),
+                                shape = ExpressiveShapeTokens.PillShape,
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                             ) {
                                 Text("▶ Resume All", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -260,7 +282,7 @@ fun QueueScreen(
                         if (completedCount > 0) {
                             OutlinedButton(
                                 onClick = onClearCompleted,
-                                shape = RoundedCornerShape(14.dp),
+                                shape = ExpressiveShapeTokens.PillShape,
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Text("Clear Done", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -271,11 +293,11 @@ fun QueueScreen(
             }
         }
 
-        // Search & Filter Toolbar (Item 2)
+        // Search & Filter Toolbar (Item 2) with MaterialTheme.motionScheme.defaultSpatialSpec()
         AnimatedVisibility(
             visible = isSearchExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = expandVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(),
+            exit = shrinkVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeOut()
         ) {
             Column(
                 modifier = Modifier
@@ -312,7 +334,7 @@ fun QueueScreen(
                         FilterChip(
                             selected = selectedSort == opt,
                             onClick = { onSelectSort(opt) },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = ExpressiveShapeTokens.PillShape,
                             label = { Text(opt.label, fontSize = 10.sp) }
                         )
                     }
@@ -320,19 +342,31 @@ fun QueueScreen(
             }
         }
 
-        // Filter chips row
-        Row(
+        // Filter row upgraded to Material 3 Expressive SingleChoiceSegmentedButtonRow with counts
+        SingleChoiceSegmentedButtonRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            QueueFilter.entries.forEach { filter ->
-                FilterChip(
+            QueueFilter.entries.forEachIndexed { index, filter ->
+                val count = when (filter) {
+                    QueueFilter.ALL -> downloads.size
+                    QueueFilter.ACTIVE -> activeCount
+                    QueueFilter.PAUSED -> pausedCount
+                    QueueFilter.COMPLETED -> completedCount
+                }
+                SegmentedButton(
                     selected = selectedFilter == filter,
                     onClick = { onSelectFilter(filter) },
-                    shape = RoundedCornerShape(16.dp),
-                    label = { Text(filter.label, fontWeight = FontWeight.SemiBold) }
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = QueueFilter.entries.size),
+                    label = {
+                        Text(
+                            text = "${filter.label} ($count)",
+                            fontWeight = if (selectedFilter == filter) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 12.sp,
+                            style = TabularNumberStyle
+                        )
+                    }
                 )
             }
         }

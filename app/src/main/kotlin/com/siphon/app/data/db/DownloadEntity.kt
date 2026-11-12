@@ -1,5 +1,6 @@
 package com.siphon.app.data.db
 
+import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -21,6 +22,7 @@ enum class DownloadState {
     CANCELLED
 }
 
+@Immutable
 @Entity(
     tableName = "downloads",
     indices = [Index("state"), Index("sourcePageUrl")]

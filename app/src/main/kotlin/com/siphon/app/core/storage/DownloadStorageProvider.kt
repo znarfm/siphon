@@ -58,8 +58,17 @@ class DownloadStorageProvider(context: Context) {
         val safeName = sanitizeDisplayName(displayName)
         val safeMime = mimeType.ifBlank { "application/octet-stream" }
 
-        if (customTreeUri != null) {
-            return createSafDocument(customTreeUri, safeName, safeMime)
+        val effectiveTreeUri = customTreeUri ?: appContext
+            .getSharedPreferences("siphon_prefs", Context.MODE_PRIVATE)
+            .getString("pref_custom_download_uri", null)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { Uri.parse(it) }
+
+        if (effectiveTreeUri != null) {
+            val safResult = runCatching { createSafDocument(effectiveTreeUri, safeName, safeMime) }
+            if (safResult.isSuccess) {
+                return safResult.getOrThrow()
+            }
         }
 
         val nowSeconds = System.currentTimeMillis() / 1000L

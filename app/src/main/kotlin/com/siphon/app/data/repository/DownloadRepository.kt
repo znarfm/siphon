@@ -22,15 +22,18 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.withContext
 import okhttp3.Headers
 import java.io.File
 
+@Immutable
 data class ConcurrencySettings(
     val maxDownloads: Int = 2,
     val workers: Int = 6,
     val bandwidthLimit: Long = 0L,
-    val wifiOnly: Boolean = false
+    val wifiOnly: Boolean = false,
+    val customDownloadUri: String? = null
 )
 
 class DownloadRepository(
@@ -49,7 +52,8 @@ class DownloadRepository(
             maxDownloads = prefs.getInt(DownloadForegroundService.PREF_MAX_CONCURRENT_DOWNLOADS, 2).coerceIn(1, 4),
             workers = prefs.getInt(DownloadForegroundService.PREF_WORKERS_PER_DOWNLOAD, 6).coerceIn(1, 8),
             bandwidthLimit = prefs.getLong(DownloadForegroundService.PREF_BANDWIDTH_LIMIT_BYTES, 0L).coerceAtLeast(0L),
-            wifiOnly = prefs.getBoolean(DownloadForegroundService.PREF_WIFI_ONLY, false)
+            wifiOnly = prefs.getBoolean(DownloadForegroundService.PREF_WIFI_ONLY, false),
+            customDownloadUri = prefs.getString(DownloadForegroundService.PREF_CUSTOM_DOWNLOAD_URI, null)
         )
     )
     val concurrencySettings: Flow<ConcurrencySettings> = _concurrencySettings.asStateFlow()
@@ -252,16 +256,29 @@ class DownloadRepository(
         }
     }
 
-    fun updateConcurrency(maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean) {
+    fun updateConcurrency(
+        maxDownloads: Int,
+        workers: Int,
+        bandwidthLimit: Long,
+        wifiOnly: Boolean,
+        customDownloadUri: String? = _concurrencySettings.value.customDownloadUri
+    ) {
         val maxD = maxDownloads.coerceIn(1, 4)
         val w = workers.coerceIn(1, 8)
         val limit = bandwidthLimit.coerceAtLeast(0L)
-        _concurrencySettings.value = ConcurrencySettings(maxD, w, limit, wifiOnly)
+        _concurrencySettings.value = ConcurrencySettings(maxD, w, limit, wifiOnly, customDownloadUri)
         prefs.edit()
             .putInt(DownloadForegroundService.PREF_MAX_CONCURRENT_DOWNLOADS, maxD)
             .putInt(DownloadForegroundService.PREF_WORKERS_PER_DOWNLOAD, w)
             .putLong(DownloadForegroundService.PREF_BANDWIDTH_LIMIT_BYTES, limit)
             .putBoolean(DownloadForegroundService.PREF_WIFI_ONLY, wifiOnly)
+            .apply {
+                if (customDownloadUri != null) {
+                    putString(DownloadForegroundService.PREF_CUSTOM_DOWNLOAD_URI, customDownloadUri)
+                } else {
+                    remove(DownloadForegroundService.PREF_CUSTOM_DOWNLOAD_URI)
+                }
+            }
             .apply()
         DownloadForegroundService.updateConcurrency(application, maxD, w, limit, wifiOnly)
     }

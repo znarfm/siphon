@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,15 +23,22 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SheetState
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SplitButtonDefaults
+import androidx.compose.material3.SplitButtonLayout
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -38,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -57,6 +66,7 @@ import com.siphon.app.data.db.DownloadEntity
 import com.siphon.app.data.db.DownloadType
 import java.util.Locale
 
+@Immutable
 data class SelectedMediaRequest(
     val media: SniffedMedia,
     val selectedVariantUrl: String?,
@@ -64,6 +74,7 @@ data class SelectedMediaRequest(
 )
 
 enum class SnifferFilter(val label: String) {
+
     ALL("All"),
     HLS("HLS"),
     DIRECT("Direct")
@@ -124,7 +135,7 @@ private fun parseQueryParams(query: String?): Map<String, String> {
     }.toMap()
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SnifferSheet(
     isOpen: Boolean,
@@ -144,6 +155,7 @@ fun SnifferSheet(
     var activeFilter by remember { mutableStateOf(SnifferFilter.ALL) }
     var activeSort by remember { mutableStateOf(SnifferSort.RECENCY) }
     var sortDropdownExpanded by remember { mutableStateOf(false) }
+    var batchSplitMenuExpanded by remember { mutableStateOf(false) }
 
     val selectedIds = remember { mutableStateMapOf<String, Boolean>() }
     val selectedVariants = remember { mutableStateMapOf<String, HlsVariantInfo?>() }
@@ -291,16 +303,20 @@ fun SnifferSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    SnifferFilter.values().forEach { filter ->
-                        FilterChip(
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    SnifferFilter.values().forEachIndexed { index, filter ->
+                        SegmentedButton(
                             selected = activeFilter == filter,
                             onClick = { activeFilter = filter },
-                            label = { Text(filter.label, fontSize = 11.sp) },
-                            modifier = Modifier.height(30.dp)
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = SnifferFilter.values().size),
+                            label = { Text(filter.label, fontSize = 11.sp) }
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Box {
                     OutlinedButton(
@@ -336,15 +352,26 @@ fun SnifferSheet(
                         .height(140.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = if (detectedMedia.isEmpty()) {
-                            "No audio, video, or subtitle tracks detected yet.\nPlay media in the browser or tap Refresh to sniff."
-                        } else {
-                            "No media tracks match the selected filter."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (detectedMedia.isEmpty()) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            ContainedLoadingIndicator(modifier = Modifier.size(42.dp))
+                            Text(
+                                text = "Listening for media streams…\nPlay media in the browser or tap Refresh to sniff.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "No media tracks match the selected filter.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
@@ -383,31 +410,86 @@ fun SnifferSheet(
                 AnimatedVisibility(visible = selectedMediaList.isNotEmpty()) {
                     Column {
                         Spacer(modifier = Modifier.height(12.dp))
-                        Button(
-                            onClick = {
-                                val requests = selectedMediaList.map { media ->
-                                    SelectedMediaRequest(
-                                        media = media,
-                                        selectedVariantUrl = selectedVariants[media.id]?.url,
-                                        customFileName = customNames[media.id]?.ifBlank { media.displayName } ?: media.displayName
-                                    )
-                                }
-                                onDownloadSelected(requests)
-                            },
+
+                        val primaryLabel = if (rebindTarget != null) {
+                            "Rebind to Paused Task"
+                        } else if (selectedMediaList.size == 1) {
+                            "Download Selected (1)"
+                        } else {
+                            "Download Selected (${selectedMediaList.size})"
+                        }
+
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 13.dp)
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = if (rebindTarget != null) {
-                                    "Rebind to Paused Task"
-                                } else if (selectedMediaList.size == 1) {
-                                    "Download Selected (1)"
-                                } else {
-                                    "Download Selected (${selectedMediaList.size})"
+                            SplitButtonLayout(
+                                leadingButton = {
+                                    SplitButtonDefaults.LeadingButton(
+                                        onClick = {
+                                            val requests = selectedMediaList.map { media ->
+                                                SelectedMediaRequest(
+                                                    media = media,
+                                                    selectedVariantUrl = selectedVariants[media.id]?.url,
+                                                    customFileName = customNames[media.id]?.ifBlank { media.displayName } ?: media.displayName
+                                                )
+                                            }
+                                            onDownloadSelected(requests)
+                                        }
+                                    ) {
+                                        Text(
+                                            text = primaryLabel,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 12.dp)
+                                        )
+                                    }
                                 },
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
+                                trailingButton = {
+                                    Box {
+                                        SplitButtonDefaults.TrailingButton(
+                                            checked = batchSplitMenuExpanded,
+                                            onCheckedChange = { batchSplitMenuExpanded = it }
+                                        ) {
+                                            Text("▾", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = batchSplitMenuExpanded,
+                                            onDismissRequest = { batchSplitMenuExpanded = false }
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text("Download All Detected (${filteredAndSortedMedia.size})") },
+                                                onClick = {
+                                                    batchSplitMenuExpanded = false
+                                                    val requests = filteredAndSortedMedia.map { media ->
+                                                        SelectedMediaRequest(
+                                                            media = media,
+                                                            selectedVariantUrl = selectedVariants[media.id]?.url ?: media.variants.firstOrNull()?.url,
+                                                            customFileName = customNames[media.id]?.ifBlank { media.displayName } ?: media.displayName
+                                                        )
+                                                    }
+                                                    onDownloadSelected(requests)
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text(if (useTabTitleAsFilename) "Disable Tab Title as Filename" else "Toggle Tab Title as Filename") },
+                                                onClick = {
+                                                    batchSplitMenuExpanded = false
+                                                    useTabTitleAsFilename = !useTabTitleAsFilename
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Clear Selection") },
+                                                onClick = {
+                                                    batchSplitMenuExpanded = false
+                                                    selectedIds.clear()
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -417,6 +499,7 @@ fun SnifferSheet(
         }
     }
 }
+
 
 private fun buildDefaultFileName(
     media: SniffedMedia,

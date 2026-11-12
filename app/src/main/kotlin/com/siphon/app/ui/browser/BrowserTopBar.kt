@@ -23,10 +23,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -265,11 +268,11 @@ fun BrowserTopBar(
             }
 
             if (pageProgress in 1..99) {
-                LinearProgressIndicator(
+                LinearWavyProgressIndicator(
                     progress = { pageProgress / 100f },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(2.dp)
+                        .height(6.dp)
                 )
             }
 
@@ -288,22 +291,21 @@ fun BrowserTopBar(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(
-                                selected = searchFilter == QuickSearchFilter.ALL,
-                                onClick = { searchFilter = QuickSearchFilter.ALL },
-                                label = { Text("All", fontSize = 11.sp) }
-                            )
-                            FilterChip(
-                                selected = searchFilter == QuickSearchFilter.BOOKMARKS,
-                                onClick = { searchFilter = QuickSearchFilter.BOOKMARKS },
-                                label = { Text("⭐ Bookmarks (${bookmarks.size})", fontSize = 11.sp) }
-                            )
-                            FilterChip(
-                                selected = searchFilter == QuickSearchFilter.HISTORY,
-                                onClick = { searchFilter = QuickSearchFilter.HISTORY },
-                                label = { Text("🕒 History (${history.size})", fontSize = 11.sp) }
-                            )
+                        val filters = QuickSearchFilter.entries
+                        SingleChoiceSegmentedButtonRow {
+                            filters.forEachIndexed { index, filter ->
+                                val labelText = when (filter) {
+                                    QuickSearchFilter.ALL -> "All"
+                                    QuickSearchFilter.BOOKMARKS -> "⭐ Bookmarks (${bookmarks.size})"
+                                    QuickSearchFilter.HISTORY -> "🕒 History (${history.size})"
+                                }
+                                SegmentedButton(
+                                    selected = searchFilter == filter,
+                                    onClick = { searchFilter = filter },
+                                    shape = SegmentedButtonDefaults.itemShape(index, filters.size),
+                                    label = { Text(labelText, fontSize = 11.sp) }
+                                )
+                            }
                         }
                         if (searchFilter == QuickSearchFilter.HISTORY && history.isNotEmpty()) {
                             TextButton(

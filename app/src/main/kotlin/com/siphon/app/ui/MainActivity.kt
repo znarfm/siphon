@@ -1,59 +1,63 @@
 package com.siphon.app.ui
 
 import android.Manifest
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FloatingToolbarDefaults
+import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.siphon.app.SiphonApp
 import com.siphon.app.data.db.DownloadState
 import com.siphon.app.ui.browser.BrowserScreen
@@ -62,6 +66,7 @@ import com.siphon.app.ui.queue.QueueScreen
 import com.siphon.app.ui.queue.QueueViewModel
 import com.siphon.app.ui.sniffer.SnifferSheet
 import com.siphon.app.ui.theme.SiphonTheme
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -92,6 +97,7 @@ class MainActivity : ComponentActivity() {
     ) { /* Permission granted or denied */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
@@ -99,9 +105,9 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
 
         setContent {
-            val themeMode by browserViewModel.themeMode.collectAsState()
-            val colorSeed by browserViewModel.colorSeed.collectAsState()
-            val tab by currentTab.collectAsState()
+            val themeMode by browserViewModel.themeMode.collectAsStateWithLifecycle()
+            val colorSeed by browserViewModel.colorSeed.collectAsStateWithLifecycle()
+            val tab by currentTab.collectAsStateWithLifecycle()
             SiphonTheme(themeMode = themeMode, colorSeed = colorSeed) {
                 MainContent(
                     browserViewModel = browserViewModel,
@@ -120,6 +126,34 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
+
+        when (intent.action) {
+            "com.siphon.app.action.SHORTCUT_INCOGNITO" -> {
+                selectTab(AppTab.BROWSER)
+                browserViewModel.openNewBrowserTab("https://google.com", isIncognito = true, switchImmediately = true)
+                return
+            }
+            "com.siphon.app.action.SHORTCUT_QUEUE" -> {
+                selectTab(AppTab.QUEUE)
+                return
+            }
+            "com.siphon.app.action.SHORTCUT_PASTE_SNIFF" -> {
+                selectTab(AppTab.BROWSER)
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                val clipText = clipboard?.primaryClip?.let { clip ->
+                    if (clip.itemCount > 0) clip.getItemAt(0).text?.toString() else null
+                }
+                val url = extractUrlFromText(clipText)
+                if (!url.isNullOrBlank()) {
+                    browserViewModel.loadUrlAndOpenSniffer(url)
+                } else {
+                    browserViewModel.openSnifferSheet()
+                    Toast.makeText(this, "No URL in clipboard", Toast.LENGTH_SHORT).show()
+                }
+                return
+            }
+        }
+
         val url = extractUrlFromIntent(intent)
         if (!url.isNullOrBlank()) {
             selectTab(AppTab.BROWSER)
@@ -175,7 +209,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainContent(
     browserViewModel: BrowserViewModel,
@@ -186,33 +220,47 @@ fun MainContent(
     val context = LocalContext.current
     var isBarsVisible by remember { mutableStateOf(true) }
 
-    val browserTabs by browserViewModel.browserTabs.collectAsState()
-    val activeTabId by browserViewModel.activeTabId.collectAsState()
-    val browserUrl by browserViewModel.browserUrl.collectAsState()
-    val detectedMedia by browserViewModel.detectedMedia.collectAsState()
-    val rebindTarget by browserViewModel.rebindTarget.collectAsState()
-    val isAdBlockEnabled by browserViewModel.isAdBlockEnabled.collectAsState()
-    val browserPrefs by browserViewModel.browserPreferences.collectAsState()
-    val themeMode by browserViewModel.themeMode.collectAsState()
-    val colorSeed by browserViewModel.colorSeed.collectAsState()
-    val isSnifferSheetOpen by browserViewModel.isSnifferSheetOpen.collectAsState()
-    val bookmarks by browserViewModel.bookmarks.collectAsState()
-    val history by browserViewModel.history.collectAsState()
-    val isCurrentBookmarked by browserViewModel.isCurrentUrlBookmarked.collectAsState()
-    val adblockRuleCount by browserViewModel.adblockRuleCount.collectAsState()
-    val adblockConfig by browserViewModel.adblockConfig.collectAsState()
+    val browserTabs by browserViewModel.browserTabs.collectAsStateWithLifecycle()
+    val activeTabId by browserViewModel.activeTabId.collectAsStateWithLifecycle()
+    val browserUrl by browserViewModel.browserUrl.collectAsStateWithLifecycle()
+    val detectedMedia by browserViewModel.detectedMedia.collectAsStateWithLifecycle()
+    val rebindTarget by browserViewModel.rebindTarget.collectAsStateWithLifecycle()
+    val isAdBlockEnabled by browserViewModel.isAdBlockEnabled.collectAsStateWithLifecycle()
+    val browserPrefs by browserViewModel.browserPreferences.collectAsStateWithLifecycle()
+    val themeMode by browserViewModel.themeMode.collectAsStateWithLifecycle()
+    val colorSeed by browserViewModel.colorSeed.collectAsStateWithLifecycle()
+    val isSnifferSheetOpen by browserViewModel.isSnifferSheetOpen.collectAsStateWithLifecycle()
+    val bookmarks by browserViewModel.bookmarks.collectAsStateWithLifecycle()
+    val history by browserViewModel.history.collectAsStateWithLifecycle()
+    val isCurrentBookmarked by browserViewModel.isCurrentUrlBookmarked.collectAsStateWithLifecycle()
+    val adblockRuleCount by browserViewModel.adblockRuleCount.collectAsStateWithLifecycle()
+    val adblockConfig by browserViewModel.adblockConfig.collectAsStateWithLifecycle()
 
-    val downloads by queueViewModel.downloads.collectAsState()
-    val chunksMap by queueViewModel.chunksMap.collectAsState()
-    val concurrencySettings by queueViewModel.concurrencySettings.collectAsState()
-    val queueFilter by queueViewModel.filter.collectAsState()
-    val queueSortOption by queueViewModel.sortOption.collectAsState()
-    val queueSearchQuery by queueViewModel.searchQuery.collectAsState()
-    val queueSelectedIds by queueViewModel.selectedIds.collectAsState()
-    val queueIsSelectionMode by queueViewModel.isSelectionMode.collectAsState()
+    val downloads by queueViewModel.downloads.collectAsStateWithLifecycle()
+    val chunksMap by queueViewModel.chunksMap.collectAsStateWithLifecycle()
+    val concurrencySettings by queueViewModel.concurrencySettings.collectAsStateWithLifecycle()
+    val queueFilter by queueViewModel.filter.collectAsStateWithLifecycle()
+    val queueSortOption by queueViewModel.sortOption.collectAsStateWithLifecycle()
+    val queueSearchQuery by queueViewModel.searchQuery.collectAsStateWithLifecycle()
+    val queueSelectedIds by queueViewModel.selectedIds.collectAsStateWithLifecycle()
+    val queueIsSelectionMode by queueViewModel.isSelectionMode.collectAsStateWithLifecycle()
 
     val activeDownloadsCount = downloads.count {
         it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED || it.state == DownloadState.MERGING
+    }
+
+    var backProgress by remember { mutableFloatStateOf(0f) }
+
+    PredictiveBackHandler(enabled = currentTab == AppTab.QUEUE && !queueIsSelectionMode) { progress ->
+        try {
+            progress.collect { backEvent ->
+                backProgress = backEvent.progress
+            }
+            backProgress = 0f
+            onSelectTab(AppTab.BROWSER)
+        } catch (e: CancellationException) {
+            backProgress = 0f
+        }
     }
 
     Scaffold { innerPadding ->
@@ -296,6 +344,12 @@ fun MainContent(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .graphicsLayer {
+                            val s = 1f - (backProgress * 0.08f)
+                            scaleX = s
+                            scaleY = s
+                            alpha = 1f - (backProgress * 0.25f)
+                        }
                         .zIndex(2f)
                 ) {
                     QueueScreen(
@@ -337,7 +391,7 @@ fun MainContent(
                 }
             }
 
-            // Floating Stained-Glass Pill Bottom Bar
+            // Material 3 Expressive HorizontalFloatingToolbar Bottom Bar
             AnimatedVisibility(
                 visible = isBarsVisible || currentTab != AppTab.BROWSER,
                 enter = slideInVertically(initialOffsetY = { it * 2 }) + fadeIn(),
@@ -347,82 +401,87 @@ fun MainContent(
                     .padding(bottom = 14.dp)
                     .zIndex(3f)
             ) {
-                val glassBrush = Brush.linearGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.76f),
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f),
-                        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.38f),
-                        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.76f)
-                    )
-                )
-                val borderBrush = Brush.linearGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
-                        Color.White.copy(alpha = 0.28f),
-                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.50f)
-                    )
-                )
-
-                Box(
-                    modifier = Modifier
-                        .shadow(elevation = 14.dp, shape = CircleShape, spotColor = MaterialTheme.colorScheme.primary)
-                        .clip(CircleShape)
-                        .background(glassBrush)
-                        .border(width = 1.2.dp, brush = borderBrush, shape = CircleShape)
-                        .padding(horizontal = 8.dp, vertical = 6.dp)
-                        .wrapContentWidth()
-                        .height(42.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                HorizontalFloatingToolbar(
+                    expanded = true,
+                    floatingActionButton = {
+                        FloatingToolbarDefaults.VibrantFloatingActionButton(
+                            onClick = { browserViewModel.openSnifferSheet() }
+                        ) {
+                            BadgedBox(badge = {
+                                if (detectedMedia.isNotEmpty()) {
+                                    Badge(
+                                        containerColor = MaterialTheme.colorScheme.error,
+                                        contentColor = MaterialTheme.colorScheme.onError
+                                    ) {
+                                        Text(detectedMedia.size.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                    }
+                                }
+                            }) {
+                                Text("⚡", fontSize = 18.sp)
+                            }
+                        }
+                    },
+                    colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
+                    content = {
                         val isBrowser = currentTab == AppTab.BROWSER
+                        val browserCornerRadius by animateDpAsState(
+                            targetValue = if (isBrowser) 14.dp else 22.dp,
+                            animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
+                        )
+                        val browserBgColor by animateColorAsState(
+                            targetValue = if (isBrowser) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
+                        )
+                        val browserFgColor by animateColorAsState(
+                            targetValue = if (isBrowser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
+                        )
+
                         Surface(
-                            color = if (isBrowser) MaterialTheme.colorScheme.primary.copy(alpha = 0.24f) else Color.Transparent,
-                            border = if (isBrowser) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) else null,
-                            shape = CircleShape,
+                            color = browserBgColor,
+                            shape = RoundedCornerShape(browserCornerRadius),
                             modifier = Modifier
-                                .clip(CircleShape)
+                                .clip(RoundedCornerShape(browserCornerRadius))
                                 .clickable { onSelectTab(AppTab.BROWSER) }
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 7.dp),
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                BadgedBox(badge = {
-                                    if (detectedMedia.isNotEmpty()) {
-                                        Badge(
-                                            containerColor = MaterialTheme.colorScheme.primary,
-                                            contentColor = MaterialTheme.colorScheme.onPrimary
-                                        ) {
-                                            Text(detectedMedia.size.toString(), fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                                        }
-                                    }
-                                }) {
-                                    Text("🌐", fontSize = 15.sp)
-                                }
+                                Text("🌐", fontSize = 15.sp)
                                 Text(
                                     "Browser",
                                     fontSize = 12.sp,
                                     fontWeight = if (isBrowser) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isBrowser) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = browserFgColor
                                 )
                             }
                         }
 
                         val isQueue = currentTab == AppTab.QUEUE
+                        val queueCornerRadius by animateDpAsState(
+                            targetValue = if (isQueue) 14.dp else 22.dp,
+                            animationSpec = MaterialTheme.motionScheme.fastSpatialSpec()
+                        )
+                        val queueBgColor by animateColorAsState(
+                            targetValue = if (isQueue) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
+                        )
+                        val queueFgColor by animateColorAsState(
+                            targetValue = if (isQueue) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
+                        )
+
                         Surface(
-                            color = if (isQueue) MaterialTheme.colorScheme.primary.copy(alpha = 0.24f) else Color.Transparent,
-                            border = if (isQueue) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) else null,
-                            shape = CircleShape,
+                            color = queueBgColor,
+                            shape = RoundedCornerShape(queueCornerRadius),
                             modifier = Modifier
-                                .clip(CircleShape)
+                                .clip(RoundedCornerShape(queueCornerRadius))
                                 .clickable { onSelectTab(AppTab.QUEUE) }
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 7.dp),
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
@@ -442,12 +501,12 @@ fun MainContent(
                                     "Downloads",
                                     fontSize = 12.sp,
                                     fontWeight = if (isQueue) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isQueue) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = queueFgColor
                                 )
                             }
                         }
                     }
-                }
+                )
             }
 
             val activeTabTitle = browserTabs.firstOrNull { it.id == activeTabId }?.title

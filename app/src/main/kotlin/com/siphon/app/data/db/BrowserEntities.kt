@@ -1,5 +1,6 @@
 package com.siphon.app.data.db
 
+import androidx.compose.runtime.Immutable
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Insert
@@ -8,6 +9,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
+@Immutable
 @Entity(tableName = "bookmarks")
 data class BookmarkEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -16,6 +18,7 @@ data class BookmarkEntity(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+@Immutable
 @Entity(tableName = "history")
 data class HistoryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
