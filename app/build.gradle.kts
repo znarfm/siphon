@@ -17,6 +17,49 @@ android {
         versionName = "0.0.1"
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePropertiesFile = listOf(
+                rootProject.file("keystore.properties"),
+                project.file("keystore.properties")
+            ).firstOrNull { it.exists() }
+
+            val keystoreProperties = java.util.Properties().apply {
+                if (keystorePropertiesFile != null) {
+                    keystorePropertiesFile.inputStream().use { load(it) }
+                }
+            }
+
+            val storeFilePath = keystoreProperties.getProperty("storeFile")
+                ?: System.getenv("KEYSTORE_FILE")
+            val resolvedStoreFile = storeFilePath?.let { path ->
+                val file = file(path)
+                if (file.isAbsolute) file else rootProject.file(path)
+            }
+
+            val storePasswordProp = keystoreProperties.getProperty("storePassword")
+                ?: System.getenv("KEYSTORE_PASSWORD")
+            val keyAliasProp = keystoreProperties.getProperty("keyAlias")
+                ?: System.getenv("KEY_ALIAS")
+            val keyPasswordProp = keystoreProperties.getProperty("keyPassword")
+                ?: System.getenv("KEY_PASSWORD")
+
+            if (resolvedStoreFile != null && resolvedStoreFile.exists() &&
+                !storePasswordProp.isNullOrBlank() &&
+                !keyAliasProp.isNullOrBlank() &&
+                !keyPasswordProp.isNullOrBlank()
+            ) {
+                storeFile = resolvedStoreFile
+                storePassword = storePasswordProp
+                keyAlias = keyAliasProp
+                keyPassword = keyPasswordProp
+            } else {
+                logger.warn("Release keystore not found or incomplete. Falling back to debug signing config.")
+                initWith(getByName("debug"))
+            }
+        }
+    }
+
     buildTypes {
         debug {
             ndk {
@@ -24,7 +67,7 @@ android {
             }
         }
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             ndk {
