@@ -56,8 +56,10 @@ android {
                 keyAlias = keyAliasProp
                 keyPassword = keyPasswordProp
             } else {
-                logger.warn("Release keystore not found or incomplete. Falling back to debug signing config.")
-                initWith(getByName("debug"))
+                val debugStore = getByName("debug").storeFile
+                if (debugStore != null && debugStore.exists()) {
+                    initWith(getByName("debug"))
+                }
             }
         }
     }
@@ -69,7 +71,10 @@ android {
             }
         }
         release {
-            signingConfig = signingConfigs.getByName("release")
+            val releaseConfig = signingConfigs.getByName("release")
+            if (releaseConfig.storeFile != null && releaseConfig.storeFile!!.exists()) {
+                signingConfig = releaseConfig
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             ndk {
