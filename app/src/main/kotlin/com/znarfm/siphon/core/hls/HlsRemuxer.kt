@@ -1,5 +1,6 @@
 package com.znarfm.siphon.core.hls
 
+import android.annotation.SuppressLint
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -8,6 +9,7 @@ import java.io.File
 import java.nio.ByteBuffer
 
 object HlsRemuxer {
+    @SuppressLint("WrongConstant")
     fun remuxToMp4(trackFiles: List<File>, outputFile: File): Boolean {
         val validTrackFiles = trackFiles.filter { it.exists() && it.length() > 0L }
         if (validTrackFiles.isEmpty()) return false
@@ -88,7 +90,14 @@ object HlsRemuxer {
                 bufferInfo.offset = 0
                 bufferInfo.size = sampleSize
                 bufferInfo.presentationTimeUs = adjustedPts
-                bufferInfo.flags = extractor.sampleFlags
+                var sampleCodecFlags = 0
+                if ((extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) {
+                    sampleCodecFlags = sampleCodecFlags or MediaCodec.BUFFER_FLAG_KEY_FRAME
+                }
+                if ((extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME) != 0) {
+                    sampleCodecFlags = sampleCodecFlags or MediaCodec.BUFFER_FLAG_PARTIAL_FRAME
+                }
+                bufferInfo.flags = sampleCodecFlags
 
                 muxer.writeSampleData(muxerTrack, buffer, bufferInfo)
                 extractor.advance()
