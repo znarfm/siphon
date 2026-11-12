@@ -44,3 +44,4 @@ jobs:
         with:
           name: reports
           path: app/build/reports/
+          if-no-files-found: ignore
