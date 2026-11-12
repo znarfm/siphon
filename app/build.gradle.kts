@@ -150,7 +150,6 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-    implementation(libs.androidx.documentfile)
     implementation(libs.libtorrent4j)
     implementation(libs.libtorrent4j.android.arm64)
     implementation(libs.libtorrent4j.android.x86.64)
