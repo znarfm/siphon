@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Siphon</string>
+    <string name="shortcut_incognito_short">Incognito</string>
+    <string name="shortcut_incognito_long">New Incognito Tab</string>
+    <string name="shortcut_queue_short">Downloads</string>
+    <string name="shortcut_queue_long">Downloads Queue</string>
+    <string name="shortcut_paste_short">Paste &amp; Sniff</string>
+    <string name="shortcut_paste_long">Paste &amp; Sniff URL</string>
+    <string name="tile_siphon_downloads">Siphon Downloads</string>
 </resources>
+

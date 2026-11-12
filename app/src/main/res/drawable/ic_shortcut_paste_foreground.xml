@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Foreground for "Paste & Sniff" Shortcut: Expressive Clipboard + Sniffing Wave / Radar Signal -->
+    <!-- Centered at (54, 54), Safe zone boundary [34..74] -->
+
+    <!-- Clipboard Board Body (Slate / Dark Indigo base) -->
+    <path
+        android:pathData="M38,36 C35.8,36 34,37.8 34,40 L34,70 C34,72.2 35.8,74 38,74 L70,74 C72.2,74 74,72.2 74,70 L74,40 C74,37.8 72.2,36 70,36 L62,36 L62,38 C62,39.1 61.1,40 60,40 L48,40 C46.9,40 46,39.1 46,38 L46,36 L38,36 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="34"
+                android:startY="36"
+                android:endX="74"
+                android:endY="74"
+                android:startColor="#1E293B"
+                android:endColor="#0F172A" />
+        </aapt:attr>
+    </path>
+
+    <!-- Clipboard Border Outline (Subtle Cyan accent stroke) -->
+    <path
+        android:strokeWidth="1.5"
+        android:strokeColor="#334155"
+        android:pathData="M38,36 C35.8,36 34,37.8 34,40 L34,70 C34,72.2 35.8,74 38,74 L70,74 C72.2,74 74,72.2 74,70 L74,40 C74,37.8 72.2,36 70,36 L62,36 L62,38 C62,39.1 61.1,40 60,40 L48,40 C46.9,40 46,39.1 46,38 L46,36 L38,36 Z" />
+
+    <!-- Clipboard Top Clip Handle (Cyan-Sky Gradient) -->
+    <path
+        android:pathData="M47,34 C47,32.3 48.3,31 50,31 L58,31 C59.7,31 61,32.3 61,34 L61,37 C61,37.6 60.6,38 60,38 L48,38 C47.4,38 47,37.6 47,37 L47,34 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="47"
+                android:startY="31"
+                android:endX="61"
+                android:endY="38"
+                android:startColor="#67E8F9"
+                android:endColor="#38BDF8" />
+        </aapt:attr>
+    </path>
+
+    <!-- Sniffer Radar / Siphon Beam on Clipboard (Luminous Cyan-Indigo Flow) -->
+    <!-- Concentric Sniff Waves -->
+    <!-- Wave 1 (Inner) -->
+    <path
+        android:pathData="M48,48 C51.5,45.5 56.5,45.5 60,48"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+    <!-- Wave 2 (Mid) -->
+    <path
+        android:pathData="M44,44 C49.5,40.5 58.5,40.5 64,44"
+        android:strokeColor="#67E8F9"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+    <!-- Luminous Download Arrow / Sniff Target Vector (Center) -->
+    <path
+        android:pathData="M54,52 L54,64 M50,60 L54,64 L58,60"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="50"
+                android:startY="52"
+                android:endX="58"
+                android:endY="64"
+                android:startColor="#38BDF8"
+                android:endColor="#6366F1" />
+        </aapt:attr>
+    </path>
+
+    <!-- Paste Sheet Glow Line (Base) -->
+    <path
+        android:pathData="M42,68 L66,68"
+        android:strokeColor="#38BDF8"
+        android:strokeAlpha="0.6"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+</vector>

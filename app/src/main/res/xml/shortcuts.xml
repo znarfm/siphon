@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="paste_and_sniff"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_paste_sniff"
+        android:shortcutShortLabel="@string/shortcut_paste_short"
+        android:shortcutLongLabel="@string/shortcut_paste_long">
+        <intent
+            android:action="com.znarfm.siphon.action.SHORTCUT_PASTE_SNIFF"
+            android:targetPackage="com.znarfm.siphon"
+            android:targetClass="com.znarfm.siphon.ui.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="open_queue"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_queue"
+        android:shortcutShortLabel="@string/shortcut_queue_short"
+        android:shortcutLongLabel="@string/shortcut_queue_long">
+        <intent
+            android:action="com.znarfm.siphon.action.SHORTCUT_QUEUE"
+            android:targetPackage="com.znarfm.siphon"
+            android:targetClass="com.znarfm.siphon.ui.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="new_incognito_tab"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_incognito"
+        android:shortcutShortLabel="@string/shortcut_incognito_short"
+        android:shortcutLongLabel="@string/shortcut_incognito_long">
+        <intent
+            android:action="com.znarfm.siphon.action.SHORTCUT_INCOGNITO"
+            android:targetPackage="com.znarfm.siphon"
+            android:targetClass="com.znarfm.siphon.ui.MainActivity" />
+    </shortcut>
+</shortcuts>

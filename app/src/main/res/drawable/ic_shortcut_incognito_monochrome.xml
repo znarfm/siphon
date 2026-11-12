@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Monochrome vector for Incognito / Stealth shortcut (pure #FFFFFF) -->
+    <!-- Fedora Crown -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,34 C44,32 48,30 54,30 C60,30 64,32 64,34 L62,41 L46,41 Z" />
+
+    <!-- Hat Brim -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M32,46 C42,43.5 66,43.5 76,46" />
+
+    <!-- Glasses Bridge -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M51,55 C52.5,53.5 55.5,53.5 57,55" />
+
+    <!-- Left Lens Frame -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:pathData="M42,54m-8,0a8,8 0 1,1 16,0a8,8 0 1,1 -16,0" />
+
+    <!-- Right Lens Frame -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:pathData="M66,54m-8,0a8,8 0 1,1 16,0a8,8 0 1,1 -16,0" />
+
+</vector>
