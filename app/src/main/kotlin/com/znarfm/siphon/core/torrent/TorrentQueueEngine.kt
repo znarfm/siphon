@@ -13,7 +13,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import org.libtorrent4j.AddTorrentParams
 import org.libtorrent4j.AlertListener
 import org.libtorrent4j.AlertType
 import org.libtorrent4j.Priority
@@ -101,7 +100,7 @@ class TorrentQueueEngine(
                     if (handle.isValid) {
                         val hex = handle.infoHash().toHex()
                         val downloadId = hexToDownloadId[hex] ?: return
-                        errorMessages[downloadId] = errAlert.error().message() ?: "Torrent error"
+                        errorMessages.put(downloadId, errAlert.message() ?: "Torrent error")
                     }
                 }
                 else -> {}
@@ -171,17 +170,29 @@ class TorrentQueueEngine(
                     sm.download(ti, stagingDir)
                 }
             } else if (magnetOrUrl.startsWith("magnet:", ignoreCase = true)) {
-                val params = AddTorrentParams.parseMagnetUri(magnetOrUrl)
-                val hash = params.infoHashes().best
+                val magnetBytes = sm.fetchMagnet(magnetOrUrl, 60, stagingDir)
+                    ?: run {
+                        dao.updateDownloadState(downloadId, DownloadState.FAILED)
+                        return@withContext DownloadState.FAILED
+                    }
+                val ti = TorrentInfo.bdecode(magnetBytes)
+                val hash = ti.infoHash()
                 infoHash = hash
                 activeHashes[downloadId] = hash
                 hexToDownloadId[hash.toHex()] = downloadId
+
+                val sanitizedName = DownloadStorageProvider.sanitizeDisplayName(ti.name())
+                dao.updateDisplayName(downloadId, sanitizedName)
+                if (ti.totalSize() > 0L) {
+                    dao.updateTotalBytes(downloadId, ti.totalSize())
+                }
+                metadataApplied = true
 
                 val existing = sm.find(hash)
                 if (existing != null && existing.isValid) {
                     existing.resume()
                 } else {
-                    sm.download(magnetOrUrl, stagingDir)
+                    sm.download(ti, stagingDir)
                 }
             } else {
                 dao.updateDownloadState(downloadId, DownloadState.FAILED)
