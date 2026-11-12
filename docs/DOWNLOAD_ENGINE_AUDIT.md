@@ -7,7 +7,7 @@ Technical audit of `ChunkQueueEngine`, `HlsQueueEngine`, `HlsPlaylistParser`, an
 ## Critical Defects
 
 ### 1. Premature Multi-Track EOS in `remuxToMp4`
-- **File**: `app/src/main/kotlin/com/siphon/app/core/hls/HlsQueueEngine.kt` (`remuxToMp4`)
+- **File**: `app/src/main/kotlin/com/znarfm/siphon/core/hls/HlsQueueEngine.kt` (`remuxToMp4`)
 - **Issue**:
   ```kotlin
   val sampleSize = extractor.readSampleData(buffer, 0)
@@ -17,7 +17,7 @@ Technical audit of `ChunkQueueEngine`, `HlsQueueEngine`, `HlsPlaylistParser`, an
 - **Remedy**: Mark finished track as EOS and advance; break only when *all* extractors reach EOS (`sampleTime == -1L`).
 
 ### 2. B-Frame PTS Distortion & Stream Desync
-- **File**: `app/src/main/kotlin/com/siphon/app/core/hls/HlsQueueEngine.kt` (`remuxToMp4`)
+- **File**: `app/src/main/kotlin/com/znarfm/siphon/core/hls/HlsQueueEngine.kt` (`remuxToMp4`)
 - **Issue**:
   ```kotlin
   val rawPts = extractor.sampleTime
@@ -28,13 +28,13 @@ Technical audit of `ChunkQueueEngine`, `HlsQueueEngine`, `HlsPlaylistParser`, an
 - **Remedy**: Pass raw PTS directly to `MediaMuxer` (Android API 30+ supports non-monotonic PTS in MP4 containers). Normalize initial track offset without distorting individual frame deltas.
 
 ### 3. Missing `#EXT-X-BYTERANGE` Support in HLS Parser
-- **File**: `app/src/main/kotlin/com/siphon/app/core/hls/HlsPlaylistParser.kt`
+- **File**: `app/src/main/kotlin/com/znarfm/siphon/core/hls/HlsPlaylistParser.kt`
 - **Issue**: Manifests that partition a single media file via `#EXT-X-BYTERANGE:length[@offset]` (Vimeo, YouTube HLS, Cloudflare Stream) are parsed without byte-range metadata.
 - **Impact**: Engine issues `GET segment.url` without `Range` headers, downloading the entire remote file once for each segment (e.g. 500 segments = 500x full file downloads).
 - **Remedy**: Parse `EXT-X-BYTERANGE` (and `#EXT-X-MAP` byte-range attributes) and store `startOffset` / `length` in `ParsedHlsSegment` to send `Range: bytes=start-end`.
 
 ### 4. Token Evaporation in `TokenBucket` Rate Limiter
-- **File**: `app/src/main/kotlin/com/siphon/app/core/network/TokenBucket.kt`
+- **File**: `app/src/main/kotlin/com/znarfm/siphon/core/network/TokenBucket.kt`
 - **Issue**:
   ```kotlin
   val newTokens = (elapsedNanos * rate) / 1_000_000_000L
@@ -43,7 +43,7 @@ Technical audit of `ChunkQueueEngine`, `HlsQueueEngine`, `HlsPlaylistParser`, an
 - **Remedy**: Retain remainder nanos or advance `lastRefillTimeNanos` only by consumed elapsed time `(newTokens * 1e9) / rate`.
 
 ### 5. Post-Download Merge Freeze (Silent Remux & MediaStore Transfer)
-- **File**: `app/src/main/kotlin/com/siphon/app/core/hls/HlsQueueEngine.kt` (lines 161–190)
+- **File**: `app/src/main/kotlin/com/znarfm/siphon/core/hls/HlsQueueEngine.kt` (lines 161–190)
 - **Issue**:
   - Once all segments finish downloading, the engine runs `remuxToMp4` followed by copying the multi-gigabyte file into the destination MediaStore URI via a 128 KB buffer.
   - On a 1.5 GB file, this disk-heavy processing takes 2–5 minutes on flash storage.
@@ -77,18 +77,18 @@ Technical audit of `ChunkQueueEngine`, `HlsQueueEngine`, `HlsPlaylistParser`, an
 ## Performance & Resource Optimizations
 
 ### 7. Disk Space Amplification During HLS Remux
-- **File**: `app/src/main/kotlin/com/siphon/app/core/hls/HlsQueueEngine.kt`
+- **File**: `app/src/main/kotlin/com/znarfm/siphon/core/hls/HlsQueueEngine.kt`
 - **Issue**: Retaining `seg_*.tmp` + `track_*.tmp` + `remux_output.mp4` alongside final `MediaStore` file requires 3x–4x stream size in cache (`/data/user/0/.../cache`), causing `ENOSPC` errors on 1GB+ files.
 - **Remedy**:
   - Delete `track_*.tmp` immediately after `remuxToMp4` succeeds before copying to final storage.
   - Bypass `remuxToMp4` if download contains a single track that is already MP4.
 
 ### 8. Static 1MB Sample Buffer in Remuxer
-- **File**: `app/src/main/kotlin/com/siphon/app/core/hls/HlsQueueEngine.kt`
+- **File**: `app/src/main/kotlin/com/znarfm/siphon/core/hls/HlsQueueEngine.kt`
 - **Issue**: `ByteBuffer.allocate(1024 * 1024)` fails with `BufferOverflowException` on high-bitrate 1080p/4K keyframes exceeding 1MB.
 - **Remedy**: Query `format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 4 * 1024 * 1024)`.
 
 ### 9. Explicit Default Audio Track Selection
-- **File**: `app/src/main/kotlin/com/siphon/app/core/hls/HlsQueueEngine.kt` (`parseAndPopulateTracks`)
+- **File**: `app/src/main/kotlin/com/znarfm/siphon/core/hls/HlsQueueEngine.kt` (`parseAndPopulateTracks`)
 - **Issue**: Always takes `firstOrNull` audio track matching `groupId`. If master playlist defines alternate dubs or commentary, default track may be skipped.
 - **Remedy**: Prioritize `audioTracks.firstOrNull { it.groupId == groupId && it.isDefault } ?: firstOrNull()`.

@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Foreground for "Incognito / Stealth Tab" Shortcut: Sleek Fedora Brim + Stealth Mask Glasses -->
+    <!-- Safe zone [32..76] -->
+
+    <!-- Fedora Crown (Top) -->
+    <path
+        android:pathData="M44,34 C44,32 48,30 54,30 C60,30 64,32 64,34 L62,43 L46,43 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="44"
+                android:startY="30"
+                android:endX="64"
+                android:endY="43"
+                android:startColor="#67E8F9"
+                android:endColor="#38BDF8" />
+        </aapt:attr>
+    </path>
+
+    <!-- Fedora Hat Ribbon Band -->
+    <path
+        android:pathData="M46,40 L62,40 L62.5,43 L45.5,43 Z"
+        android:fillColor="#0F172A"
+        android:fillAlpha="0.6" />
+
+    <!-- Hat Brim (Curved aerodynamic visor) -->
+    <path
+        android:pathData="M32,46 C42,43 66,43 76,46 C77.5,46.5 76.5,48.5 74,48.5 C64,48.5 44,48.5 34,48.5 C31.5,48.5 30.5,46.5 32,46 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="32"
+                android:startY="44"
+                android:endX="76"
+                android:endY="48"
+                android:startColor="#38BDF8"
+                android:endColor="#818CF8" />
+        </aapt:attr>
+    </path>
+
+    <!-- Incognito Glasses Bridge -->
+    <path
+        android:pathData="M51,56 C52.5,54.5 55.5,54.5 57,56"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round" />
+
+    <!-- Left Lens Frame -->
+    <path
+        android:pathData="M42,54m-8,0a8,8 0 1,1 16,0a8,8 0 1,1 -16,0"
+        android:strokeWidth="2.5">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="34"
+                android:startY="46"
+                android:endX="50"
+                android:endY="62"
+                android:startColor="#67E8F9"
+                android:endColor="#38BDF8" />
+        </aapt:attr>
+    </path>
+
+    <!-- Right Lens Frame -->
+    <path
+        android:pathData="M66,54m-8,0a8,8 0 1,1 16,0a8,8 0 1,1 -16,0"
+        android:strokeWidth="2.5">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="58"
+                android:startY="46"
+                android:endX="74"
+                android:endY="62"
+                android:startColor="#38BDF8"
+                android:endColor="#818CF8" />
+        </aapt:attr>
+    </path>
+
+    <!-- Stealth Glow inside Lenses (Tint) -->
+    <path
+        android:pathData="M42,54m-6,0a6,6 0 1,1 12,0a6,6 0 1,1 -12,0"
+        android:fillColor="#38BDF8"
+        android:fillAlpha="0.2" />
+
+    <path
+        android:pathData="M66,54m-6,0a6,6 0 1,1 12,0a6,6 0 1,1 -12,0"
+        android:fillColor="#818CF8"
+        android:fillAlpha="0.2" />
+
+    <!-- Specular Highlight Reflections on Glasses -->
+    <path
+        android:pathData="M38,50 L44,50"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M62,50 L68,50"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round" />
+
+    <!-- Mysterious Trench Collar / Stealth Under-arc -->
+    <path
+        android:pathData="M40,68 C48,72 60,72 68,68"
+        android:strokeColor="#818CF8"
+        android:strokeAlpha="0.5"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+</vector>

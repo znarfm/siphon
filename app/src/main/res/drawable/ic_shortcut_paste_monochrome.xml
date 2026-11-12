@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Monochrome vector for Paste & Sniff shortcut (pure #FFFFFF with clean negative space) -->
+    <!-- Clip -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,32 L60,32 C61.1,32 62,32.9 62,34 L62,37 C62,37.6 61.6,38 61,38 L47,38 C46.4,38 46,37.6 46,37 L46,34 C46,32.9 46.9,32 48,32 Z" />
+
+    <!-- Board Outline -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineJoin="round"
+        android:pathData="M44,38 L38,38 C35.8,38 34,39.8 34,42 L34,70 C34,72.2 35.8,74 38,74 L70,74 C72.2,74 74,72.2 74,70 L74,42 C74,39.8 72.2,38 70,38 L64,38" />
+
+    <!-- Upper Sniffer Radar Wave -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M45,45 C50,42 58,42 63,45" />
+
+    <!-- Arrow Stem and Head -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,52 L54,64 M49,59 L54,64 L59,59" />
+
+    <!-- Bottom Indicator Line -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M44,68 L64,68" />
+
+</vector>

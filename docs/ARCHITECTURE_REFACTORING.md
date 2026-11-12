@@ -7,7 +7,7 @@ Refactoring plan to decouple the single-module `:app` architecture, eliminate th
 ## 1. Target Package Structure
 
 ```
-app/src/main/kotlin/com/siphon/app/
+app/src/main/kotlin/com/znarfm/siphon/
 ├── SiphonApp.kt                 # Application subclass + AppContainer (manual DI, notification channels)
 ├── core/                        # Core engines, network clients, sniffer, and storage preflight
 │   ├── adblock/

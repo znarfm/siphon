@@ -1,5 +1,5 @@
 # Keep Room entities, DAOs, and Database implementations
--keep class com.siphon.app.data.db.** { *; }
+-keep class com.znarfm.siphon.data.db.** { *; }
 -keep class * extends androidx.room.RoomDatabase {
     void <init>();
 }
@@ -10,7 +10,7 @@
 }
 
 # Keep Service & TileService entry points
--keep class com.siphon.app.core.service.** { *; }
+-keep class com.znarfm.siphon.core.service.** { *; }
 
 # OkHttp & Kotlin Coroutines R8 full mode compatibility
 -dontwarn okhttp3.**

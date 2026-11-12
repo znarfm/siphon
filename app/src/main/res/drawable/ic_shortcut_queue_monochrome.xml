@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Monochrome vector for Downloads Queue shortcut (pure #FFFFFF) -->
+    <!-- Top Queued Bar -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,34 L68,34 C69.1,34 70,34.9 70,36 C70,37.1 69.1,38 68,38 L40,38 C38.9,38 38,37.1 38,36 C38,34.9 38.9,34 40,34 Z" />
+
+    <!-- Mid Queued Bar -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M37,42 L71,42 C72.1,42 73,42.9 73,44 C73,45.1 72.1,46 71,46 L37,46 C35.9,46 35,45.1 35,44 C35,42.9 35.9,42 37,42 Z" />
+
+    <!-- Downward Stream Arrow -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,49 L54,64 M47,58 L54,65 L61,58" />
+
+    <!-- Tray Outline -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M34,56 L34,70 C34,72.2 35.8,74 38,74 L70,74 C72.2,74 74,72.2 74,70 L74,56" />
+
+</vector>

@@ -1,13 +1,110 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- Expressive Fluid Siphon Vortex Foreground Layer -->
+    <!-- All primary emblems strictly constrained within the 66x66dp safe zone [21..87], specifically [26..82] -->
+
+    <!-- Ambient Core Glow behind Vortex Funnel -->
     <path
-        android:fillColor="#38BDF8"
-        android:pathData="M32,34 L76,34 C77.1,34 78,34.9 78,36 C78,36.5 77.8,37 77.4,37.4 L60,56 L60,68 C60,69.1 59.1,70 58,70 L50,70 C48.9,70 48,69.1 48,68 L48,56 L30.6,37.4 C29.8,36.6 29.8,35.3 30.6,34.5 C31,34.2 31.5,34 32,34 Z" />
+        android:pathData="M54,52m-26,0a26,26 0 1,1 52,0a26,26 0 1,1 -52,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="54"
+                android:centerY="52"
+                android:gradientRadius="26"
+                android:startColor="#3038BDF8"
+                android:centerColor="#106366F1"
+                android:endColor="#00000000" />
+        </aapt:attr>
+    </path>
+
+    <!-- Swirling Ribbon 1: Upper Left-to-Center Inflow Arm (Cyan-to-Sky) -->
     <path
+        android:pathData="M27.5,35.5 C32,28.5 42,25 54,25 C66.5,25 76,28.8 80.5,35 C82.8,38.2 81.5,41.5 77.2,41.5 C70,41.5 61,37 54,37 C45,37 36,40.5 30.5,40.5 C27.5,40.5 25.8,38 27.5,35.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="26"
+                android:startY="25"
+                android:endX="82"
+                android:endY="40"
+                android:startColor="#67E8F9"
+                android:endColor="#38BDF8" />
+        </aapt:attr>
+    </path>
+
+    <!-- Swirling Ribbon 2: Right Counter-Spiral Intake (Sky-to-Indigo) -->
+    <path
+        android:pathData="M81.5,36.5 C83,43 78,50 68,54 C60,57.2 58.5,59.5 58.5,65 L51.5,65 C51.5,57.5 54.5,53.8 63,50 C71,46.5 75.5,42 74.5,37 C74,34.5 77.5,33.5 81.5,36.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="82"
+                android:startY="34"
+                android:endX="51"
+                android:endY="65"
+                android:startColor="#38BDF8"
+                android:endColor="#6366F1" />
+        </aapt:attr>
+    </path>
+
+    <!-- Swirling Ribbon 3: Left Converging Siphon Stem (Indigo-to-Electric Sapphire) -->
+    <path
+        android:pathData="M26.5,38.5 C26,45.5 31,52 39,55.5 C46.5,58.8 49.5,61.5 49.5,66 L56.5,66 C56.5,59.5 52,56 43,52 C36.5,49 33.5,44.5 34,39 C34.2,36 30,35.5 26.5,38.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="26"
+                android:startY="36"
+                android:endX="57"
+                android:endY="66"
+                android:startColor="#818CF8"
+                android:endColor="#6366F1" />
+        </aapt:attr>
+    </path>
+
+    <!-- Converged Downward Accelerator / Download Chevron -->
+    <!-- Spans X: [42..66], Y: [62..75] -->
+    <path
+        android:pathData="M54,75.5 L43,64.5 C42.2,63.7 42.2,62.3 43.1,61.4 C43.9,60.6 45.3,60.6 46.1,61.4 L54,69.3 L61.9,61.4 C62.7,60.6 64.1,60.6 64.9,61.4 C65.8,62.3 65.8,63.7 65,64.5 L54,75.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="43"
+                android:startY="61"
+                android:endX="65"
+                android:endY="76"
+                android:startColor="#38BDF8"
+                android:endColor="#E0F2FE" />
+        </aapt:attr>
+    </path>
+
+    <!-- Expressive Terminal Droplet / Quantum Pulse Node -->
+    <!-- Positioned at the bottom safe-zone tip X: 54, Y: [78..84] -->
+    <path
+        android:pathData="M54,78.5 C56.8,81.2 57.5,82.8 57.5,84 C57.5,85.9 55.9,87.5 54,87.5 C52.1,87.5 50.5,85.9 50.5,84 C50.5,82.8 51.2,81.2 54,78.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="53"
+                android:centerY="83"
+                android:gradientRadius="4.5"
+                android:startColor="#FFFFFF"
+                android:centerColor="#BAE6FD"
+                android:endColor="#38BDF8" />
+        </aapt:attr>
+    </path>
+
+    <!-- Inner Core Spark / Specular Highlight Accent -->
+    <path
+        android:pathData="M52.5,82.5m-1,0a1,1 0 1,1 2,0a1,1 0 1,1 -2,0"
         android:fillColor="#FFFFFF"
-        android:pathData="M51,74 L57,74 C57.55,74 58,74.45 58,75 L58,79 C58,79.55 57.55,80 57,80 L51,80 C50.45,80 50,79.55 50,79 L50,75 C50,74.45 50.45,74 51,74 Z" />
+        android:fillAlpha="0.9" />
+
 </vector>
