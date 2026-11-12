@@ -35,6 +35,13 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Ensure Gradle Wrapper jar exists
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "Gradle wrapper jar missing, fetching..."
+            curl -sSL https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+          fi
+
       - name: Decode Keystore
         if: ${{ secrets.KEYSTORE_BASE64 != '' }}
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore

@@ -28,6 +28,13 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Ensure Gradle Wrapper jar exists
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "Gradle wrapper jar missing, fetching..."
+            curl -sSL https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
+          fi
+
       - name: Run lint and unit tests and assemble debug APK
         run: ./gradlew lintDebug testDebugUnitTest assembleDebug --stacktrace
 
