@@ -152,7 +152,7 @@ dependencies {
 
     implementation(libs.libtorrent4j)
     implementation(libs.libtorrent4j.android.arm64)
-    implementation(libs.libtorrent4j.android.x86.64)
+    implementation(libs.libtorrent4j.android.x64)
 
     testImplementation(libs.junit)
 }
