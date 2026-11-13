@@ -16,6 +16,7 @@ data class HlsVariantInfo(
 @Immutable
 data class SniffedMedia(
     val id: String = UUID.randomUUID().toString(),
+    val tabId: String = "",
     val url: String,
     val sourcePageUrl: String,
     val mediaType: DownloadType,

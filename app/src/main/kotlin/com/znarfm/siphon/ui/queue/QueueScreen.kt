@@ -49,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +57,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,9 +65,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.znarfm.siphon.data.db.ChunkEntity
 import com.znarfm.siphon.data.db.DownloadEntity
+import com.znarfm.siphon.data.db.DownloadFileEntity
 import com.znarfm.siphon.data.db.DownloadState
+import com.znarfm.siphon.data.db.SiphonDatabase
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
+import kotlinx.coroutines.flow.map
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -77,6 +82,7 @@ fun QueueScreen(
     workersPerDownload: Int,
     bandwidthLimitBytes: Long = 0L,
     isWifiOnly: Boolean = false,
+    customDownloadUri: String? = null,
     selectedFilter: QueueFilter = QueueFilter.ALL,
     onSelectFilter: (QueueFilter) -> Unit = {},
     selectedSort: QueueSortOption = QueueSortOption.DATE_DESC,
@@ -94,7 +100,7 @@ fun QueueScreen(
     onCancel: (Long) -> Unit,
     onDelete: (downloadId: Long, deleteFile: Boolean) -> Unit,
     onRebind: (DownloadEntity) -> Unit,
-    onSaveSettings: (maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean) -> Unit,
+    onSaveSettings: (maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean, customDownloadUri: String?) -> Unit,
     onClearCompleted: () -> Unit,
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit,
@@ -103,9 +109,15 @@ fun QueueScreen(
     onBulkDelete: (List<Long>, Boolean) -> Unit,
     onBulkCancel: (List<Long>) -> Unit,
     onNavigateBack: () -> Unit = {},
+    downloadFilesMap: Map<Long, List<DownloadFileEntity>>? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val observedFilesMap by remember(context) {
+        SiphonDatabase.get(context).downloadDao().observeAllDownloadFiles()
+            .map { list -> list.groupBy { it.downloadId } }
+    }.collectAsState(initial = emptyMap())
+    val effectiveFilesMap = downloadFilesMap ?: observedFilesMap
     var isSearchExpanded by remember { mutableStateOf(searchQuery.isNotBlank()) }
 
     var selectionBackProgress by remember { mutableFloatStateOf(0f) }
@@ -128,6 +140,7 @@ fun QueueScreen(
     var renameInput by remember { mutableStateOf("") }
     var showBulkDeleteDialog by remember { mutableStateOf(false) }
     var inspectorDownload by remember { mutableStateOf<DownloadEntity?>(null) }
+    var torrentFilesDownload by remember { mutableStateOf<DownloadEntity?>(null) }
 
     val activeCount = downloads.count { it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED || it.state == DownloadState.MERGING }
     val pausedCount = downloads.count {
@@ -163,7 +176,19 @@ fun QueueScreen(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            }
+    ) {
         // Header Surface (Chrome Android Downloads TopAppBar + M3 Expressive styling)
         Surface(
             tonalElevation = 3.dp,
@@ -485,7 +510,15 @@ fun QueueScreen(
                         onRebind = { onRebind(item) },
                         onShare = { shareDownloadFile(context, item) },
                         onCopyStreamUrl = { copyToClipboard(context, item.url, "Stream URL") },
-                        onCopyPageUrl = { copyToClipboard(context, item.sourcePageUrl?.takeIf { it.isNotBlank() } ?: item.url, "Page URL") }
+                        onCopyPageUrl = { copyToClipboard(context, item.sourcePageUrl?.takeIf { it.isNotBlank() } ?: item.url, "Page URL") },
+                        onOpen = {
+                            val itemFiles = effectiveFilesMap[item.id].orEmpty()
+                            if (itemFiles.size > 1) {
+                                torrentFilesDownload = item
+                            } else {
+                                openCompletedFile(context, item)
+                            }
+                        }
                     )
                 }
             }
@@ -496,6 +529,7 @@ fun QueueScreen(
     if (inspectorDownload != null) {
         val target = inspectorDownload!!
         val targetChunks = chunksMap[target.id] ?: emptyList()
+        val targetFiles = effectiveFilesMap[target.id].orEmpty()
 
         TaskInspectorBottomSheet(
             download = target,
@@ -504,12 +538,38 @@ fun QueueScreen(
             onShare = { shareDownloadFile(context, target) },
             onCopyStreamUrl = { copyToClipboard(context, target.url, "Stream URL") },
             onCopyPageUrl = { copyToClipboard(context, target.sourcePageUrl?.takeIf { it.isNotBlank() } ?: target.url, "Page URL") },
-            onOpenFile = { openCompletedFile(context, target) },
+            onOpenFile = {
+                if (targetFiles.size > 1) {
+                    inspectorDownload = null
+                    torrentFilesDownload = target
+                } else {
+                    openCompletedFile(context, target)
+                }
+            },
             onRename = {
                 inspectorDownload = null
                 pendingRenameDownload = target
                 renameInput = target.displayName
+            },
+            files = targetFiles,
+            onViewFiles = if (targetFiles.size > 1) {
+                {
+                    inspectorDownload = null
+                    torrentFilesDownload = target
+                }
+            } else {
+                null
             }
+        )
+    }
+
+    if (torrentFilesDownload != null) {
+        val target = torrentFilesDownload!!
+        val targetFiles = effectiveFilesMap[target.id].orEmpty()
+        TorrentFilesSheet(
+            download = target,
+            files = targetFiles,
+            onDismiss = { torrentFilesDownload = null }
         )
     }
 
@@ -631,9 +691,10 @@ fun QueueScreen(
             currentWorkers = workersPerDownload,
             currentBandwidthLimit = bandwidthLimitBytes,
             currentWifiOnly = isWifiOnly,
+            currentCustomDownloadUri = customDownloadUri,
             onDismiss = { showSettingsDialog = false },
-            onConfirm = { maxD, w, limit, wifi ->
-                onSaveSettings(maxD, w, limit, wifi)
+            onConfirm = { maxD, w, limit, wifi, customUri ->
+                onSaveSettings(maxD, w, limit, wifi, customUri)
                 showSettingsDialog = false
             }
         )

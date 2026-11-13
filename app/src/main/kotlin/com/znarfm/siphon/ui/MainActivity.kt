@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -56,6 +57,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,6 +75,7 @@ import com.znarfm.siphon.ui.browser.BrowserScreen
 import com.znarfm.siphon.ui.browser.BrowserSettingsScreen
 import com.znarfm.siphon.ui.browser.BrowserViewModel
 import com.znarfm.siphon.ui.browser.HistoryScreen
+import com.znarfm.siphon.ui.browser.MagnetDownloadDialog
 import com.znarfm.siphon.ui.browser.NEW_TAB_URL
 import com.znarfm.siphon.ui.browser.TabSwitcherScreen
 import com.znarfm.siphon.ui.queue.ConcurrencySettingsDialog
@@ -397,6 +401,7 @@ fun MainContent(
     val isCurrentBookmarked by browserViewModel.isCurrentUrlBookmarked.collectAsStateWithLifecycle()
     val adblockRuleCount by browserViewModel.adblockRuleCount.collectAsStateWithLifecycle()
     val adblockConfig by browserViewModel.adblockConfig.collectAsStateWithLifecycle()
+    val pendingMagnetUri by browserViewModel.pendingMagnetUri.collectAsStateWithLifecycle()
 
     val downloads by queueViewModel.downloads.collectAsStateWithLifecycle()
     val chunksMap by queueViewModel.chunksMap.collectAsStateWithLifecycle()
@@ -432,6 +437,7 @@ fun MainContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
         ) {
             val isBrowserVisible = currentScreen == AppScreen.BROWSER
 
@@ -440,12 +446,22 @@ fun MainContent(
                     .fillMaxSize()
                     .alpha(if (isBrowserVisible) 1f else 0f)
                     .zIndex(if (isBrowserVisible) 1f else 0f)
+                    .pointerInput(isBrowserVisible) {
+                        if (!isBrowserVisible) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    event.changes.forEach { it.consume() }
+                                }
+                            }
+                        }
+                    }
             ) {
                 BrowserScreen(
                     currentUrl = browserUrl,
                     tabs = browserTabs,
                     activeTabId = activeTabId,
-                    snifferClient = browserViewModel.snifferClient,
+                    snifferClientForTab = { tabId -> browserViewModel.getSnifferClientForTab(tabId) },
                     detectedMediaCount = detectedMedia.size,
                     activeDownloadCount = activeDownloadsCount,
                     isAdBlockEnabled = isAdBlockEnabled,
@@ -483,6 +499,9 @@ fun MainContent(
                         browserViewModel.downloadDirectMedia(url)
                         Toast.makeText(context, "Download started", Toast.LENGTH_SHORT).show()
                     },
+                    onMagnetLinkClicked = { uri ->
+                        browserViewModel.showMagnetDownloadPopup(uri)
+                    },
                     onSelectTab = { browserViewModel.switchBrowserTab(it) },
                     onCloseTab = { browserViewModel.closeBrowserTab(it) },
                     onToggleBookmark = {
@@ -518,6 +537,15 @@ fun MainContent(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                        .pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    event.changes.forEach { it.consume() }
+                                }
+                            }
+                        }
                         .graphicsLayer {
                             val s = 1f - (backProgress * 0.08f)
                             scaleX = s
@@ -535,6 +563,7 @@ fun MainContent(
                                 workersPerDownload = concurrencySettings.workers,
                                 bandwidthLimitBytes = concurrencySettings.bandwidthLimit,
                                 isWifiOnly = concurrencySettings.wifiOnly,
+                                customDownloadUri = concurrencySettings.customDownloadUri,
                                 selectedFilter = queueFilter,
                                 onSelectFilter = { queueViewModel.setFilter(it) },
                                 selectedSort = queueSortOption,
@@ -555,7 +584,9 @@ fun MainContent(
                                     onSelectScreen(AppScreen.BROWSER)
                                     browserViewModel.startRebindFlow(download)
                                 },
-                                onSaveSettings = { maxD, w, limit, wifi -> queueViewModel.setConcurrency(maxD, w, limit, wifi) },
+                                onSaveSettings = { maxD, w, limit, wifi, customUri ->
+                                    queueViewModel.setConcurrency(maxD, w, limit, wifi, customUri)
+                                },
                                 onClearCompleted = { queueViewModel.clearCompleted() },
                                 onPauseAll = { queueViewModel.pauseAll() },
                                 onResumeAll = { queueViewModel.resumeAll() },
@@ -650,9 +681,10 @@ fun MainContent(
                     currentWorkers = concurrencySettings.workers,
                     currentBandwidthLimit = concurrencySettings.bandwidthLimit,
                     currentWifiOnly = concurrencySettings.wifiOnly,
+                    currentCustomDownloadUri = concurrencySettings.customDownloadUri,
                     onDismiss = { showDownloadSettingsDialog = false },
-                    onConfirm = { maxD, w, limit, wifi ->
-                        queueViewModel.setConcurrency(maxD, w, limit, wifi)
+                    onConfirm = { maxD, w, limit, wifi, customUri ->
+                        queueViewModel.setConcurrency(maxD, w, limit, wifi, customUri)
                         showDownloadSettingsDialog = false
                     }
                 )
@@ -685,6 +717,18 @@ fun MainContent(
                     }
                 }
             )
+
+            pendingMagnetUri?.let { magnetUri ->
+                MagnetDownloadDialog(
+                    magnetUri = magnetUri,
+                    customDownloadUri = concurrencySettings.customDownloadUri,
+                    onConfirm = {
+                        browserViewModel.startMagnetDownload(magnetUri)
+                        Toast.makeText(context, "Torrent download started", Toast.LENGTH_SHORT).show()
+                    },
+                    onDismiss = { browserViewModel.dismissMagnetDownloadPopup() }
+                )
+            }
 
             AnimatedVisibility(
                 visible = !pendingClipboardLink.isNullOrBlank(),

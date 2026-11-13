@@ -36,7 +36,8 @@ class MediaSnifferClient(
     val metadataProber: MetadataProber = MetadataProber(),
     private val dao: DownloadDao? = null,
     private val storage: DownloadStorageProvider? = null,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    val tabId: String = ""
 ) : WebViewClient() {
 
     private val _detectedMedia = MutableStateFlow<List<SniffedMedia>>(emptyList())
@@ -52,10 +53,14 @@ class MediaSnifferClient(
     var currentPageUrl: String = ""
         private set
 
+    @Volatile
+    private var lastPageStartedUrl: String? = null
+
     var onUrlChanged: ((String) -> Unit)? = null
     var onNavigationStateChanged: ((canGoBack: Boolean, canGoForward: Boolean) -> Unit)? = null
     var onWebViewPageStarted: ((WebView, String) -> Unit)? = null
     var onWebViewPageFinished: ((WebView, String) -> Unit)? = null
+    var onMagnetLinkClicked: ((String) -> Unit)? = null
 
     // LRU cache for candidate URLs normalized by stripping byte-range query params
     private val lruDedup = Collections.synchronizedMap(
@@ -77,6 +82,11 @@ class MediaSnifferClient(
         _detectedMedia.value = emptyList()
         lruDedup.clear()
         pageManifests.clear()
+        lastPageStartedUrl = null
+    }
+
+    fun removeDetectedMedia(id: String) {
+        _detectedMedia.update { list -> list.filterNot { it.id == id } }
     }
 
     fun updateCurrentPageUrl(url: String) {
@@ -98,6 +108,10 @@ class MediaSnifferClient(
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
         if (!url.isNullOrBlank()) {
+            if (lastPageStartedUrl != null && lastPageStartedUrl != url) {
+                clearDetectedMedia()
+            }
+            lastPageStartedUrl = url
             currentPageUrl = url
             pageManifests.putIfAbsent(url, Collections.newSetFromMap(ConcurrentHashMap()))
             onUrlChanged?.invoke(url)
@@ -123,6 +137,10 @@ class MediaSnifferClient(
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val uri = request?.url ?: return false
+        if (uri.scheme.equals("magnet", ignoreCase = true)) {
+            onMagnetLinkClicked?.invoke(uri.toString())
+            return true
+        }
         if (hostFilter.shouldBlockUri(uri)) {
             return true // Drop ad redirects / popup chains
         }
@@ -135,6 +153,10 @@ class MediaSnifferClient(
     ): WebResourceResponse? {
         val req = request ?: return null
         val uri = req.url ?: return null
+
+        if (uri.scheme.equals("magnet", ignoreCase = true)) {
+            return null
+        }
 
         // 1. Drop ad network subresources immediately
         if (hostFilter.shouldBlockUri(uri)) {
@@ -153,6 +175,7 @@ class MediaSnifferClient(
         hintLabel: String? = null,
         forceInspect: Boolean = false
     ) {
+        if (url.startsWith("magnet:", ignoreCase = true)) return
         if (!forceInspect && !isCandidateMediaUrl(url, requestHeaders)) return
 
         // 3. Skip segment probing (.ts / .m4s) if a parent manifest is already captured for this page
@@ -237,6 +260,7 @@ class MediaSnifferClient(
                 val lang = sub.language ?: sub.name
                 val subDisplay = buildSubtitleDisplayName(sub.url, sub.name, sub.language, "vtt")
                 val subMedia = SniffedMedia(
+                    tabId = this.tabId,
                     url = sub.url,
                     sourcePageUrl = sourcePage,
                     mediaType = DownloadType.HLS,
@@ -266,6 +290,7 @@ class MediaSnifferClient(
                 val lang = hintLang ?: hintLabel ?: inferLanguageFromUrl(url)
                 val subDisplay = buildSubtitleDisplayName(url, hintLabel, lang, "vtt")
                 val subMedia = SniffedMedia(
+                    tabId = this.tabId,
                     url = url,
                     sourcePageUrl = sourcePage,
                     mediaType = DownloadType.HLS,
@@ -362,6 +387,7 @@ class MediaSnifferClient(
         }
 
         val media = SniffedMedia(
+            tabId = this.tabId,
             url = url,
             sourcePageUrl = sourcePage,
             mediaType = DownloadType.HLS,
@@ -425,6 +451,7 @@ class MediaSnifferClient(
         }
 
         val media = SniffedMedia(
+            tabId = this.tabId,
             url = probeResult.finalUrl,
             sourcePageUrl = sourcePage,
             mediaType = DownloadType.HTTP,

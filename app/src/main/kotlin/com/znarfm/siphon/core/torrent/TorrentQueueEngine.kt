@@ -5,6 +5,7 @@ import android.net.Uri
 import android.webkit.MimeTypeMap
 import com.znarfm.siphon.core.storage.DownloadStorageProvider
 import com.znarfm.siphon.data.db.DownloadDao
+import com.znarfm.siphon.data.db.DownloadFileEntity
 import com.znarfm.siphon.data.db.DownloadState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +33,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class DownloadProgress(
     val downloadedBytes: Long,
-    val totalBytes: Long
+    val totalBytes: Long,
+    val speedBytesPerSec: Long = 0L,
+    val peers: Int = 0
 )
 
 class TorrentQueueEngine(
@@ -147,6 +150,10 @@ class TorrentQueueEngine(
 
         var infoHash: Sha1Hash? = null
         var metadataApplied = false
+        var torrentName = dao.getDownload(downloadId)?.displayName ?: "Torrent"
+        var lastDbProgressMs = 0L
+        var lastKnownDone = 0L
+        var lastKnownTotal = 0L
 
         try {
             if (torrentBytes != null) {
@@ -157,8 +164,10 @@ class TorrentQueueEngine(
                 hexToDownloadId[hash.toHex()] = downloadId
 
                 val sanitizedName = DownloadStorageProvider.sanitizeDisplayName(ti.name())
+                torrentName = sanitizedName
                 dao.updateDisplayName(downloadId, sanitizedName)
                 if (ti.totalSize() > 0L) {
+                    lastKnownTotal = ti.totalSize()
                     dao.updateTotalBytes(downloadId, ti.totalSize())
                 }
                 metadataApplied = true
@@ -182,8 +191,10 @@ class TorrentQueueEngine(
                 hexToDownloadId[hash.toHex()] = downloadId
 
                 val sanitizedName = DownloadStorageProvider.sanitizeDisplayName(ti.name())
+                torrentName = sanitizedName
                 dao.updateDisplayName(downloadId, sanitizedName)
                 if (ti.totalSize() > 0L) {
+                    lastKnownTotal = ti.totalSize()
                     dao.updateTotalBytes(downloadId, ti.totalSize())
                 }
                 metadataApplied = true
@@ -217,6 +228,7 @@ class TorrentQueueEngine(
                     if (handle != null && handle.isValid) {
                         handle.pause()
                     }
+                    dao.updateTorrentProgress(downloadId, lastKnownDone, 0L, 0)
                     dao.updateDownloadState(downloadId, DownloadState.PAUSED)
                     return@withContext DownloadState.PAUSED
                 }
@@ -235,9 +247,12 @@ class TorrentQueueEngine(
                 if (metaUpdate != null) {
                     val (name, totalSize) = metaUpdate
                     if (name.isNotBlank()) {
-                        dao.updateDisplayName(downloadId, DownloadStorageProvider.sanitizeDisplayName(name))
+                        val sanitized = DownloadStorageProvider.sanitizeDisplayName(name)
+                        torrentName = sanitized
+                        dao.updateDisplayName(downloadId, sanitized)
                     }
                     if (totalSize > 0L) {
+                        lastKnownTotal = totalSize
                         dao.updateTotalBytes(downloadId, totalSize)
                     }
                     metadataApplied = true
@@ -250,9 +265,12 @@ class TorrentQueueEngine(
                         if (ti != null && ti.isValid) {
                             val name = ti.name()
                             if (name.isNotBlank()) {
-                                dao.updateDisplayName(downloadId, DownloadStorageProvider.sanitizeDisplayName(name))
+                                val sanitized = DownloadStorageProvider.sanitizeDisplayName(name)
+                                torrentName = sanitized
+                                dao.updateDisplayName(downloadId, sanitized)
                             }
                             if (ti.totalSize() > 0L) {
+                                lastKnownTotal = ti.totalSize()
                                 dao.updateTotalBytes(downloadId, ti.totalSize())
                             }
                             if (ti.numFiles() > 0) {
@@ -264,8 +282,29 @@ class TorrentQueueEngine(
 
                     val status: TorrentStatus = handle.status()
                     val totalWanted = status.totalWanted().coerceAtLeast(0L)
-                    val totalDone = status.totalWantedDone().coerceAtLeast(0L)
-                    onProgress(DownloadProgress(downloadedBytes = totalDone, totalBytes = totalWanted))
+                    val totalDone = status.totalDone().coerceAtLeast(0L)
+                    val speedBytesPerSec = status.downloadPayloadRate().toLong().coerceAtLeast(0L)
+                    val peers = status.numPeers().coerceAtLeast(0)
+
+                    lastKnownDone = totalDone
+                    if (totalWanted > 0L) {
+                        lastKnownTotal = totalWanted
+                    }
+
+                    val nowMs = System.currentTimeMillis()
+                    if (nowMs - lastDbProgressMs >= 500L) {
+                        dao.updateTorrentProgress(downloadId, totalDone, speedBytesPerSec, peers)
+                        lastDbProgressMs = nowMs
+                    }
+
+                    onProgress(
+                        DownloadProgress(
+                            downloadedBytes = totalDone,
+                            totalBytes = totalWanted,
+                            speedBytesPerSec = speedBytesPerSec,
+                            peers = peers
+                        )
+                    )
 
                     if (finishedIds.contains(downloadId) || status.isFinished || status.isSeeding) {
                         break
@@ -279,6 +318,8 @@ class TorrentQueueEngine(
                 throw CancellationException("Torrent job cancelled")
             }
 
+            val finalDone = if (lastKnownTotal > 0L) maxOf(lastKnownDone, lastKnownTotal) else lastKnownDone
+            dao.updateTorrentProgress(downloadId, finalDone, 0L, 0)
             dao.updateDownloadState(downloadId, DownloadState.MERGING)
 
             val finishedHandle = sm.find(trackedHash)
@@ -287,13 +328,16 @@ class TorrentQueueEngine(
                 sm.remove(finishedHandle)
             }
 
-            val exportedPrimaryUri = exportStagingFiles(stagingDir)
-            if (exportedPrimaryUri == null) {
+            val exportedFiles = exportStagingFiles(downloadId, torrentName, stagingDir)
+            if (exportedFiles.isEmpty()) {
                 dao.updateDownloadState(downloadId, DownloadState.FAILED)
                 return@withContext DownloadState.FAILED
             }
 
-            dao.updateDestinationUri(downloadId, exportedPrimaryUri.toString())
+            dao.deleteDownloadFiles(downloadId)
+            dao.insertDownloadFiles(exportedFiles)
+            val primaryFile = exportedFiles.first()
+            dao.updateCompletedMeta(downloadId, primaryFile.uri, primaryFile.mimeType)
             dao.updateDownloadState(downloadId, DownloadState.COMPLETED)
             stagingDir.deleteRecursively()
             DownloadState.COMPLETED
@@ -311,6 +355,7 @@ class TorrentQueueEngine(
                     if (handle != null && handle.isValid) {
                         handle.pause()
                     }
+                    dao.updateTorrentProgress(downloadId, lastKnownDone, 0L, 0)
                     dao.updateDownloadState(downloadId, DownloadState.PAUSED)
                 }
             }
@@ -322,6 +367,7 @@ class TorrentQueueEngine(
                 if (handle != null && handle.isValid) {
                     sm.remove(handle)
                 }
+                dao.updateTorrentProgress(downloadId, lastKnownDone, 0L, 0)
                 dao.updateDownloadState(downloadId, DownloadState.FAILED)
             }
             DownloadState.FAILED
@@ -337,14 +383,21 @@ class TorrentQueueEngine(
         }
     }
 
-    private fun exportStagingFiles(stagingDir: File): Uri? {
+    private fun exportStagingFiles(
+        downloadId: Long,
+        torrentName: String,
+        stagingDir: File
+    ): List<DownloadFileEntity> {
         val files = stagingDir.walkTopDown()
             .filter { it.isFile }
-            .sortedBy { it.absolutePath }
+            .sortedBy { it.relativeTo(stagingDir).invariantSeparatorsPath }
             .toList()
-        if (files.isEmpty()) return null
+        if (files.isEmpty()) return emptyList()
 
-        var primaryUri: Uri? = null
+        val isMultiFile = files.size > 1
+        val safeTorrentName = DownloadStorageProvider.sanitizeDisplayName(torrentName)
+        val exported = ArrayList<DownloadFileEntity>(files.size)
+
         for (file in files) {
             val ext = file.extension.lowercase()
             val mimeType = if (ext.isNotEmpty()) {
@@ -352,14 +405,28 @@ class TorrentQueueEngine(
             } else {
                 "application/octet-stream"
             }
+            val relFile = file.relativeTo(stagingDir)
+            val relPath = relFile.invariantSeparatorsPath
+            val subfolder = if (!isMultiFile) {
+                null
+            } else {
+                val relParent = relFile.parent
+                    ?.replace('\\', '/')
+                    ?.trim('/')
+                    ?.takeIf { it.isNotBlank() }
+                when {
+                    relParent == null -> safeTorrentName
+                    relParent == safeTorrentName || relParent.startsWith("$safeTorrentName/") -> relParent
+                    else -> "$safeTorrentName/$relParent"
+                }
+            }
+
             val displayName = DownloadStorageProvider.sanitizeDisplayName(file.name)
             val destUri = storageProvider.createDestination(
                 displayName = displayName,
-                mimeType = mimeType
+                mimeType = mimeType,
+                subfolder = subfolder
             )
-            if (primaryUri == null) {
-                primaryUri = destUri
-            }
 
             storageProvider.openWriteSession(
                 uri = destUri,
@@ -379,8 +446,19 @@ class TorrentQueueEngine(
                 session.channel.force(false)
             }
             storageProvider.finalizePending(destUri)
+
+            exported.add(
+                DownloadFileEntity(
+                    downloadId = downloadId,
+                    name = displayName,
+                    relativePath = relPath,
+                    sizeBytes = file.length(),
+                    mimeType = mimeType,
+                    uri = destUri.toString()
+                )
+            )
         }
-        return primaryUri
+        return exported
     }
 
     fun pauseTorrent(downloadId: Long) {

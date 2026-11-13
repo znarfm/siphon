@@ -184,7 +184,7 @@ fun BrowserScreen(
     currentUrl: String,
     tabs: List<BrowserTab>,
     activeTabId: String,
-    snifferClient: MediaSnifferClient,
+    snifferClientForTab: (String) -> MediaSnifferClient,
     detectedMediaCount: Int,
     activeDownloadCount: Int = 0,
     isAdBlockEnabled: Boolean,
@@ -223,6 +223,7 @@ fun BrowserScreen(
     onRegisterDomScan: (((() -> Unit) -> Unit))? = null,
     onRegisterPageReload: (((() -> Unit) -> Unit))? = null,
     onDownloadDirectMedia: ((url: String) -> Unit)? = null,
+    onMagnetLinkClicked: (String) -> Unit = {},
     onOpenTabSwitcher: () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
     onOpenBookmarks: () -> Unit = {},
@@ -270,6 +271,9 @@ fun BrowserScreen(
     val currentActiveTabId = rememberUpdatedState(activeTabId)
     val currentBarsVisible = rememberUpdatedState(isBarsVisible)
     val currentWebDarkMode = rememberUpdatedState(isWebDarkMode)
+    val currentOnMagnetLinkClicked = rememberUpdatedState(onMagnetLinkClicked)
+    val currentOnUpdateTabMeta = rememberUpdatedState(onUpdateTabMeta)
+    val currentIsOmniboxFocused = rememberUpdatedState(isOmniboxFocused)
     val defaultUserAgent = remember { mutableStateOf<String?>(null) }
     val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
@@ -306,7 +310,7 @@ fun BrowserScreen(
 
     val activeWebView = webViewMap[activeTabId]
 
-    val domScanAction: (WebView) -> Unit = { webView ->
+    val domScanAction: (WebView, MediaSnifferClient) -> Unit = { webView, tabSnifferClient ->
         val js = """
             (function() {
                 var items = [];
@@ -341,7 +345,7 @@ fun BrowserScreen(
                             val lang = obj.optString("lang").takeIf { it.isNotBlank() }
                             val label = obj.optString("label").takeIf { it.isNotBlank() }
                             if (mediaUrl.isNotBlank()) {
-                                snifferClient.inspectCandidate(mediaUrl, emptyMap(), lang, label)
+                                tabSnifferClient.inspectCandidate(mediaUrl, emptyMap(), lang, label)
                             }
                         }
                     }
@@ -353,7 +357,7 @@ fun BrowserScreen(
     LaunchedEffect(activeTabId, activeWebView) {
         onRegisterDomScan?.invoke {
             val webView = webViewMap[activeTabId] ?: return@invoke
-            domScanAction(webView)
+            domScanAction(webView, snifferClientForTab(activeTabId))
         }
         onRegisterPageReload?.invoke {
             val webView = webViewMap[activeTabId] ?: return@invoke
@@ -387,37 +391,6 @@ fun BrowserScreen(
             urlTextFieldValue = TextFieldValue(
                 if (currentActiveUrl == NEW_TAB_URL) "" else currentActiveUrl
             )
-        }
-    }
-
-    LaunchedEffect(snifferClient, activeTabId) {
-        snifferClient.onUrlChanged = { newUrl ->
-            if (!isOmniboxFocused) {
-                urlTextFieldValue = TextFieldValue(if (newUrl == NEW_TAB_URL) "" else newUrl)
-            }
-            val title = activeWebView?.title.orEmpty()
-            if (title.isNotBlank()) {
-                onUpdateTabMeta(newUrl, title)
-            }
-        }
-        snifferClient.onNavigationStateChanged = { back, forward ->
-            canGoBack = back
-            canGoForward = forward
-        }
-        snifferClient.onWebViewPageStarted = { view, url ->
-            if (currentWebDarkMode.value) {
-                applyWebDarkModeToWebView(view, true)
-            }
-            val domain = runCatching { Uri.parse(url).host }.getOrNull()
-            view.evaluateJavascript(com.znarfm.siphon.core.sniffer.SnifferJsInjector.buildUserscript(domain), null)
-        }
-        snifferClient.onWebViewPageFinished = { view, url ->
-            if (currentWebDarkMode.value) {
-                applyWebDarkModeToWebView(view, true)
-            }
-            val domain = runCatching { Uri.parse(url).host }.getOrNull()
-            view.evaluateJavascript(com.znarfm.siphon.core.sniffer.SnifferJsInjector.buildUserscript(domain), null)
-            domScanAction(view)
         }
     }
 
@@ -752,11 +725,51 @@ fun BrowserScreen(
                                                     else -> false
                                                 }
                                             }
+                                            val tabSnifferClient = snifferClientForTab(tab.id).apply {
+                                                onUrlChanged = { newUrl ->
+                                                    if (tab.id == currentActiveTabId.value) {
+                                                        if (!currentIsOmniboxFocused.value) {
+                                                            urlTextFieldValue = TextFieldValue(if (newUrl == NEW_TAB_URL) "" else newUrl)
+                                                        }
+                                                        val title = webViewMap[tab.id]?.title.orEmpty()
+                                                        if (title.isNotBlank()) {
+                                                            currentOnUpdateTabMeta.value(newUrl, title)
+                                                        }
+                                                    }
+                                                }
+                                                onNavigationStateChanged = { back, forward ->
+                                                    if (tab.id == currentActiveTabId.value) {
+                                                        canGoBack = back
+                                                        canGoForward = forward
+                                                    }
+                                                }
+                                                onWebViewPageStarted = { view, url ->
+                                                    if (currentWebDarkMode.value) {
+                                                        applyWebDarkModeToWebView(view, true)
+                                                    }
+                                                    val domain = runCatching { Uri.parse(url).host }.getOrNull()
+                                                    view.evaluateJavascript(
+                                                        com.znarfm.siphon.core.sniffer.SnifferJsInjector.buildUserscript(domain),
+                                                        null
+                                                    )
+                                                }
+                                                onWebViewPageFinished = { view, url ->
+                                                    if (currentWebDarkMode.value) {
+                                                        applyWebDarkModeToWebView(view, true)
+                                                    }
+                                                    val domain = runCatching { Uri.parse(url).host }.getOrNull()
+                                                    view.evaluateJavascript(
+                                                        com.znarfm.siphon.core.sniffer.SnifferJsInjector.buildUserscript(domain),
+                                                        null
+                                                    )
+                                                    domScanAction(view, this)
+                                                }
+                                            }
                                             addJavascriptInterface(
-                                                com.znarfm.siphon.core.sniffer.SiphonSnifferBridge(snifferClient),
+                                                com.znarfm.siphon.core.sniffer.SiphonSnifferBridge(tabSnifferClient),
                                                 "__siphon_sniffer__"
                                             )
-                                            webViewClient = snifferClient
+                                            webViewClient = tabSnifferClient
                                             webChromeClient = object : WebChromeClient() {
                                                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                                     if (newProgress >= 35) {
@@ -807,6 +820,11 @@ fun BrowserScreen(
                                                             override fun shouldOverrideUrlLoading(v: WebView?, request: WebResourceRequest?): Boolean {
                                                                 val popupUrl = request?.url?.toString()
                                                                 if (!popupUrl.isNullOrBlank()) {
+                                                                    if (popupUrl.startsWith("magnet:", ignoreCase = true)) {
+                                                                        currentOnMagnetLinkClicked.value(popupUrl)
+                                                                        destroy()
+                                                                        return true
+                                                                    }
                                                                     pendingPopupUrl = popupUrl
                                                                     destroy()
                                                                     return true

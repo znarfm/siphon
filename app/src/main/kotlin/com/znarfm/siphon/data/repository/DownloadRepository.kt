@@ -11,6 +11,7 @@ import com.znarfm.siphon.core.storage.DownloadStorageProvider
 import com.znarfm.siphon.data.db.ChunkEntity
 import com.znarfm.siphon.data.db.DownloadDao
 import com.znarfm.siphon.data.db.DownloadEntity
+import com.znarfm.siphon.data.db.DownloadFileEntity
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.db.DownloadType
 import kotlinx.coroutines.CoroutineScope
@@ -64,6 +65,12 @@ class DownloadRepository(
     val concurrencySettings: Flow<ConcurrencySettings> = _concurrencySettings.asStateFlow()
 
     val downloads: Flow<List<DownloadEntity>> = dao.observeDownloads()
+
+    val downloadFilesMap: Flow<Map<Long, List<DownloadFileEntity>>> =
+        dao.observeAllDownloadFiles().map { list -> list.groupBy { it.downloadId } }
+
+    fun observeDownloadFiles(downloadId: Long): Flow<List<DownloadFileEntity>> =
+        dao.observeDownloadFiles(downloadId)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val chunksMap: Flow<Map<Long, List<ChunkEntity>>> = downloads.flatMapLatest { list ->
@@ -228,6 +235,8 @@ class DownloadRepository(
         } else if (download.type == DownloadType.TORRENT) {
             val stagingDir = File(application.filesDir, "torrent_staging/$id")
             stagingDir.deleteRecursively()
+            dao.updateTorrentProgress(id, 0L, 0L, 0)
+            dao.deleteDownloadFiles(id)
         }
         dao.resetChunksToStart(id)
         dao.updateDownloadState(id, DownloadState.QUEUED)
@@ -250,8 +259,13 @@ class DownloadRepository(
     suspend fun deleteDownload(id: Long, deleteFile: Boolean = true) = withContext(Dispatchers.IO) {
         val entity = dao.getDownload(id)
         cancelDownload(id)
-        if (deleteFile && entity?.destinationUri != null) {
-            storage.delete(entity.destinationUri)
+        if (deleteFile) {
+            val files = dao.getDownloadFiles(id)
+            if (files.isNotEmpty()) {
+                files.forEach { storage.delete(it.uri) }
+            } else if (entity?.destinationUri != null) {
+                storage.delete(entity.destinationUri)
+            }
         }
         if (entity?.type == DownloadType.HLS) {
             val workDir = File(application.cacheDir, "hls_$id")

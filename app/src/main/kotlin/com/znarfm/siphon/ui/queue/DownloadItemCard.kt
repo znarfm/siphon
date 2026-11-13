@@ -97,7 +97,8 @@ fun DownloadItemCard(
     onRebind: () -> Unit,
     onShare: () -> Unit,
     onCopyStreamUrl: () -> Unit,
-    onCopyPageUrl: () -> Unit
+    onCopyPageUrl: () -> Unit,
+    onOpen: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var isMenuExpanded by remember { mutableStateOf(false) }
@@ -230,11 +231,16 @@ fun DownloadItemCard(
                             }
                             isTorrent -> {
                                 when {
+                                    download.totalBytes > 0L && download.state == DownloadState.ACTIVE -> {
+                                        val peerLabel = if (download.peers == 1) "1 peer" else "${download.peers} peers"
+                                        " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%) • ${formatSpeed(download.speedBytesPerSec)} • $peerLabel"
+                                    }
                                     download.totalBytes > 0L -> {
                                         " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%)"
                                     }
                                     download.state == DownloadState.ACTIVE || download.state == DownloadState.QUEUED -> {
-                                        " • Fetching metadata…"
+                                        val peerSuffix = if (download.peers > 0) " (${download.peers} peers)" else ""
+                                        " • Fetching metadata…$peerSuffix"
                                     }
                                     else -> ""
                                 }
@@ -267,7 +273,7 @@ fun DownloadItemCard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Progress Bar: LinearWavyProgressIndicator for MERGING or ACTIVE with empty chunks
+                // Progress Bar: LinearWavyProgressIndicator for MERGING or ACTIVE with empty chunks (indeterminate only when torrent totalBytes <= 0)
                 if (download.state == DownloadState.MERGING) {
                     LinearWavyProgressIndicator(
                         modifier = Modifier
@@ -275,7 +281,7 @@ fun DownloadItemCard(
                             .height(8.dp)
                             .clip(RoundedCornerShape(4.dp))
                     )
-                } else if (download.state == DownloadState.ACTIVE && chunks.isEmpty()) {
+                } else if (download.state == DownloadState.ACTIVE && chunks.isEmpty() && (!isTorrent || download.totalBytes <= 0L)) {
                     LinearWavyProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -308,7 +314,7 @@ fun DownloadItemCard(
                         DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK -> onResume
                         DownloadState.FAILED, DownloadState.CANCELLED -> onRetry
                         DownloadState.AUTH_EXPIRED -> onRebind
-                        DownloadState.COMPLETED -> ({ openCompletedFile(context, download) })
+                        DownloadState.COMPLETED -> ({ onOpen?.invoke() ?: openCompletedFile(context, download) })
                     }
 
                     val (primaryIcon, primaryLabel) = when (download.state) {
@@ -586,12 +592,16 @@ fun StateBadge(state: DownloadState, modifier: Modifier = Modifier) {
 
 fun computeProgress(download: DownloadEntity, chunks: List<ChunkEntity>): Float {
     val isHls = download.type == DownloadType.HLS
+    val isTorrent = download.type == DownloadType.TORRENT
     val totalSegments = chunks.size
     val completedSegments = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
     return when {
         download.state == DownloadState.COMPLETED -> 1f
+        isTorrent && download.totalBytes > 0L -> {
+            (download.downloadedBytes.toFloat() / download.totalBytes.toFloat()).coerceIn(0f, 1f)
+        }
         isHls && totalSegments > 0 -> (completedSegments.toFloat() / totalSegments).coerceIn(0f, 1f)
-        !isHls && download.totalBytes > 0L -> {
+        !isHls && !isTorrent && download.totalBytes > 0L -> {
             val downloaded = chunks.sumOf { (it.currentOffset - it.startOffset).coerceAtLeast(0L) }
             (downloaded.toFloat() / download.totalBytes).coerceIn(0f, 1f)
         }
@@ -601,24 +611,35 @@ fun computeProgress(download: DownloadEntity, chunks: List<ChunkEntity>): Float 
 
 fun computeDownloadedBytes(download: DownloadEntity, chunks: List<ChunkEntity>): Long {
     val isHls = download.type == DownloadType.HLS
-    return if (isHls) {
-        val mergedBytes = chunks.filter { it.state == ChunkState.MERGED }
-            .groupBy { it.trackIndex }
-            .values
-            .sumOf { trackChunks -> trackChunks.maxOfOrNull { it.endOffset } ?: 0L }
-        val doneBytes = chunks.filter { it.state == ChunkState.DONE }.sumOf { it.currentOffset }
-        val actualBytes = mergedBytes + doneBytes
-        if (actualBytes > 0L) {
-            actualBytes
-        } else {
-            val totalSegments = chunks.size
-            val completedSegments = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
-            if (download.totalBytes > 0 && totalSegments > 0) {
-                (download.totalBytes * (completedSegments.toDouble() / totalSegments)).toLong()
-            } else 0L
+    val isTorrent = download.type == DownloadType.TORRENT
+    return when {
+        isTorrent -> {
+            if (download.state == DownloadState.COMPLETED && download.downloadedBytes <= 0L) {
+                download.totalBytes
+            } else {
+                download.downloadedBytes
+            }
         }
-    } else {
-        chunks.sumOf { (it.currentOffset - it.startOffset).coerceAtLeast(0L) }
+        isHls -> {
+            val mergedBytes = chunks.filter { it.state == ChunkState.MERGED }
+                .groupBy { it.trackIndex }
+                .values
+                .sumOf { trackChunks -> trackChunks.maxOfOrNull { it.endOffset } ?: 0L }
+            val doneBytes = chunks.filter { it.state == ChunkState.DONE }.sumOf { it.currentOffset }
+            val actualBytes = mergedBytes + doneBytes
+            if (actualBytes > 0L) {
+                actualBytes
+            } else {
+                val totalSegments = chunks.size
+                val completedSegments = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
+                if (download.totalBytes > 0 && totalSegments > 0) {
+                    (download.totalBytes * (completedSegments.toDouble() / totalSegments)).toLong()
+                } else 0L
+            }
+        }
+        else -> {
+            chunks.sumOf { (it.currentOffset - it.startOffset).coerceAtLeast(0L) }
+        }
     }
 }
 
@@ -631,5 +652,17 @@ fun formatFileSize(bytes: Long): String {
         String.format(Locale.US, "%.2f GB", mb / 1024)
     } else {
         String.format(Locale.US, "%.1f MB", mb)
+    }
+}
+
+fun formatSpeed(bytesPerSec: Long): String {
+    if (bytesPerSec <= 0L) return "0 B/s"
+    val kb = bytesPerSec / 1024.0
+    if (kb < 1024.0) return String.format(Locale.US, "%.1f KB/s", kb)
+    val mb = kb / 1024.0
+    return if (mb >= 1024.0) {
+        String.format(Locale.US, "%.2f GB/s", mb / 1024.0)
+    } else {
+        String.format(Locale.US, "%.1f MB/s", mb)
     }
 }

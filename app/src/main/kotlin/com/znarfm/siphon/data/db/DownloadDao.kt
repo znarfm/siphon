@@ -175,4 +175,28 @@ interface DownloadDao {
         """
     )
     suspend fun resetChunksToStart(id: Long)
+
+    @Query("UPDATE downloads SET downloadedBytes = :downloadedBytes, speedBytesPerSec = :speedBytesPerSec, peers = :peers WHERE id = :id")
+    suspend fun updateTorrentProgress(id: Long, downloadedBytes: Long, speedBytesPerSec: Long, peers: Int)
+
+    @Query("UPDATE downloads SET mimeType = :mimeType WHERE id = :id")
+    suspend fun updateMimeType(id: Long, mimeType: String)
+
+    @Query("UPDATE downloads SET destinationUri = :destinationUri, mimeType = :mimeType WHERE id = :id")
+    suspend fun updateCompletedMeta(id: Long, destinationUri: String, mimeType: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertDownloadFiles(files: List<DownloadFileEntity>)
+
+    @Query("SELECT * FROM download_files WHERE downloadId = :downloadId ORDER BY relativePath ASC")
+    fun observeDownloadFiles(downloadId: Long): Flow<List<DownloadFileEntity>>
+
+    @Query("SELECT * FROM download_files WHERE downloadId = :downloadId ORDER BY relativePath ASC")
+    suspend fun getDownloadFiles(downloadId: Long): List<DownloadFileEntity>
+
+    @Query("SELECT * FROM download_files ORDER BY relativePath ASC")
+    fun observeAllDownloadFiles(): Flow<List<DownloadFileEntity>>
+
+    @Query("DELETE FROM download_files WHERE downloadId = :downloadId")
+    suspend fun deleteDownloadFiles(downloadId: Long)
 }
