@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PrivacyTip
@@ -36,18 +34,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.znarfm.siphon.data.db.BookmarkEntity
+import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
+import com.znarfm.siphon.ui.theme.TabularNumberStyle
 
 private data class QuickShortcut(
     val title: String,
@@ -96,120 +96,120 @@ private fun IncognitoNewTabPage(
     onSearchClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bgColor = Color(0xFF202124)
-    val cardColor = Color(0xFF2B2C30)
-    val pillColor = Color(0xFF303134)
-    val primaryText = Color(0xFFE8EAED)
-    val secondaryText = Color(0xFF9AA0A6)
+    val incognitoScheme = remember { darkColorScheme() }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(bgColor)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 36.dp),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = 480.dp)
-                .fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
+    MaterialTheme(colorScheme = incognitoScheme) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 36.dp),
+            contentAlignment = Alignment.TopCenter
         ) {
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Surface(
-                shape = CircleShape,
-                color = pillColor,
-                modifier = Modifier.size(84.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Rounded.VisibilityOff,
-                        contentDescription = "Incognito",
-                        tint = primaryText,
-                        modifier = Modifier.size(40.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "You've gone Incognito",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = primaryText,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = "Pages you view in incognito tabs won't stick around in your browser's history, cookies, or search history after you've closed all your incognito tabs.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = secondaryText,
-                textAlign = TextAlign.Center,
-                lineHeight = 20.sp
-            )
-
-            Spacer(modifier = Modifier.height(28.dp))
-
-            Surface(
-                shape = RoundedCornerShape(32.dp),
-                color = pillColor,
-                border = BorderStroke(1.dp, Color(0xFF3C4043)),
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .clip(RoundedCornerShape(32.dp))
-                    .clickable(onClick = onSearchClick)
+                    .widthIn(max = 480.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Surface(
+                    shape = ExpressiveShapeTokens.ActiveCardShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    tonalElevation = 2.dp,
+                    modifier = Modifier.size(84.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Search,
-                        contentDescription = null,
-                        tint = secondaryText,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "Search or type URL",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = secondaryText
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.VisibilityOff,
+                            contentDescription = "Incognito",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = cardColor,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Text(
+                    text = "You've gone Incognito",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Pages you view in incognito tabs won't stick around in your browser's history, cookies, or search history after you've closed all your incognito tabs.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+
+                Spacer(modifier = Modifier.height(28.dp))
+
+                Surface(
+                    shape = ExpressiveShapeTokens.PillShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(58.dp)
+                        .clip(ExpressiveShapeTokens.PillShape)
+                        .clickable(onClick = onSearchClick)
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.PrivacyTip,
-                        contentDescription = null,
-                        tint = secondaryText,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Downloads and bookmarks you save will still be visible outside Incognito. Your activity may still be visible to websites you visit or your network.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = secondaryText,
-                        lineHeight = 18.sp
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Search or type URL",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Surface(
+                    shape = ExpressiveShapeTokens.RestingCardShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 1.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.PrivacyTip,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Downloads and bookmarks you save will still be visible outside Incognito. Your activity may still be visible to websites you visit or your network.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 18.sp
+                        )
+                    }
                 }
             }
         }
@@ -258,12 +258,13 @@ private fun StandardNewTabPage(
             // Brand header
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = ExpressiveShapeTokens.ActiveCardShape,
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(44.dp)
+                    tonalElevation = 2.dp,
+                    modifier = Modifier.size(46.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -277,7 +278,7 @@ private fun StandardNewTabPage(
                 Text(
                     text = "Siphon",
                     style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
             }
@@ -286,13 +287,13 @@ private fun StandardNewTabPage(
 
             // Large M3 Expressive Search Pill
             Surface(
-                shape = RoundedCornerShape(32.dp),
+                shape = ExpressiveShapeTokens.PillShape,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 tonalElevation = 2.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(60.dp)
-                    .clip(RoundedCornerShape(32.dp))
+                    .clip(ExpressiveShapeTokens.PillShape)
                     .clickable(onClick = onSearchClick)
             ) {
                 Row(
@@ -326,7 +327,7 @@ private fun StandardNewTabPage(
             ) {
                 AssistChip(
                     onClick = onOpenDownloads,
-                    shape = RoundedCornerShape(50),
+                    shape = ExpressiveShapeTokens.PillShape,
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Rounded.Download,
@@ -348,7 +349,10 @@ private fun StandardNewTabPage(
                                     containerColor = MaterialTheme.colorScheme.primary,
                                     contentColor = MaterialTheme.colorScheme.onPrimary
                                 ) {
-                                    Text(text = activeDownloadCount.toString())
+                                    Text(
+                                        text = activeDownloadCount.toString(),
+                                        style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle)
+                                    )
                                 }
                             }
                         }
@@ -361,7 +365,7 @@ private fun StandardNewTabPage(
 
                 AssistChip(
                     onClick = onOpenIncognito,
-                    shape = RoundedCornerShape(50),
+                    shape = ExpressiveShapeTokens.PillShape,
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Rounded.VisibilityOff,
@@ -429,14 +433,15 @@ private fun ShortcutTile(
 
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
+            .clip(ExpressiveShapeTokens.RestingCardShape)
             .clickable(onClick = onClick)
             .padding(PaddingValues(vertical = 8.dp, horizontal = 4.dp)),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
-            shape = RoundedCornerShape(18.dp),
+            shape = ExpressiveShapeTokens.ActiveCardShape,
             color = MaterialTheme.colorScheme.secondaryContainer,
+            tonalElevation = 2.dp,
             modifier = Modifier.size(54.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {

@@ -88,6 +88,7 @@ import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.HistoryEntity
 import com.znarfm.siphon.ui.theme.AppColorSeed
 import com.znarfm.siphon.ui.theme.AppThemeMode
+import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import kotlinx.coroutines.CancellationException
 
 private const val DARK_MODE_INJECT_JS = """
@@ -493,9 +494,10 @@ fun BrowserScreen(
             if (rebindTarget != null) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                    shape = RoundedCornerShape(0.dp),
+                    shape = ExpressiveShapeTokens.ActiveCardShape,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
                         .zIndex(2f)
                 ) {
                     Row(
