@@ -72,15 +72,18 @@ import com.znarfm.siphon.SiphonApp
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.ui.browser.BookmarksScreen
 import com.znarfm.siphon.ui.browser.BrowserScreen
-import com.znarfm.siphon.ui.browser.BrowserSettingsScreen
 import com.znarfm.siphon.ui.browser.BrowserViewModel
 import com.znarfm.siphon.ui.browser.HistoryScreen
 import com.znarfm.siphon.ui.browser.MagnetDownloadDialog
 import com.znarfm.siphon.ui.browser.NEW_TAB_URL
 import com.znarfm.siphon.ui.browser.TabSwitcherScreen
-import com.znarfm.siphon.ui.queue.ConcurrencySettingsDialog
 import com.znarfm.siphon.ui.queue.QueueScreen
 import com.znarfm.siphon.ui.queue.QueueViewModel
+import com.znarfm.siphon.ui.settings.AppearanceSettingsScreen
+import com.znarfm.siphon.ui.settings.BrowserSearchSettingsScreen
+import com.znarfm.siphon.ui.settings.DownloadSettingsScreen
+import com.znarfm.siphon.ui.settings.PrivacyAdblockSettingsScreen
+import com.znarfm.siphon.ui.settings.SettingsHubScreen
 import com.znarfm.siphon.ui.sniffer.SnifferSheet
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.SiphonTheme
@@ -98,7 +101,11 @@ enum class AppScreen {
     TAB_SWITCHER,
     BOOKMARKS,
     HISTORY,
-    SETTINGS
+    SETTINGS,
+    SETTINGS_BROWSER,
+    SETTINGS_APPEARANCE,
+    SETTINGS_ADBLOCK,
+    SETTINGS_DOWNLOADS
 }
 
 class MainActivity : ComponentActivity() {
@@ -381,8 +388,17 @@ fun MainContent(
 ) {
     val context = LocalContext.current
     var isBarsVisible by remember { mutableStateOf(true) }
-    var showAdblockDialog by remember { mutableStateOf(false) }
-    var showDownloadSettingsDialog by remember { mutableStateOf(false) }
+    var settingsSubPageOrigin by remember { mutableStateOf(AppScreen.SETTINGS) }
+
+    val navigateBack: () -> Unit = {
+        when (currentScreen) {
+            AppScreen.SETTINGS_BROWSER,
+            AppScreen.SETTINGS_APPEARANCE,
+            AppScreen.SETTINGS_ADBLOCK,
+            AppScreen.SETTINGS_DOWNLOADS -> onSelectScreen(settingsSubPageOrigin)
+            else -> onSelectScreen(AppScreen.BROWSER)
+        }
+    }
 
     val browserTabs by browserViewModel.browserTabs.collectAsStateWithLifecycle()
     val activeTabId by browserViewModel.activeTabId.collectAsStateWithLifecycle()
@@ -427,7 +443,7 @@ fun MainContent(
                 backProgress = backEvent.progress
             }
             backProgress = 0f
-            onSelectScreen(AppScreen.BROWSER)
+            navigateBack()
         } catch (e: CancellationException) {
             backProgress = 0f
         }
@@ -476,12 +492,9 @@ fun MainContent(
                     bookmarks = bookmarks,
                     history = history,
                     adblockRuleCount = adblockRuleCount,
-                    adblockSettings = adblockSettings,
                     blockedCountsByTab = blockedCountsByTab,
                     isSiteAllowlisted = { url -> browserViewModel.isSiteAllowlisted(url) },
                     searchEngineBase = browserPrefs.searchEngine,
-                    showAdblockDialog = showAdblockDialog,
-                    onShowAdblockDialogChange = { showAdblockDialog = it },
                     onToggleBars = { isBarsVisible = it },
                     onToggleWebDarkMode = { browserViewModel.toggleWebDarkMode() },
                     onToggleDesktopMode = { browserViewModel.toggleDesktopMode() },
@@ -491,10 +504,6 @@ fun MainContent(
                     onToggleAdBlock = { browserViewModel.toggleAdBlock() },
                     onToggleSiteAllowlist = { url -> browserViewModel.toggleSiteAllowlist(url) },
                     onResetTabBlockedCount = { tabId -> browserViewModel.resetTabBlockedCount(tabId) },
-                    onToggleFilterList = { id, enabled -> browserViewModel.toggleFilterList(id, enabled) },
-                    onAddCustomFilterList = { name, url -> browserViewModel.addCustomFilterList(name, url) },
-                    onRemoveCustomFilterList = { id -> browserViewModel.removeCustomFilterList(id) },
-                    onUpdateCustomUserRules = { rules -> browserViewModel.updateCustomUserRules(rules) },
                     onOpenSniffer = { browserViewModel.openSnifferSheet() },
                     onCancelRebind = { browserViewModel.cancelRebindFlow() },
                     onNewTab = { url, isIncognito, inBackground ->
@@ -521,26 +530,6 @@ fun MainContent(
                     onDeleteBookmark = { browserViewModel.deleteBookmark(it) },
                     onDeleteHistory = { browserViewModel.deleteHistory(it) },
                     onClearHistory = { browserViewModel.clearHistory() },
-                    onRefreshAdblock = { onComplete ->
-                        browserViewModel.refreshAdblockSubscriptions(
-                            onError = { err ->
-                                onComplete()
-                                Toast.makeText(
-                                    context,
-                                    "Adblock error: ${err.message ?: "Failed to update"}",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            },
-                            onResult = { rules, lists ->
-                                onComplete()
-                                Toast.makeText(
-                                    context,
-                                    "Adblock updated: $rules rules ($lists lists)",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        )
-                    },
                     onUpdateTabMeta = { url, title -> browserViewModel.updateActiveTabMeta(url, title) },
                     onRegisterDomScan = { scanner -> browserViewModel.onRequestDomScan = scanner },
                     onRegisterPageReload = { reloader -> browserViewModel.onRequestPageReload = reloader },
@@ -549,6 +538,10 @@ fun MainContent(
                     onOpenBookmarks = { onSelectScreen(AppScreen.BOOKMARKS) },
                     onOpenHistory = { onSelectScreen(AppScreen.HISTORY) },
                     onOpenSettings = { onSelectScreen(AppScreen.SETTINGS) },
+                    onOpenAdblockSettings = {
+                        settingsSubPageOrigin = AppScreen.BROWSER
+                        onSelectScreen(AppScreen.SETTINGS_ADBLOCK)
+                    },
                     onCaptureThumbnail = { tabId, bitmap -> browserViewModel.updateTabThumbnail(tabId, bitmap) }
                 )
             }
@@ -583,7 +576,6 @@ fun MainContent(
                                 workersPerDownload = concurrencySettings.workers,
                                 bandwidthLimitBytes = concurrencySettings.bandwidthLimit,
                                 isWifiOnly = concurrencySettings.wifiOnly,
-                                customDownloadUri = concurrencySettings.customDownloadUri,
                                 selectedFilter = queueFilter,
                                 onSelectFilter = { queueViewModel.setFilter(it) },
                                 selectedSort = queueSortOption,
@@ -604,9 +596,6 @@ fun MainContent(
                                     onSelectScreen(AppScreen.BROWSER)
                                     browserViewModel.startRebindFlow(download)
                                 },
-                                onSaveSettings = { maxD, w, limit, wifi, customUri ->
-                                    queueViewModel.setConcurrency(maxD, w, limit, wifi, customUri)
-                                },
                                 onClearCompleted = { queueViewModel.clearCompleted() },
                                 onPauseAll = { queueViewModel.pauseAll() },
                                 onResumeAll = { queueViewModel.resumeAll() },
@@ -614,6 +603,10 @@ fun MainContent(
                                 onRename = { id, name -> queueViewModel.renameDownload(id, name) },
                                 onBulkDelete = { ids, deleteFiles -> queueViewModel.bulkDelete(ids, deleteFiles) },
                                 onBulkCancel = { ids -> queueViewModel.bulkCancel(ids) },
+                                onOpenDownloadSettings = {
+                                    settingsSubPageOrigin = AppScreen.QUEUE
+                                    onSelectScreen(AppScreen.SETTINGS_DOWNLOADS)
+                                },
                                 onNavigateBack = { onSelectScreen(AppScreen.BROWSER) }
                             )
                         }
@@ -674,41 +667,111 @@ fun MainContent(
                             )
                         }
                         AppScreen.SETTINGS -> {
-                            BrowserSettingsScreen(
+                            SettingsHubScreen(
                                 browserPreferences = browserPrefs,
                                 themeMode = themeMode,
                                 colorSeed = colorSeed,
                                 isAdBlockEnabled = isAdBlockEnabled,
                                 adblockRuleCount = adblockRuleCount,
                                 enabledListCount = adblockSettings.enabledLists.count { it.isEnabled },
+                                maxConcurrentDownloads = concurrencySettings.maxDownloads,
+                                workersPerDownload = concurrencySettings.workers,
+                                bandwidthLimit = concurrencySettings.bandwidthLimit,
+                                onOpenBrowserSearch = {
+                                    settingsSubPageOrigin = AppScreen.SETTINGS
+                                    onSelectScreen(AppScreen.SETTINGS_BROWSER)
+                                },
+                                onOpenAppearance = {
+                                    settingsSubPageOrigin = AppScreen.SETTINGS
+                                    onSelectScreen(AppScreen.SETTINGS_APPEARANCE)
+                                },
+                                onOpenPrivacyAdblock = {
+                                    settingsSubPageOrigin = AppScreen.SETTINGS
+                                    onSelectScreen(AppScreen.SETTINGS_ADBLOCK)
+                                },
+                                onOpenDownloads = {
+                                    settingsSubPageOrigin = AppScreen.SETTINGS
+                                    onSelectScreen(AppScreen.SETTINGS_DOWNLOADS)
+                                },
+                                onBack = { onSelectScreen(AppScreen.BROWSER) }
+                            )
+                        }
+                        AppScreen.SETTINGS_BROWSER -> {
+                            BrowserSearchSettingsScreen(
+                                browserPreferences = browserPrefs,
                                 onSetSearchEngine = { browserViewModel.setSearchEngine(it) },
+                                onSetWebDarkMode = { enabled ->
+                                    if (enabled != browserPrefs.webDarkMode) {
+                                        browserViewModel.toggleWebDarkMode()
+                                    }
+                                },
+                                onSetDesktopMode = { enabled ->
+                                    if (enabled != browserPrefs.desktopMode) {
+                                        browserViewModel.toggleDesktopMode()
+                                    }
+                                },
+                                onBack = navigateBack
+                            )
+                        }
+                        AppScreen.SETTINGS_APPEARANCE -> {
+                            AppearanceSettingsScreen(
+                                themeMode = themeMode,
+                                colorSeed = colorSeed,
                                 onSetThemeMode = { browserViewModel.setThemeMode(it) },
                                 onSetColorSeed = { browserViewModel.setColorSeed(it) },
+                                onBack = navigateBack
+                            )
+                        }
+                        AppScreen.SETTINGS_ADBLOCK -> {
+                            PrivacyAdblockSettingsScreen(
+                                isAdBlockEnabled = isAdBlockEnabled,
+                                adblockSettings = adblockSettings,
+                                activeRuleCount = adblockRuleCount,
                                 onToggleAdBlock = { browserViewModel.toggleAdBlock() },
-                                onOpenAdblockSubscriptions = { showAdblockDialog = true },
-                                onOpenDownloadSettings = { showDownloadSettingsDialog = true },
+                                onToggleList = { id, enabled -> browserViewModel.toggleFilterList(id, enabled) },
+                                onAddCustomList = { name, url -> browserViewModel.addCustomFilterList(name, url) },
+                                onRemoveCustomList = { id -> browserViewModel.removeCustomFilterList(id) },
+                                onUpdateCustomRules = { rules -> browserViewModel.updateCustomUserRules(rules) },
+                                onRefreshSubscriptions = { onComplete ->
+                                    browserViewModel.refreshAdblockSubscriptions(
+                                        onError = { err ->
+                                            onComplete()
+                                            Toast.makeText(
+                                                context,
+                                                "Adblock error: ${err.message ?: "Failed to update"}",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        },
+                                        onResult = { rules, lists ->
+                                            onComplete()
+                                            Toast.makeText(
+                                                context,
+                                                "Adblock updated: $rules rules ($lists lists)",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    )
+                                },
                                 onClearHistory = { browserViewModel.clearHistory() },
-                                onBack = { onSelectScreen(AppScreen.BROWSER) }
+                                onBack = navigateBack
+                            )
+                        }
+                        AppScreen.SETTINGS_DOWNLOADS -> {
+                            DownloadSettingsScreen(
+                                currentMaxDownloads = concurrencySettings.maxDownloads,
+                                currentWorkers = concurrencySettings.workers,
+                                currentBandwidthLimit = concurrencySettings.bandwidthLimit,
+                                currentWifiOnly = concurrencySettings.wifiOnly,
+                                currentCustomDownloadUri = concurrencySettings.customDownloadUri,
+                                onUpdateConcurrency = { maxD, w, limit, wifi, customUri ->
+                                    queueViewModel.setConcurrency(maxD, w, limit, wifi, customUri)
+                                },
+                                onBack = navigateBack
                             )
                         }
                         AppScreen.BROWSER -> Unit
                     }
                 }
-            }
-
-            if (showDownloadSettingsDialog) {
-                ConcurrencySettingsDialog(
-                    currentMaxDownloads = concurrencySettings.maxDownloads,
-                    currentWorkers = concurrencySettings.workers,
-                    currentBandwidthLimit = concurrencySettings.bandwidthLimit,
-                    currentWifiOnly = concurrencySettings.wifiOnly,
-                    currentCustomDownloadUri = concurrencySettings.customDownloadUri,
-                    onDismiss = { showDownloadSettingsDialog = false },
-                    onConfirm = { maxD, w, limit, wifi, customUri ->
-                        queueViewModel.setConcurrency(maxD, w, limit, wifi, customUri)
-                        showDownloadSettingsDialog = false
-                    }
-                )
             }
 
             val activeTabTitle = browserTabs.firstOrNull { it.id == activeTabId }?.title

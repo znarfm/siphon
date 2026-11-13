@@ -82,7 +82,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
-import com.znarfm.siphon.core.adblock.AdblockSettings
 import com.znarfm.siphon.core.sniffer.MediaSnifferClient
 import com.znarfm.siphon.data.db.BookmarkEntity
 import com.znarfm.siphon.data.db.DownloadEntity
@@ -198,12 +197,9 @@ fun BrowserScreen(
     bookmarks: List<BookmarkEntity> = emptyList(),
     history: List<HistoryEntity> = emptyList(),
     adblockRuleCount: Int = 0,
-    adblockSettings: AdblockSettings = AdblockSettings(),
     blockedCountsByTab: Map<String, Int> = emptyMap(),
     isSiteAllowlisted: (String) -> Boolean = { false },
     searchEngineBase: String = "https://www.google.com/search?q=",
-    showAdblockDialog: Boolean = false,
-    onShowAdblockDialogChange: (Boolean) -> Unit = {},
     onToggleBars: (Boolean) -> Unit = {},
     onToggleWebDarkMode: () -> Unit = {},
     onToggleDesktopMode: () -> Unit = {},
@@ -213,10 +209,6 @@ fun BrowserScreen(
     onToggleAdBlock: () -> Unit,
     onToggleSiteAllowlist: (String) -> Unit = {},
     onResetTabBlockedCount: (String) -> Unit = {},
-    onToggleFilterList: (String, Boolean) -> Unit = { _, _ -> },
-    onAddCustomFilterList: (String, String) -> Unit = { _, _ -> },
-    onRemoveCustomFilterList: (String) -> Unit = {},
-    onUpdateCustomUserRules: (String) -> Unit = {},
     onOpenSniffer: () -> Unit,
     onCancelRebind: () -> Unit,
     onNewTab: (url: String, isIncognito: Boolean, inBackground: Boolean) -> Unit,
@@ -226,7 +218,6 @@ fun BrowserScreen(
     onDeleteBookmark: (Long) -> Unit = {},
     onDeleteHistory: (Long) -> Unit = {},
     onClearHistory: () -> Unit = {},
-    onRefreshAdblock: (onComplete: () -> Unit) -> Unit = { it() },
     onUpdateTabMeta: (url: String, title: String) -> Unit,
     onRegisterDomScan: (((() -> Unit) -> Unit))? = null,
     onRegisterPageReload: (((() -> Unit) -> Unit))? = null,
@@ -237,6 +228,7 @@ fun BrowserScreen(
     onOpenBookmarks: () -> Unit = {},
     onOpenHistory: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenAdblockSettings: () -> Unit = {},
     onCaptureThumbnail: (tabId: String, bitmap: ImageBitmap) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
@@ -1019,7 +1011,7 @@ fun BrowserScreen(
                 onToggleWebDarkMode = onToggleWebDarkMode,
                 onManageAdblock = {
                     isSiteInfoOpen = false
-                    onShowAdblockDialogChange(true)
+                    onOpenAdblockSettings()
                 },
                 onCopyUrl = { urlToCopy ->
                     clipboardManager.setText(AnnotatedString(urlToCopy))
@@ -1073,7 +1065,7 @@ fun BrowserScreen(
             onToggleWebDarkMode = onToggleWebDarkMode,
             onToggleDesktopMode = onToggleDesktopMode,
             onToggleAdBlock = onToggleAdBlock,
-            onOpenAdblockDialog = { onShowAdblockDialogChange(true) },
+            onOpenAdblockDialog = onOpenAdblockSettings,
             onOpenSettings = onOpenSettings
         )
 
@@ -1097,19 +1089,6 @@ fun BrowserScreen(
                         Text("Dismiss")
                     }
                 }
-            )
-        }
-
-        if (showAdblockDialog) {
-            AdblockFilterManagerDialog(
-                settings = adblockSettings,
-                activeRuleCount = adblockRuleCount,
-                onToggleList = onToggleFilterList,
-                onAddCustomList = onAddCustomFilterList,
-                onRemoveCustomList = onRemoveCustomFilterList,
-                onUpdateCustomRules = onUpdateCustomUserRules,
-                onRefreshSubscriptions = onRefreshAdblock,
-                onDismiss = { onShowAdblockDialogChange(false) }
             )
         }
 
