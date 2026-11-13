@@ -1,5 +1,6 @@
 package com.znarfm.siphon.core.adblock
 
+import android.util.Log
 import org.json.JSONObject
 
 data class CosmeticResources(
@@ -38,12 +39,20 @@ interface NativeAdblockBridge {
 }
 
 object NativeAdblockJni : NativeAdblockBridge {
+    private const val TAG = "NativeAdblockJni"
+
     override val isLoaded: Boolean = try {
         System.loadLibrary("adblock_jni")
         true
-    } catch (_: UnsatisfiedLinkError) {
+    } catch (e: UnsatisfiedLinkError) {
+        runCatching {
+            Log.w(TAG, "Native adblock engine (libadblock_jni.so) is not loaded; only basic host fallback is active", e)
+        }
         false
-    } catch (_: Throwable) {
+    } catch (e: Throwable) {
+        runCatching {
+            Log.w(TAG, "Failed to load native adblock engine (libadblock_jni.so); only basic host fallback is active", e)
+        }
         false
     }
 

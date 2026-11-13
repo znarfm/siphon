@@ -15,7 +15,9 @@ import com.znarfm.siphon.data.db.HistoryEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +47,7 @@ class BrowserRepository(
     )
 
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var adblockRebuildJob: Job? = null
 
     val bookmarks: Flow<List<BookmarkEntity>> = browserDao.observeBookmarks()
     val history: Flow<List<HistoryEntity>> = browserDao.observeHistory()
@@ -69,8 +72,17 @@ class BrowserRepository(
 
     init {
         repoScope.launch {
-            adblockEngine.loadCachedOrAssets(application, _adblockSettings.value)
+            val initialSettings = _adblockSettings.value
+            adblockEngine.loadCachedOrAssets(application, initialSettings)
             _adblockRuleCount.value = adblockEngine.ruleCount
+
+            val enabledLists = initialSettings.enabledLists.filter { it.isEnabled && it.url.isNotBlank() }
+            val needsInitialFetch = initialSettings.isGlobalEnabled &&
+                enabledLists.isNotEmpty() &&
+                (!adblockEngine.hasCachedRules(application) || enabledLists.any { it.lastUpdatedMs == 0L })
+            if (needsInitialFetch) {
+                refreshAdblockSubscriptions()
+            }
         }
     }
 
@@ -153,6 +165,7 @@ class BrowserRepository(
         applyAndPersistAdblockSettings(
             current.copy(enabledLists = current.enabledLists + newSource)
         )
+        scheduleAdblockRebuild()
     }
 
     fun removeCustomList(id: String) {
@@ -160,26 +173,74 @@ class BrowserRepository(
         val updated = current.enabledLists.filterNot { it.id == id && !it.isBuiltIn }
         if (updated.size != current.enabledLists.size) {
             applyAndPersistAdblockSettings(current.copy(enabledLists = updated))
+            adblockEngine.deleteCachedList(application, id)
+            scheduleAdblockRebuild()
         }
     }
 
     fun toggleList(id: String, enabled: Boolean) {
         val current = _adblockSettings.value
+        var changed = false
         val updated = current.enabledLists.map { source ->
-            if (source.id == id) source.copy(isEnabled = enabled) else source
+            if (source.id == id && source.isEnabled != enabled) {
+                changed = true
+                source.copy(isEnabled = enabled)
+            } else {
+                source
+            }
         }
-        applyAndPersistAdblockSettings(current.copy(enabledLists = updated))
+        if (changed) {
+            applyAndPersistAdblockSettings(current.copy(enabledLists = updated))
+            scheduleAdblockRebuild()
+        }
     }
 
     fun updateCustomUserRules(rules: String) {
         val current = _adblockSettings.value
         if (current.customUserRules == rules) return
         applyAndPersistAdblockSettings(current.copy(customUserRules = rules))
+        scheduleAdblockRebuild(debounceMs = 350L)
+    }
+
+    private fun scheduleAdblockRebuild(debounceMs: Long = 0L) {
+        adblockRebuildJob?.cancel()
+        adblockRebuildJob = repoScope.launch {
+            if (debounceMs > 0L) {
+                delay(debounceMs)
+            }
+            val result = adblockEngine.rebuildRules(
+                context = application,
+                settings = _adblockSettings.value
+            )
+            result.onSuccess { updatedSettings ->
+                val latest = _adblockSettings.value
+                val metaById = updatedSettings.enabledLists.associateBy { it.id }
+                val mergedSettings = latest.copy(
+                    enabledLists = latest.enabledLists.map { cur ->
+                        val meta = metaById[cur.id]
+                        if (meta != null) {
+                            cur.copy(
+                                ruleCount = meta.ruleCount,
+                                lastUpdatedMs = meta.lastUpdatedMs,
+                                lastError = meta.lastError
+                            )
+                        } else {
+                            cur
+                        }
+                    }
+                )
+                _adblockSettings.value = mergedSettings
+                _isAdBlockEnabled.value = mergedSettings.isGlobalEnabled
+                _adblockRuleCount.value = adblockEngine.ruleCount
+                saveAdblockSettings(mergedSettings)
+            }
+        }
     }
 
     suspend fun refreshAdblockSubscriptions(
         onResult: ((Result<AdblockSettings>) -> Unit)? = null
     ): Result<AdblockSettings> = withContext(Dispatchers.IO) {
+        adblockRebuildJob?.cancel()
         val current = _adblockSettings.value
         val result = adblockEngine.refreshSubscriptions(
             context = application,

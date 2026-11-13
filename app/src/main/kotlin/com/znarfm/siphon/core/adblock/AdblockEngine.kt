@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import java.io.ByteArrayInputStream
@@ -22,6 +24,7 @@ class AdblockEngine(
     private val urlFetcher: (String) -> String = ::defaultFetchUrl
 ) {
     private val lock = ReentrantReadWriteLock()
+    private val buildMutex = Mutex()
 
     @Volatile
     private var engineHandle: Long = 0L
@@ -44,63 +47,77 @@ class AdblockEngine(
     var ruleCount: Int = 0
         private set
 
+    fun hasCachedRules(context: Context): Boolean {
+        val rulesFile = File(context.filesDir, RULES_FILE_NAME)
+        return rulesFile.exists() && rulesFile.length() > 0L
+    }
+
+    fun deleteCachedList(context: Context, listId: String) {
+        runCatching {
+            val file = listCacheFile(context.filesDir, listId)
+            if (file.exists()) file.delete()
+        }
+    }
+
     suspend fun loadCachedOrAssets(
         context: Context,
         settings: AdblockSettings = AdblockSettings()
     ) = withContext(Dispatchers.IO) {
-        updateSettings(settings)
+        buildMutex.withLock {
+            updateSettings(settings)
 
-        val datFile = File(context.filesDir, DAT_FILE_NAME)
-        val rulesFile = File(context.filesDir, RULES_FILE_NAME)
+            val datFile = File(context.filesDir, DAT_FILE_NAME)
+            val rulesFile = File(context.filesDir, RULES_FILE_NAME)
 
-        if (datFile.exists() && datFile.length() > 0L && bridge.isLoaded) {
-            val loadedFromDat = runCatching {
-                val bytes = datFile.readBytes()
-                val handle = bridge.createFromDat(bytes)
-                if (handle != 0L) {
-                    val rulesText = if (rulesFile.exists() && rulesFile.length() > 0L) {
-                        runCatching { rulesFile.readText(Charsets.UTF_8) }.getOrNull()
-                    } else null
-                    val (blocked, allowed) = if (rulesText != null) {
-                        parseFallbackHostSets(rulesText)
+            if (datFile.exists() && datFile.length() > 0L && bridge.isLoaded) {
+                val loadedFromDat = runCatching {
+                    val bytes = datFile.readBytes()
+                    val handle = bridge.createFromDat(bytes)
+                    if (handle != 0L) {
+                        val rulesText = if (rulesFile.exists() && rulesFile.length() > 0L) {
+                            runCatching { rulesFile.readText(Charsets.UTF_8) }.getOrNull()
+                        } else null
+                        val (blocked, allowed) = if (rulesText != null) {
+                            parseFallbackHostSets(rulesText)
+                        } else {
+                            HashSet<String>(0) to HashSet<String>(0)
+                        }
+                        val count = if (rulesText != null) {
+                            countValidRules(rulesText)
+                        } else {
+                            settings.enabledLists.filter { it.isEnabled }.sumOf { it.ruleCount }
+                        }
+                        swapEngineHandle(handle, blocked, allowed, count)
+                        true
                     } else {
-                        HashSet<String>(0) to HashSet<String>(0)
+                        false
                     }
-                    val count = if (rulesText != null) {
-                        countValidRules(rulesText)
-                    } else {
-                        settings.enabledLists.filter { it.isEnabled }.sumOf { it.ruleCount }
-                    }
-                    swapEngineHandle(handle, blocked, allowed, count)
-                    true
-                } else {
-                    false
-                }
-            }.getOrDefault(false)
+                }.getOrDefault(false)
 
-            if (loadedFromDat) return@withContext
-        }
-
-        if (rulesFile.exists() && rulesFile.length() > 0L) {
-            val loadedFromRules = runCatching {
-                val rulesText = rulesFile.readText(Charsets.UTF_8)
-                loadRulesInternal(rulesText, datFileToWrite = datFile)
-                true
-            }.getOrDefault(false)
-
-            if (loadedFromRules) return@withContext
-        }
-
-        runCatching {
-            val assetRules = context.assets.open(ASSETS_FILE_NAME).bufferedReader(Charsets.UTF_8).use {
-                it.readText()
+                if (loadedFromDat) return@withLock
             }
-            val merged = mergeRulesWithUserConfig(
-                listContents = listOf(assetRules),
-                customUserRules = settings.customUserRules,
-                allowedSites = settings.allowedSites
-            )
-            loadRulesInternal(merged, datFileToWrite = null)
+
+            if (rulesFile.exists() && rulesFile.length() > 0L) {
+                val loadedFromRules = runCatching {
+                    val rulesText = rulesFile.readText(Charsets.UTF_8)
+                    loadRulesInternal(rulesText, datFileToWrite = datFile)
+                    true
+                }.getOrDefault(false)
+
+                if (loadedFromRules) return@withLock
+            }
+
+            runCatching {
+                val assetRules = context.assets.open(ASSETS_FILE_NAME).bufferedReader(Charsets.UTF_8).use {
+                    it.readText()
+                }
+                val merged = mergeRulesWithUserConfig(
+                    listContents = listOf(assetRules),
+                    customUserRules = settings.customUserRules,
+                    allowedSites = settings.allowedSites
+                )
+                loadRulesInternal(merged, datFileToWrite = null)
+            }
         }
     }
 
@@ -141,97 +158,204 @@ class AdblockEngine(
         onListProgress: ((listId: String, status: String) -> Unit)? = null
     ): Result<AdblockSettings> = refreshSubscriptionsToDir(context.filesDir, settings, onListProgress)
 
+    suspend fun rebuildRules(
+        context: Context,
+        settings: AdblockSettings
+    ): Result<AdblockSettings> = rebuildRulesToDir(context.filesDir, settings)
+
+    internal suspend fun rebuildRulesToDir(
+        filesDir: File,
+        settings: AdblockSettings
+    ): Result<AdblockSettings> = withContext(Dispatchers.IO) {
+        buildMutex.withLock {
+            runCatching {
+                val enabledSources = settings.enabledLists.filter { it.isEnabled && it.url.isNotBlank() }
+                val missingSources = enabledSources.filter { source ->
+                    val cacheFile = listCacheFile(filesDir, source.id)
+                    !cacheFile.exists() || cacheFile.length() == 0L || source.lastUpdatedMs == 0L
+                }
+
+                data class FetchOutcome(
+                    val id: String,
+                    val content: String?,
+                    val ruleCount: Int,
+                    val error: String?
+                )
+
+                val outcomesById = if (missingSources.isNotEmpty()) {
+                    val outcomes = coroutineScope {
+                        missingSources.map { source ->
+                            async {
+                                runCatching {
+                                    val text = fetchWithFallback(source.url)
+                                    val count = countValidRules(text)
+                                    val cacheFile = listCacheFile(filesDir, source.id)
+                                    cacheFile.parentFile?.mkdirs()
+                                    cacheFile.writeText(text, Charsets.UTF_8)
+                                    FetchOutcome(source.id, text, count, null)
+                                }.getOrElse { err ->
+                                    FetchOutcome(source.id, null, 0, err.message ?: "Failed to fetch")
+                                }
+                            }
+                        }.awaitAll()
+                    }
+                    outcomes.associateBy { it.id }
+                } else {
+                    emptyMap()
+                }
+
+                val now = System.currentTimeMillis()
+                val updatedLists = settings.enabledLists.map { source ->
+                    val outcome = outcomesById[source.id]
+                    if (outcome == null) {
+                        source
+                    } else if (outcome.content != null) {
+                        source.copy(
+                            ruleCount = outcome.ruleCount,
+                            lastUpdatedMs = now,
+                            lastError = null
+                        )
+                    } else {
+                        source.copy(lastError = outcome.error)
+                    }
+                }
+
+                val listContents = enabledSources.mapNotNull { source ->
+                    val cacheFile = listCacheFile(filesDir, source.id)
+                    if (cacheFile.exists() && cacheFile.length() > 0L) {
+                        runCatching { cacheFile.readText(Charsets.UTF_8) }.getOrNull()
+                    } else null
+                }
+
+                if (enabledSources.isNotEmpty() && listContents.isEmpty()) {
+                    val firstError = outcomesById.values.firstNotNullOfOrNull { it.error }
+                        ?: "Network unreachable"
+                    throw IOException("Failed to load filter lists: $firstError")
+                }
+
+                val updatedSettings = settings.copy(enabledLists = updatedLists)
+                val mergedRules = mergeRulesWithUserConfig(
+                    listContents = listContents,
+                    customUserRules = updatedSettings.customUserRules,
+                    allowedSites = updatedSettings.allowedSites
+                )
+
+                compileAndPersistRules(filesDir, mergedRules, updatedSettings)
+                updatedSettings
+            }
+        }
+    }
+
     internal suspend fun refreshSubscriptionsToDir(
         filesDir: File,
         settings: AdblockSettings,
         onListProgress: ((listId: String, status: String) -> Unit)? = null
     ): Result<AdblockSettings> = withContext(Dispatchers.IO) {
-        runCatching {
-            val enabledSources = settings.enabledLists.filter { it.isEnabled && it.url.isNotBlank() }
+        buildMutex.withLock {
+            runCatching {
+                val enabledSources = settings.enabledLists.filter { it.isEnabled && it.url.isNotBlank() }
 
-            data class FetchOutcome(
-                val id: String,
-                val content: String?,
-                val ruleCount: Int,
-                val error: String?
-            )
+                data class FetchOutcome(
+                    val id: String,
+                    val content: String?,
+                    val ruleCount: Int,
+                    val error: String?
+                )
 
-            val outcomes = coroutineScope {
-                enabledSources.map { source ->
-                    async {
-                        onListProgress?.invoke(source.id, "Fetching ${source.name}...")
-                        runCatching {
-                            val text = fetchWithFallback(source.url)
-                            val count = countValidRules(text)
-                            onListProgress?.invoke(source.id, "Loaded $count rules")
-                            FetchOutcome(source.id, text, count, null)
-                        }.getOrElse { err ->
-                            val msg = err.message ?: "Failed to fetch"
-                            onListProgress?.invoke(source.id, "Error: $msg")
-                            FetchOutcome(source.id, null, 0, msg)
+                val outcomes = coroutineScope {
+                    enabledSources.map { source ->
+                        async {
+                            onListProgress?.invoke(source.id, "Fetching ${source.name}...")
+                            runCatching {
+                                val text = fetchWithFallback(source.url)
+                                val count = countValidRules(text)
+                                val cacheFile = listCacheFile(filesDir, source.id)
+                                cacheFile.parentFile?.mkdirs()
+                                cacheFile.writeText(text, Charsets.UTF_8)
+                                onListProgress?.invoke(source.id, "Loaded $count rules")
+                                FetchOutcome(source.id, text, count, null)
+                            }.getOrElse { err ->
+                                val msg = err.message ?: "Failed to fetch"
+                                onListProgress?.invoke(source.id, "Error: $msg")
+                                FetchOutcome(source.id, null, 0, msg)
+                            }
                         }
-                    }
-                }.awaitAll()
-            }
-
-            val outcomesById = outcomes.associateBy { it.id }
-            val succeededContents = outcomes.mapNotNull { it.content }
-
-            if (enabledSources.isNotEmpty() && succeededContents.isEmpty()) {
-                val firstError = outcomes.firstNotNullOfOrNull { it.error } ?: "Network unreachable"
-                throw IOException("Failed to load filter lists: $firstError")
-            }
-
-            val now = System.currentTimeMillis()
-            val updatedLists = settings.enabledLists.map { source ->
-                val outcome = outcomesById[source.id]
-                if (outcome == null) {
-                    source
-                } else if (outcome.content != null) {
-                    source.copy(
-                        ruleCount = outcome.ruleCount,
-                        lastUpdatedMs = now,
-                        lastError = null
-                    )
-                } else {
-                    source.copy(lastError = outcome.error)
+                    }.awaitAll()
                 }
-            }
 
-            val updatedSettings = settings.copy(enabledLists = updatedLists)
-            val mergedRules = mergeRulesWithUserConfig(
-                listContents = succeededContents,
-                customUserRules = updatedSettings.customUserRules,
-                allowedSites = updatedSettings.allowedSites
-            )
+                val outcomesById = outcomes.associateBy { it.id }
+                val succeededContents = outcomes.mapNotNull { it.content }
 
-            val datFile = File(filesDir, DAT_FILE_NAME)
-            val rulesFile = File(filesDir, RULES_FILE_NAME)
+                if (enabledSources.isNotEmpty() && succeededContents.isEmpty()) {
+                    val firstError = outcomes.firstNotNullOfOrNull { it.error } ?: "Network unreachable"
+                    throw IOException("Failed to load filter lists: $firstError")
+                }
 
-            val (blocked, allowed) = parseFallbackHostSets(mergedRules)
-            val totalCount = countValidRules(mergedRules)
-            val newHandle = if (bridge.isLoaded) {
-                bridge.createFromRules(mergedRules)
-            } else {
-                0L
-            }
-
-            if (newHandle != 0L) {
-                runCatching {
-                    val snapshot = bridge.serialize(newHandle)
-                    if (snapshot != null && snapshot.isNotEmpty()) {
-                        datFile.writeBytes(snapshot)
+                val now = System.currentTimeMillis()
+                val updatedLists = settings.enabledLists.map { source ->
+                    val outcome = outcomesById[source.id]
+                    if (outcome == null) {
+                        source
+                    } else if (outcome.content != null) {
+                        source.copy(
+                            ruleCount = outcome.ruleCount,
+                            lastUpdatedMs = now,
+                            lastError = null
+                        )
+                    } else {
+                        source.copy(lastError = outcome.error)
                     }
                 }
+
+                val updatedSettings = settings.copy(enabledLists = updatedLists)
+                val mergedRules = mergeRulesWithUserConfig(
+                    listContents = succeededContents,
+                    customUserRules = updatedSettings.customUserRules,
+                    allowedSites = updatedSettings.allowedSites
+                )
+
+                compileAndPersistRules(filesDir, mergedRules, updatedSettings)
+                updatedSettings
             }
-
-            rulesFile.writeText(mergedRules, Charsets.UTF_8)
-
-            updateSettings(updatedSettings)
-            swapEngineHandle(newHandle, blocked, allowed, totalCount)
-
-            updatedSettings
         }
+    }
+
+    private fun compileAndPersistRules(
+        filesDir: File,
+        mergedRules: String,
+        updatedSettings: AdblockSettings
+    ) {
+        val datFile = File(filesDir, DAT_FILE_NAME)
+        val rulesFile = File(filesDir, RULES_FILE_NAME)
+
+        val (blocked, allowed) = parseFallbackHostSets(mergedRules)
+        val totalCount = countValidRules(mergedRules)
+        val newHandle = if (bridge.isLoaded) {
+            bridge.createFromRules(mergedRules)
+        } else {
+            0L
+        }
+
+        if (newHandle != 0L && mergedRules.isNotBlank()) {
+            runCatching {
+                val snapshot = bridge.serialize(newHandle)
+                if (snapshot != null && snapshot.isNotEmpty()) {
+                    datFile.writeBytes(snapshot)
+                }
+            }
+        } else if (mergedRules.isBlank() && datFile.exists()) {
+            runCatching { datFile.delete() }
+        }
+
+        rulesFile.writeText(mergedRules, Charsets.UTF_8)
+
+        updateSettings(updatedSettings)
+        swapEngineHandle(newHandle, blocked, allowed, totalCount)
+    }
+
+    private fun listCacheFile(filesDir: File, listId: String): File {
+        val safeId = listId.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+        return File(File(filesDir, LIST_CACHE_DIR), "$safeId.txt")
     }
 
     fun updateSettings(settings: AdblockSettings) {
@@ -403,6 +527,7 @@ class AdblockEngine(
         const val DAT_FILE_NAME = "adblock_engine.dat"
         const val RULES_FILE_NAME = "adblock_rules.txt"
         const val ASSETS_FILE_NAME = "adblock_hosts.txt"
+        const val LIST_CACHE_DIR = "adblock_lists"
 
         private fun defaultFetchUrl(url: String): String {
             val req = Request.Builder().url(url).build()

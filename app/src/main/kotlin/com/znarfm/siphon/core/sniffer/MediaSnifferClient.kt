@@ -58,10 +58,14 @@ class MediaSnifferClient(
     @Volatile
     private var lastPageStartedUrl: String? = null
 
+    @Volatile
+    private var lastBlockedMainFrameUrl: String? = null
+
     var onUrlChanged: ((String) -> Unit)? = null
     var onNavigationStateChanged: ((canGoBack: Boolean, canGoForward: Boolean) -> Unit)? = null
     var onWebViewPageStarted: ((WebView, String) -> Unit)? = null
     var onWebViewPageFinished: ((WebView, String) -> Unit)? = null
+    var onResetAdBlockedCount: (() -> Unit)? = null
     var onMagnetLinkClicked: ((String) -> Unit)? = null
 
     // LRU cache for candidate URLs normalized by stripping byte-range query params
@@ -107,9 +111,38 @@ class MediaSnifferClient(
         inspectCandidateAsync(url, requestHeaders, hintLang, hintLabel, forceInspect)
     }
 
+    fun notifyAdBlocked(pageUrl: String, blockedUrl: String) {
+        onAdBlocked?.invoke(pageUrl, blockedUrl)
+    }
+
+    fun resolveSourceUrl(
+        requestUrl: String,
+        requestHeaders: Map<String, String>? = null
+    ): String {
+        if (isHttpUrl(currentPageUrl)) {
+            return currentPageUrl
+        }
+        val referer = findReferer(requestHeaders ?: emptyMap())
+        if (isHttpUrl(referer)) {
+            return referer!!
+        }
+        return requestUrl
+    }
+
+    private fun isHttpUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        return url.startsWith("http://", ignoreCase = true) ||
+            url.startsWith("https://", ignoreCase = true)
+    }
+
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
         if (!url.isNullOrBlank()) {
+            val wasBlockedMainFrame = (url == lastBlockedMainFrameUrl)
+            lastBlockedMainFrameUrl = null
+            if (!wasBlockedMainFrame) {
+                onResetAdBlockedCount?.invoke()
+            }
             if (lastPageStartedUrl != null && lastPageStartedUrl != url) {
                 clearDetectedMedia()
             }
@@ -165,7 +198,7 @@ class MediaSnifferClient(
             return true
         }
         val url = uri.toString()
-        val pageUrl = currentPageUrl.ifBlank { url }
+        val pageUrl = resolveSourceUrl(url, request.requestHeaders)
         if (adblockEngine.shouldBlockRequest(url, pageUrl, "main_frame")) {
             onAdBlocked?.invoke(pageUrl, url)
             return true // Drop ad redirects / popup chains
@@ -185,15 +218,20 @@ class MediaSnifferClient(
         }
 
         val url = uri.toString()
-        val sourceUrl = currentPageUrl.ifBlank {
-            findReferer(req.requestHeaders ?: emptyMap()).orEmpty()
-        }
+        val sourceUrl = resolveSourceUrl(url, req.requestHeaders)
         val requestType = inferRequestType(req)
 
         // 1. Drop ad network subresources immediately
         if (adblockEngine.shouldBlockRequest(url, sourceUrl, requestType)) {
-            onAdBlocked?.invoke(sourceUrl.ifBlank { url }, url)
+            if (req.isForMainFrame) {
+                lastBlockedMainFrameUrl = url
+            }
+            onAdBlocked?.invoke(sourceUrl, url)
             return adblockEngine.createEmptyResponse()
+        }
+
+        if (req.isForMainFrame) {
+            lastBlockedMainFrameUrl = null
         }
 
         // 2. Passive sniffer: strictly return null for all non-ad requests so Chromium loads normally
