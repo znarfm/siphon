@@ -2,8 +2,13 @@ package com.znarfm.siphon.ui.browser
 
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,16 +47,28 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -75,10 +92,20 @@ fun BrowserBottomOmnibox(
     onOpenMenu: () -> Unit,
     onOpenSniffer: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onSwitchPreviousTab: () -> Unit = {},
+    onSwitchNextTab: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val incognitoScheme = remember { darkColorScheme() }
     val activeScheme = if (isIncognito) incognitoScheme else MaterialTheme.colorScheme
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    val dockOffsetX = remember { Animatable(0f) }
+    val dockOffsetY = remember { Animatable(0f) }
+    val currentOnSwitchPreviousTab by rememberUpdatedState(onSwitchPreviousTab)
+    val currentOnSwitchNextTab by rememberUpdatedState(onSwitchNextTab)
+    val currentOnOpenTabSwitcher by rememberUpdatedState(onOpenTabSwitcher)
 
     MaterialTheme(colorScheme = activeScheme) {
         val dockContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -131,7 +158,112 @@ fun BrowserBottomOmnibox(
                 color = dockContainerColor,
                 tonalElevation = 4.dp,
                 shadowElevation = 6.dp,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        translationX = dockOffsetX.value
+                        translationY = dockOffsetY.value
+                    }
+                    .pointerInput(Unit) {
+                        val horizontalThresholdPx = with(density) { 56.dp.toPx() }
+                        val verticalThresholdPx = with(density) { 48.dp.toPx() }
+                        val maxTranslationXPx = with(density) { 48.dp.toPx() }
+                        val maxTranslationYPx = with(density) { 36.dp.toPx() }
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val touchSlop = viewConfiguration.touchSlop
+                            var totalDx = 0f
+                            var totalDy = 0f
+                            var pastTouchSlop = false
+                            var lockedAxis = 0 // 0 = none, 1 = horizontal, 2 = vertical upward
+                            var hapticFired = false
+                            var wasCancelled = false
+
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change == null) {
+                                    wasCancelled = true
+                                    break
+                                }
+                                if (!change.pressed) {
+                                    break
+                                }
+                                val delta = change.positionChange()
+                                totalDx += delta.x
+                                totalDy += delta.y
+
+                                if (!pastTouchSlop) {
+                                    val absDx = abs(totalDx)
+                                    val absDy = abs(totalDy)
+                                    if (absDx > touchSlop || absDy > touchSlop) {
+                                        if (absDx >= absDy) {
+                                            pastTouchSlop = true
+                                            lockedAxis = 1
+                                        } else if (totalDy < 0f) {
+                                            pastTouchSlop = true
+                                            lockedAxis = 2
+                                        } else {
+                                            break
+                                        }
+                                    }
+                                }
+
+                                if (pastTouchSlop) {
+                                    change.consume()
+                                    if (lockedAxis == 1) {
+                                        val clampedX = (totalDx * 0.45f)
+                                            .coerceIn(-maxTranslationXPx, maxTranslationXPx)
+                                        scope.launch { dockOffsetX.snapTo(clampedX) }
+                                        val crossed = abs(totalDx) >= horizontalThresholdPx
+                                        if (crossed && !hapticFired) {
+                                            hapticFired = true
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        } else if (!crossed && hapticFired) {
+                                            hapticFired = false
+                                        }
+                                    } else if (lockedAxis == 2) {
+                                        val clampedY = (totalDy * 0.45f)
+                                            .coerceIn(-maxTranslationYPx, 0f)
+                                        scope.launch { dockOffsetY.snapTo(clampedY) }
+                                        val crossed = totalDy <= -verticalThresholdPx
+                                        if (crossed && !hapticFired) {
+                                            hapticFired = true
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        } else if (!crossed && hapticFired) {
+                                            hapticFired = false
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (pastTouchSlop) {
+                                if (!wasCancelled) {
+                                    if (lockedAxis == 1) {
+                                        if (totalDx < -horizontalThresholdPx) {
+                                            currentOnSwitchNextTab()
+                                        } else if (totalDx > horizontalThresholdPx) {
+                                            currentOnSwitchPreviousTab()
+                                        }
+                                    } else if (lockedAxis == 2 && totalDy < -verticalThresholdPx) {
+                                        currentOnOpenTabSwitcher()
+                                    }
+                                }
+                                scope.launch {
+                                    dockOffsetX.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                    )
+                                }
+                                scope.launch {
+                                    dockOffsetY.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                    )
+                                }
+                            }
+                        }
+                    }
             ) {
                 Row(
                     modifier = Modifier

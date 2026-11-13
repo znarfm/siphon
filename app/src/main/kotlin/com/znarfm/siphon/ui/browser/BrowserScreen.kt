@@ -11,6 +11,7 @@ import android.os.Looper
 import android.os.Message
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -47,11 +49,14 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,6 +78,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
@@ -178,6 +184,7 @@ private fun applyWebDarkModeToWebView(webView: WebView, enabled: Boolean) {
     webView.evaluateJavascript(if (enabled) DARK_MODE_INJECT_JS else DARK_MODE_REMOVE_JS, null)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun BrowserScreen(
@@ -216,6 +223,8 @@ fun BrowserScreen(
     onNewTab: (url: String, isIncognito: Boolean, inBackground: Boolean) -> Unit,
     onSelectTab: (String) -> Unit,
     onCloseTab: (String) -> Unit,
+    onSwitchPreviousTab: () -> Unit = {},
+    onSwitchNextTab: () -> Unit = {},
     onToggleBookmark: () -> Unit = {},
     onDeleteBookmark: (Long) -> Unit = {},
     onDeleteHistory: (Long) -> Unit = {},
@@ -254,6 +263,14 @@ fun BrowserScreen(
     var customVideoView by remember { mutableStateOf<View?>(null) }
     var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
 
+    val density = LocalDensity.current
+    val refreshThresholdPx = with(density) { 80.dp.toPx() }
+    val maxPullPx = with(density) { 140.dp.toPx() }
+    var pullDistancePx by remember { mutableFloatStateOf(0f) }
+    var isPulling by remember { mutableStateOf(false) }
+    var isPullRefreshing by remember { mutableStateOf(false) }
+    val pullToRefreshState = rememberPullToRefreshState()
+
     val fileChooserLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
@@ -273,6 +290,7 @@ fun BrowserScreen(
     val currentActiveTabId = rememberUpdatedState(activeTabId)
     val currentBarsVisible = rememberUpdatedState(isBarsVisible)
     val currentWebDarkMode = rememberUpdatedState(isWebDarkMode)
+    val currentCustomVideoView = rememberUpdatedState(customVideoView)
     val currentOnMagnetLinkClicked = rememberUpdatedState(onMagnetLinkClicked)
     val currentOnUpdateTabMeta = rememberUpdatedState(onUpdateTabMeta)
     val currentOnResetTabBlockedCount = rememberUpdatedState(onResetTabBlockedCount)
@@ -373,6 +391,26 @@ fun BrowserScreen(
         findQuery = ""
         findActiveMatchOrdinal = 0
         findTotalMatches = 0
+        isPulling = false
+        pullDistancePx = 0f
+        isPullRefreshing = false
+    }
+
+    LaunchedEffect(pullDistancePx, isPulling, isPullRefreshing) {
+        if (isPulling) {
+            pullToRefreshState.snapTo((pullDistancePx / refreshThresholdPx).coerceIn(0f, 1.75f))
+        } else if (isPullRefreshing) {
+            pullToRefreshState.animateToThreshold()
+        } else {
+            pullToRefreshState.animateToHidden()
+        }
+    }
+
+    LaunchedEffect(isPullRefreshing) {
+        if (isPullRefreshing) {
+            kotlinx.coroutines.delay(10_000L)
+            isPullRefreshing = false
+        }
     }
 
     LaunchedEffect(activeWebView) {
@@ -633,23 +671,61 @@ fun BrowserScreen(
                                         val density = ctx.resources.displayMetrics.density
                                         val minScrollablePx = (140f * density).toInt()
                                         val toggleSlopPx = 56f * density
+                                        val touchSlop = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
                                         var touchAccumDy = 0f
+                                        var downX = 0f
+                                        var downY = 0f
                                         var lastTouchY = 0f
                                         var isTrackingTouch = false
+                                        var isHorizontalScroll = false
+                                        var isPullGesture = false
 
                                         val webView = object : WebView(ctx) {
                                             override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
                                                 if (tab.id != currentActiveTabId.value) return false
                                                 when (ev.actionMasked) {
                                                     MotionEvent.ACTION_DOWN -> {
+                                                        downX = ev.rawX
+                                                        downY = ev.rawY
                                                         lastTouchY = ev.rawY
                                                         touchAccumDy = 0f
                                                         isTrackingTouch = true
+                                                        isHorizontalScroll = false
+                                                        isPullGesture = false
                                                     }
                                                     MotionEvent.ACTION_MOVE -> {
                                                         if (isTrackingTouch) {
                                                             val deltaY = ev.rawY - lastTouchY
                                                             lastTouchY = ev.rawY
+                                                            val totalDx = kotlin.math.abs(ev.rawX - downX)
+                                                            val totalDy = ev.rawY - downY
+
+                                                            if (!isPullGesture && !isHorizontalScroll) {
+                                                                if (totalDx > touchSlop && totalDx > kotlin.math.abs(totalDy)) {
+                                                                    isHorizontalScroll = true
+                                                                } else if (
+                                                                    !isPullRefreshing &&
+                                                                    currentCustomVideoView.value == null &&
+                                                                    scrollY == 0 &&
+                                                                    totalDy > touchSlop &&
+                                                                    totalDy > totalDx
+                                                                ) {
+                                                                    isPullGesture = true
+                                                                    isPulling = true
+                                                                    val cancelEvent = MotionEvent.obtain(ev).apply {
+                                                                        action = MotionEvent.ACTION_CANCEL
+                                                                    }
+                                                                    super.dispatchTouchEvent(cancelEvent)
+                                                                    cancelEvent.recycle()
+                                                                }
+                                                            }
+
+                                                            if (isPullGesture) {
+                                                                pullDistancePx = (pullDistancePx + deltaY * 0.5f)
+                                                                    .coerceIn(0f, maxPullPx)
+                                                                return true
+                                                            }
+
                                                             val maxScroll = (contentHeight * density).toInt() - height
                                                             if (maxScroll > minScrollablePx) {
                                                                 if ((deltaY < 0 && touchAccumDy > 0) || (deltaY > 0 && touchAccumDy < 0)) {
@@ -671,6 +747,17 @@ fun BrowserScreen(
                                                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                                                         isTrackingTouch = false
                                                         touchAccumDy = 0f
+                                                        isHorizontalScroll = false
+                                                        if (isPullGesture) {
+                                                            isPullGesture = false
+                                                            isPulling = false
+                                                            if (ev.actionMasked == MotionEvent.ACTION_UP && pullDistancePx >= refreshThresholdPx) {
+                                                                isPullRefreshing = true
+                                                                reload()
+                                                            }
+                                                            pullDistancePx = 0f
+                                                            return true
+                                                        }
                                                     }
                                                 }
                                                 return super.dispatchTouchEvent(ev)
@@ -778,6 +865,9 @@ fun BrowserScreen(
                                                     )
                                                 }
                                                 onWebViewPageFinished = { view, url ->
+                                                    if (tab.id == currentActiveTabId.value) {
+                                                        isPullRefreshing = false
+                                                    }
                                                     if (currentWebDarkMode.value) {
                                                         applyWebDarkModeToWebView(view, true)
                                                     }
@@ -801,6 +891,9 @@ fun BrowserScreen(
                                                     }
                                                     if (tab.id == currentActiveTabId.value) {
                                                         pageProgress = newProgress
+                                                        if (newProgress == 100) {
+                                                            isPullRefreshing = false
+                                                        }
                                                         canGoBack = view?.canGoBack() == true
                                                         canGoForward = view?.canGoForward() == true
                                                         val vUrl = view?.url
@@ -925,6 +1018,17 @@ fun BrowserScreen(
                         }
                     }
                 }
+
+                if (!isNewTab && customVideoView == null && (pullDistancePx > 0f || isPulling || isPullRefreshing || pullToRefreshState.distanceFraction > 0f)) {
+                    PullToRefreshDefaults.Indicator(
+                        state = pullToRefreshState,
+                        isRefreshing = isPullRefreshing,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .statusBarsPadding()
+                            .zIndex(4f)
+                    )
+                }
             }
         }
 
@@ -963,6 +1067,8 @@ fun BrowserScreen(
                     captureActiveThumbnail()
                     onOpenTabSwitcher()
                 },
+                onSwitchPreviousTab = onSwitchPreviousTab,
+                onSwitchNextTab = onSwitchNextTab,
                 onOpenMenu = { isMenuOpen = true },
                 onOpenSniffer = onOpenSniffer,
                 onOpenDownloads = onOpenDownloads

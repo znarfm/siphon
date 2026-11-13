@@ -1,9 +1,15 @@
 package com.znarfm.siphon.ui.browser
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,19 +57,33 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -348,6 +368,14 @@ private fun TabGridCard(
         if (tab.url == NEW_TAB_URL) "New Tab" else tab.url
     }
 
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    val fallbackWidthPx = with(density) { 180.dp.toPx() }
+    var cardWidthPx by remember(tab.id) { mutableFloatStateOf(0f) }
+    val offsetX = remember(tab.id) { Animatable(0f) }
+    val currentOnClose by rememberUpdatedState(onClose)
+
     Surface(
         shape = cardShape,
         color = bodyBg,
@@ -356,6 +384,109 @@ private fun TabGridCard(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(0.76f)
+            .onSizeChanged { size ->
+                cardWidthPx = size.width.toFloat()
+            }
+            .graphicsLayer {
+                val tx = offsetX.value
+                val dismissDistancePx = if (cardWidthPx > 0f) cardWidthPx else fallbackWidthPx
+                translationX = tx
+                alpha = (1f - (abs(tx) / dismissDistancePx) * 0.6f).coerceIn(0.25f, 1f)
+            }
+            .pointerInput(tab.id) {
+                val flingVelocityPxPerSec = with(density) { 500.dp.toPx() }
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val velocityTracker = VelocityTracker()
+                    velocityTracker.addPosition(down.uptimeMillis, down.position)
+                    val touchSlop = viewConfiguration.touchSlop
+                    var totalDx = 0f
+                    var totalDy = 0f
+                    var isHorizontalDrag = false
+                    var hapticFired = false
+                    var wasCancelled = false
+
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id }
+                        if (change == null) {
+                            wasCancelled = true
+                            break
+                        }
+                        if (!change.pressed) {
+                            break
+                        }
+                        if (change.isConsumed && !isHorizontalDrag) {
+                            wasCancelled = true
+                            break
+                        }
+                        val delta = change.positionChange()
+                        totalDx += delta.x
+                        totalDy += delta.y
+
+                        if (!isHorizontalDrag) {
+                            val absDx = abs(totalDx)
+                            val absDy = abs(totalDy)
+                            if (absDy > touchSlop && absDy > absDx) {
+                                wasCancelled = true
+                                break
+                            }
+                            if (absDx > touchSlop && absDx > absDy) {
+                                isHorizontalDrag = true
+                                velocityTracker.resetTracking()
+                            }
+                        }
+
+                        if (isHorizontalDrag) {
+                            change.consume()
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            val newOffset = totalDx
+                            scope.launch { offsetX.snapTo(newOffset) }
+                            val effectiveWidth = if (cardWidthPx > 0f) cardWidthPx else fallbackWidthPx
+                            val crossed = abs(newOffset) >= effectiveWidth * 0.35f
+                            if (crossed && !hapticFired) {
+                                hapticFired = true
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            } else if (!crossed && hapticFired) {
+                                hapticFired = false
+                            }
+                        }
+                    }
+
+                    if (isHorizontalDrag) {
+                        val effectiveWidth = if (cardWidthPx > 0f) cardWidthPx else fallbackWidthPx
+                        val dismissThreshold = effectiveWidth * 0.35f
+                        val vx = velocityTracker.calculateVelocity().x
+                        val currentTx = offsetX.value
+                        val shouldDismiss = !wasCancelled && (
+                            abs(currentTx) >= dismissThreshold ||
+                                (abs(vx) >= flingVelocityPxPerSec && abs(currentTx) > touchSlop)
+                            )
+                        if (shouldDismiss) {
+                            val direction = when {
+                                abs(vx) >= flingVelocityPxPerSec && vx != 0f -> if (vx > 0f) 1f else -1f
+                                currentTx >= 0f -> 1f
+                                else -> -1f
+                            }
+                            val targetX = direction * (effectiveWidth * 1.25f)
+                            scope.launch {
+                                offsetX.animateTo(
+                                    targetValue = targetX,
+                                    animationSpec = tween(durationMillis = 180)
+                                )
+                                currentOnClose()
+                            }
+                        } else {
+                            scope.launch {
+                                offsetX.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             .clip(cardShape)
             .clickable(onClick = onSelect)
     ) {
