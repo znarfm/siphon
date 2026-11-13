@@ -75,6 +75,7 @@ import com.znarfm.siphon.ui.browser.BrowserScreen
 import com.znarfm.siphon.ui.browser.BrowserSettingsScreen
 import com.znarfm.siphon.ui.browser.BrowserViewModel
 import com.znarfm.siphon.ui.browser.HistoryScreen
+import com.znarfm.siphon.ui.browser.MagnetDownloadDialog
 import com.znarfm.siphon.ui.browser.NEW_TAB_URL
 import com.znarfm.siphon.ui.browser.TabSwitcherScreen
 import com.znarfm.siphon.ui.queue.ConcurrencySettingsDialog
@@ -400,6 +401,7 @@ fun MainContent(
     val isCurrentBookmarked by browserViewModel.isCurrentUrlBookmarked.collectAsStateWithLifecycle()
     val adblockRuleCount by browserViewModel.adblockRuleCount.collectAsStateWithLifecycle()
     val adblockConfig by browserViewModel.adblockConfig.collectAsStateWithLifecycle()
+    val pendingMagnetUri by browserViewModel.pendingMagnetUri.collectAsStateWithLifecycle()
 
     val downloads by queueViewModel.downloads.collectAsStateWithLifecycle()
     val chunksMap by queueViewModel.chunksMap.collectAsStateWithLifecycle()
@@ -459,7 +461,7 @@ fun MainContent(
                     currentUrl = browserUrl,
                     tabs = browserTabs,
                     activeTabId = activeTabId,
-                    snifferClient = browserViewModel.snifferClient,
+                    snifferClientForTab = { tabId -> browserViewModel.getSnifferClientForTab(tabId) },
                     detectedMediaCount = detectedMedia.size,
                     activeDownloadCount = activeDownloadsCount,
                     isAdBlockEnabled = isAdBlockEnabled,
@@ -496,6 +498,9 @@ fun MainContent(
                     onDownloadDirectMedia = { url ->
                         browserViewModel.downloadDirectMedia(url)
                         Toast.makeText(context, "Download started", Toast.LENGTH_SHORT).show()
+                    },
+                    onMagnetLinkClicked = { uri ->
+                        browserViewModel.showMagnetDownloadPopup(uri)
                     },
                     onSelectTab = { browserViewModel.switchBrowserTab(it) },
                     onCloseTab = { browserViewModel.closeBrowserTab(it) },
@@ -712,6 +717,18 @@ fun MainContent(
                     }
                 }
             )
+
+            pendingMagnetUri?.let { magnetUri ->
+                MagnetDownloadDialog(
+                    magnetUri = magnetUri,
+                    customDownloadUri = concurrencySettings.customDownloadUri,
+                    onConfirm = {
+                        browserViewModel.startMagnetDownload(magnetUri)
+                        Toast.makeText(context, "Torrent download started", Toast.LENGTH_SHORT).show()
+                    },
+                    onDismiss = { browserViewModel.dismissMagnetDownloadPopup() }
+                )
+            }
 
             AnimatedVisibility(
                 visible = !pendingClipboardLink.isNullOrBlank(),

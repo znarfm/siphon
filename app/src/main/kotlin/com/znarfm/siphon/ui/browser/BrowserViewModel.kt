@@ -18,12 +18,15 @@ import com.znarfm.siphon.data.repository.DownloadRepository
 import com.znarfm.siphon.ui.theme.AppColorSeed
 import com.znarfm.siphon.ui.theme.AppThemeMode
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 class BrowserViewModel(
     val browserRepository: BrowserRepository,
@@ -32,14 +35,50 @@ class BrowserViewModel(
 
     val hostFilter = browserRepository.hostFilter
 
-    val snifferClient = MediaSnifferClient(
-        hostFilter = hostFilter,
-        dao = downloadRepository.dao,
-        storage = downloadRepository.storage
-    )
+    private val initialTab = BrowserTab()
+    private val _browserTabs = MutableStateFlow<List<BrowserTab>>(listOf(initialTab))
+    val browserTabs = _browserTabs.asStateFlow()
 
-    val detectedMedia: StateFlow<List<SniffedMedia>> = snifferClient.detectedMedia
-    val rebindTarget: StateFlow<DownloadEntity?> = snifferClient.rebindTarget
+    private val _activeTabId = MutableStateFlow(initialTab.id)
+    val activeTabId = _activeTabId.asStateFlow()
+
+    private val tabSnifferClients = ConcurrentHashMap<String, MediaSnifferClient>()
+
+    private val _rebindTarget = MutableStateFlow<DownloadEntity?>(null)
+    val rebindTarget: StateFlow<DownloadEntity?> = _rebindTarget.asStateFlow()
+
+    fun getSnifferClientForTab(tabId: String): MediaSnifferClient {
+        return synchronized(tabSnifferClients) {
+            tabSnifferClients.getOrPut(tabId) {
+                MediaSnifferClient(
+                    hostFilter = hostFilter,
+                    dao = downloadRepository.dao,
+                    storage = downloadRepository.storage,
+                    tabId = tabId
+                ).apply {
+                    onMagnetLinkClicked = { uri ->
+                        showMagnetDownloadPopup(uri)
+                    }
+                    viewModelScope.launch {
+                        rebindSuccessEvent.collect { downloadId ->
+                            _rebindTarget.value = null
+                            downloadRepository.resumeDownload(downloadId)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val detectedMedia: StateFlow<List<SniffedMedia>> = _activeTabId
+        .flatMapLatest { tabId ->
+            getSnifferClientForTab(tabId).detectedMedia
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _pendingMagnetUri = MutableStateFlow<String?>(null)
+    val pendingMagnetUri: StateFlow<String?> = _pendingMagnetUri.asStateFlow()
 
     val bookmarks: StateFlow<List<BookmarkEntity>> = browserRepository.bookmarks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -48,13 +87,6 @@ class BrowserViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val browserPreferences: StateFlow<BrowserPreferences> = browserRepository.browserPreferences
-
-    private val initialTab = BrowserTab()
-    private val _browserTabs = MutableStateFlow<List<BrowserTab>>(listOf(initialTab))
-    val browserTabs = _browserTabs.asStateFlow()
-
-    private val _activeTabId = MutableStateFlow(initialTab.id)
-    val activeTabId = _activeTabId.asStateFlow()
 
     private val _browserUrl = MutableStateFlow(NEW_TAB_URL)
     val browserUrl = _browserUrl.asStateFlow()
@@ -108,11 +140,18 @@ class BrowserViewModel(
     var onRequestDomScan: (() -> Unit)? = null
     var onRequestPageReload: (() -> Unit)? = null
 
-    init {
+    fun showMagnetDownloadPopup(uri: String) {
+        _pendingMagnetUri.value = uri
+    }
+
+    fun dismissMagnetDownloadPopup() {
+        _pendingMagnetUri.value = null
+    }
+
+    fun startMagnetDownload(magnetUri: String) {
+        _pendingMagnetUri.value = null
         viewModelScope.launch {
-            snifferClient.rebindSuccessEvent.collect { downloadId ->
-                downloadRepository.resumeDownload(downloadId)
-            }
+            downloadRepository.startMagnetDownload(magnetUri)
         }
     }
 
@@ -138,8 +177,8 @@ class BrowserViewModel(
 
     fun setBrowserUrl(url: String) {
         _browserUrl.value = url
-        snifferClient.updateCurrentPageUrl(url)
         val curId = _activeTabId.value
+        getSnifferClientForTab(curId).updateCurrentPageUrl(url)
         _browserTabs.value = _browserTabs.value.map {
             if (it.id == curId) it.copy(url = url) else it
         }
@@ -152,10 +191,10 @@ class BrowserViewModel(
     ) {
         val newTab = BrowserTab(url = url, isIncognito = isIncognito)
         _browserTabs.value = _browserTabs.value + newTab
+        getSnifferClientForTab(newTab.id).updateCurrentPageUrl(url)
         if (switchImmediately) {
             _activeTabId.value = newTab.id
             _browserUrl.value = url
-            snifferClient.updateCurrentPageUrl(url)
         }
     }
 
@@ -163,7 +202,7 @@ class BrowserViewModel(
         val target = _browserTabs.value.firstOrNull { it.id == tabId } ?: return
         _activeTabId.value = tabId
         _browserUrl.value = target.url
-        snifferClient.updateCurrentPageUrl(target.url)
+        getSnifferClientForTab(tabId).updateCurrentPageUrl(target.url)
     }
 
     fun updateTabThumbnail(tabId: String, bitmap: ImageBitmap) {
@@ -179,13 +218,14 @@ class BrowserViewModel(
         _lastClosedTab.value = closedTab
         lastClosedTabIndex = closedIndex
         _tabThumbnails.value = _tabThumbnails.value - tabId
+        tabSnifferClients.remove(tabId)
 
         if (currentList.size <= 1) {
             val resetTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
             _browserTabs.value = listOf(resetTab)
             _activeTabId.value = resetTab.id
             _browserUrl.value = resetTab.url
-            snifferClient.updateCurrentPageUrl(resetTab.url)
+            getSnifferClientForTab(resetTab.id).updateCurrentPageUrl(resetTab.url)
             return
         }
         val remaining = currentList.filter { it.id != tabId }
@@ -194,7 +234,7 @@ class BrowserViewModel(
             val nextTab = remaining.last()
             _activeTabId.value = nextTab.id
             _browserUrl.value = nextTab.url
-            snifferClient.updateCurrentPageUrl(nextTab.url)
+            getSnifferClientForTab(nextTab.id).updateCurrentPageUrl(nextTab.url)
         }
     }
 
@@ -208,7 +248,7 @@ class BrowserViewModel(
         _browserTabs.value = updatedList
         _activeTabId.value = tabToRestore.id
         _browserUrl.value = tabToRestore.url
-        snifferClient.updateCurrentPageUrl(tabToRestore.url)
+        getSnifferClientForTab(tabToRestore.id).updateCurrentPageUrl(tabToRestore.url)
         _lastClosedTab.value = null
         lastClosedTabIndex = -1
     }
@@ -223,36 +263,38 @@ class BrowserViewModel(
         if (incognitoOnly) {
             val closedIds = currentList.filter { it.isIncognito }.map { it.id }.toSet()
             _tabThumbnails.value = _tabThumbnails.value - closedIds
+            closedIds.forEach { tabSnifferClients.remove(it) }
             val remaining = currentList.filter { !it.isIncognito }
             if (remaining.isEmpty()) {
                 val freshTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
                 _browserTabs.value = listOf(freshTab)
                 _activeTabId.value = freshTab.id
                 _browserUrl.value = freshTab.url
-                snifferClient.updateCurrentPageUrl(freshTab.url)
+                getSnifferClientForTab(freshTab.id).updateCurrentPageUrl(freshTab.url)
             } else {
                 _browserTabs.value = remaining
                 if (remaining.none { it.id == _activeTabId.value }) {
                     val nextTab = remaining.last()
                     _activeTabId.value = nextTab.id
                     _browserUrl.value = nextTab.url
-                    snifferClient.updateCurrentPageUrl(nextTab.url)
+                    getSnifferClientForTab(nextTab.id).updateCurrentPageUrl(nextTab.url)
                 }
             }
         } else {
             _tabThumbnails.value = emptyMap()
+            tabSnifferClients.clear()
             val freshTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
             _browserTabs.value = listOf(freshTab)
             _activeTabId.value = freshTab.id
             _browserUrl.value = freshTab.url
-            snifferClient.updateCurrentPageUrl(freshTab.url)
+            getSnifferClientForTab(freshTab.id).updateCurrentPageUrl(freshTab.url)
         }
     }
 
     fun updateActiveTabMeta(url: String, title: String) {
         val curId = _activeTabId.value
         _browserUrl.value = url
-        snifferClient.updateCurrentPageUrl(url)
+        getSnifferClientForTab(curId).updateCurrentPageUrl(url)
         var currentTabIsIncognito = false
         _browserTabs.value = _browserTabs.value.map {
             if (it.id == curId) {
@@ -321,16 +363,21 @@ class BrowserViewModel(
     }
 
     fun clearDetectedMedia() {
-        snifferClient.clearDetectedMedia()
+        getSnifferClientForTab(_activeTabId.value).clearDetectedMedia()
+    }
+
+    fun removeDetectedMedia(id: String) {
+        getSnifferClientForTab(_activeTabId.value).removeDetectedMedia(id)
     }
 
     fun refreshDetectedMedia() {
-        snifferClient.clearDetectedMedia()
+        val activeClient = getSnifferClientForTab(_activeTabId.value)
+        activeClient.clearDetectedMedia()
         onRequestPageReload?.invoke()
         onRequestDomScan?.invoke()
         val curUrl = _browserUrl.value
         if (curUrl.isNotBlank()) {
-            snifferClient.inspectCandidate(curUrl)
+            activeClient.inspectCandidate(curUrl)
         }
     }
 
@@ -345,7 +392,7 @@ class BrowserViewModel(
     fun loadUrlAndOpenSniffer(url: String) {
         clearDetectedMedia()
         setBrowserUrl(url)
-        snifferClient.inspectCandidate(url, forceInspect = true)
+        getSnifferClientForTab(_activeTabId.value).inspectCandidate(url, forceInspect = true)
         openSnifferSheet()
     }
 
@@ -372,6 +419,7 @@ class BrowserViewModel(
             )
             val sniffed = SniffedMedia(
                 id = java.util.UUID.randomUUID().toString(),
+                tabId = _activeTabId.value,
                 url = url,
                 displayName = fileName,
                 mimeType = "image/*",
@@ -403,13 +451,15 @@ class BrowserViewModel(
     }
 
     fun startRebindFlow(download: DownloadEntity) {
-        snifferClient.setRebindTarget(download)
+        _rebindTarget.value = download
+        getSnifferClientForTab(_activeTabId.value).setRebindTarget(download)
         val sourceUrl = download.sourcePageUrl?.takeIf { it.isNotBlank() } ?: "https://www.google.com"
         setBrowserUrl(sourceUrl)
     }
 
     fun cancelRebindFlow() {
-        snifferClient.setRebindTarget(null)
+        _rebindTarget.value = null
+        tabSnifferClients.values.forEach { it.setRebindTarget(null) }
     }
 
     private fun deriveTitleFromUrl(url: String): String {
