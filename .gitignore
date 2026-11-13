@@ -41,3 +41,7 @@ Thumbs.db
 
 # Log files
 *.log
+
+# Rust JNI build artifacts
+rust/adblock-jni/target/
+app/src/main/jniLibs/*/libadblock_jni.so

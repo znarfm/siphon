@@ -24,3 +24,7 @@
 # libtorrent4j JNI and wrapper classes
 -keep class org.libtorrent4j.** { *; }
 -dontwarn org.libtorrent4j.**
+
+# NativeAdblockJni JNI bindings
+-keep class com.znarfm.siphon.core.adblock.NativeAdblockJni { *; }
+-keep class com.znarfm.siphon.core.adblock.CosmeticResources { *; }
