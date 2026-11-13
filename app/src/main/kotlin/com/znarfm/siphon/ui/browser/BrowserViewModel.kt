@@ -207,6 +207,18 @@ class BrowserViewModel(
         getSnifferClientForTab(tabId).updateCurrentPageUrl(target.url)
     }
 
+    fun switchToPreviousTab() {
+        findAdjacentTabId(_browserTabs.value, _activeTabId.value, delta = -1)?.let { targetId ->
+            switchBrowserTab(targetId)
+        }
+    }
+
+    fun switchToNextTab() {
+        findAdjacentTabId(_browserTabs.value, _activeTabId.value, delta = +1)?.let { targetId ->
+            switchBrowserTab(targetId)
+        }
+    }
+
     fun updateTabThumbnail(tabId: String, bitmap: ImageBitmap) {
         _tabThumbnails.value = _tabThumbnails.value + (tabId to bitmap)
     }
@@ -528,4 +540,17 @@ class BrowserViewModel(
             uri.host?.removePrefix("www.")?.ifBlank { null }
         }.getOrNull() ?: "Tab"
     }
+}
+
+internal fun findAdjacentTabId(
+    tabs: List<BrowserTab>,
+    activeTabId: String,
+    delta: Int
+): String? {
+    val activeTab = tabs.firstOrNull { it.id == activeTabId } ?: return null
+    val modeTabs = tabs.filter { it.isIncognito == activeTab.isIncognito }
+    val currentIndex = modeTabs.indexOfFirst { it.id == activeTabId }
+    if (currentIndex == -1) return null
+    val targetIndex = currentIndex + delta
+    return modeTabs.getOrNull(targetIndex)?.id
 }
