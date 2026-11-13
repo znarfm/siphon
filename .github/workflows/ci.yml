@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [ main ]
+    paths-ignore: ['**.md']
   pull_request:
     branches: [ main ]
+    paths-ignore: ['**.md']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,44 +25,64 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache JNI libraries
+        id: jni-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/src/main/jniLibs
+            rust/adblock-jni/target/release/libadblock_jni.so
+          key: ${{ runner.os }}-jni-ci-${{ hashFiles('rust/adblock-jni/**') }}
+
+      - name: Cache Android NDK
+        id: ndk-cache
+        if: steps.jni-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
+          key: ${{ runner.os }}-ndk-27.2.12479018
 
       - name: Install Android NDK
+        if: steps.jni-cache.outputs.cache-hit != 'true' && steps.ndk-cache.outputs.cache-hit != 'true'
         run: |
           NDK_VERSION="27.2.12479018"
           SDKMANAGER=$(command -v sdkmanager || find "${ANDROID_HOME}/cmdline-tools" -name sdkmanager -type f | head -n 1)
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;${NDK_VERSION}"
-          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> $GITHUB_ENV
+          "$SDKMANAGER" --install "ndk;${NDK_VERSION}"
+
+      - name: Set ANDROID_NDK_HOME
+        if: steps.jni-cache.outputs.cache-hit != 'true'
+        run: echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.2.12479018" >> $GITHUB_ENV
 
       - name: Setup Rust toolchain
+        if: steps.jni-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,x86_64-linux-android
 
       - name: Install cargo-ndk
+        if: steps.jni-cache.outputs.cache-hit != 'true'
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-ndk
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v4
+        if: steps.jni-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            rust/adblock-jni/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/adblock-jni/Cargo.toml', 'rust/adblock-jni/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          workspaces: rust/adblock-jni
 
       - name: Build Android JNI libraries
+        if: steps.jni-cache.outputs.cache-hit != 'true'
         working-directory: rust/adblock-jni
         run: cargo ndk -t arm64-v8a -t x86_64 -o ../../app/src/main/jniLibs build --release
 
       - name: Build host JNI library
+        if: steps.jni-cache.outputs.cache-hit != 'true'
         run: cargo build --release --manifest-path rust/adblock-jni/Cargo.toml
 
       - name: Grant execute permission for gradlew
@@ -74,7 +96,7 @@ jobs:
           fi
 
       - name: Run lint and unit tests and assemble debug APK
-        run: ./gradlew lintDebug testDebugUnitTest assembleDebug --stacktrace
+        run: ./gradlew lintDebug testDebugUnitTest assembleDebug --build-cache --stacktrace
 
       - name: Upload lint and test reports
         if: failure()
