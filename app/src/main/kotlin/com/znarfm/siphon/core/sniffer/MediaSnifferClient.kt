@@ -7,7 +7,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import com.znarfm.siphon.core.adblock.FastHostFilter
+import com.znarfm.siphon.core.adblock.AdblockEngine
 import com.znarfm.siphon.core.hls.HlsPlaylistParser
 import com.znarfm.siphon.core.network.HeadersCodec
 import com.znarfm.siphon.core.network.MetadataProber
@@ -27,17 +27,19 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.Headers
 import okhttp3.Request
+import org.json.JSONObject
 import java.util.Collections
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 class MediaSnifferClient(
-    val hostFilter: FastHostFilter,
+    val adblockEngine: AdblockEngine,
     val metadataProber: MetadataProber = MetadataProber(),
     private val dao: DownloadDao? = null,
     private val storage: DownloadStorageProvider? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-    val tabId: String = ""
+    val tabId: String = "",
+    private val onAdBlocked: ((pageUrl: String, blockedUrl: String) -> Unit)? = null
 ) : WebViewClient() {
 
     private val _detectedMedia = MutableStateFlow<List<SniffedMedia>>(emptyList())
@@ -126,10 +128,31 @@ class MediaSnifferClient(
             currentPageUrl = url
             onUrlChanged?.invoke(url)
             onNavigationStateChanged?.invoke(view?.canGoBack() == true, view?.canGoForward() == true)
-            if (hostFilter.isEnabled) {
-                val css = ".adbox, .banner_ads, .adsbox, .textads, [class*='ad-banner'], [id*='ad-container'] { display: none !important; }"
-                val js = "(function() { var el = document.getElementById('__siphon_adblock_style__'); if (!el) { el = document.createElement('style'); el.id = '__siphon_adblock_style__'; el.textContent = '$css'; (document.head || document.documentElement).appendChild(el); } })();"
-                view?.evaluateJavascript(js, null)
+            if (adblockEngine.isEnabled && !adblockEngine.isUrlAllowed(url)) {
+                val cosmetic = adblockEngine.getCosmeticResources(url)
+                val selectorRules = cosmetic.hideSelectors
+                    .asSequence()
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .chunked(200)
+                    .joinToString("\n") { chunk ->
+                        chunk.joinToString(", ") + " { display: none !important; }"
+                    }
+                val css = when {
+                    selectorRules.isNotBlank() -> selectorRules
+                    !cosmetic.generichide ->
+                        ".adbox, .banner_ads, .adsbox, .textads, [class*='ad-banner'], [id*='ad-container'] { display: none !important; }"
+                    else -> ""
+                }
+                if (css.isNotBlank()) {
+                    val quotedCss = JSONObject.quote(css)
+                    val js = "(function() { var el = document.getElementById('__siphon_adblock_style__'); if (!el) { el = document.createElement('style'); el.id = '__siphon_adblock_style__'; (document.head || document.documentElement).appendChild(el); } el.textContent = $quotedCss; })();"
+                    view?.evaluateJavascript(js, null)
+                }
+                if (cosmetic.injectedScript.isNotBlank()) {
+                    val wrappedScript = "(function() { try { ${cosmetic.injectedScript}\n} catch(e) {} })();"
+                    view?.evaluateJavascript(wrappedScript, null)
+                }
             }
             if (view != null) onWebViewPageFinished?.invoke(view, url)
         }
@@ -141,7 +164,10 @@ class MediaSnifferClient(
             onMagnetLinkClicked?.invoke(uri.toString())
             return true
         }
-        if (hostFilter.shouldBlockUri(uri)) {
+        val url = uri.toString()
+        val pageUrl = currentPageUrl.ifBlank { url }
+        if (adblockEngine.shouldBlockRequest(url, pageUrl, "main_frame")) {
+            onAdBlocked?.invoke(pageUrl, url)
             return true // Drop ad redirects / popup chains
         }
         return false
@@ -158,14 +184,52 @@ class MediaSnifferClient(
             return null
         }
 
+        val url = uri.toString()
+        val sourceUrl = currentPageUrl.ifBlank {
+            findReferer(req.requestHeaders ?: emptyMap()).orEmpty()
+        }
+        val requestType = inferRequestType(req)
+
         // 1. Drop ad network subresources immediately
-        if (hostFilter.shouldBlockUri(uri)) {
-            return hostFilter.createEmptyResponse()
+        if (adblockEngine.shouldBlockRequest(url, sourceUrl, requestType)) {
+            onAdBlocked?.invoke(sourceUrl.ifBlank { url }, url)
+            return adblockEngine.createEmptyResponse()
         }
 
         // 2. Passive sniffer: strictly return null for all non-ad requests so Chromium loads normally
-        inspectCandidateAsync(uri.toString(), req.requestHeaders)
+        inspectCandidateAsync(url, req.requestHeaders)
         return null
+    }
+
+    private fun inferRequestType(request: WebResourceRequest): String {
+        if (request.isForMainFrame) return "main_frame"
+
+        val accept = request.requestHeaders?.entries
+            ?.firstOrNull { it.key.equals("accept", ignoreCase = true) }
+            ?.value
+            ?.lowercase(Locale.ROOT)
+            .orEmpty()
+
+        when {
+            accept.contains("text/css") -> return "stylesheet"
+            accept.contains("image/") -> return "image"
+            accept.contains("application/javascript") || accept.contains("text/javascript") -> return "script"
+            accept.contains("text/html") -> return "sub_frame"
+        }
+
+        val path = request.url?.path?.lowercase(Locale.ROOT).orEmpty()
+        return when {
+            path.endsWith(".js") || path.endsWith(".mjs") -> "script"
+            path.endsWith(".css") -> "stylesheet"
+            path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".jpeg") ||
+                path.endsWith(".gif") || path.endsWith(".webp") || path.endsWith(".svg") ||
+                path.endsWith(".ico") -> "image"
+            path.endsWith(".woff") || path.endsWith(".woff2") ||
+                path.endsWith(".ttf") || path.endsWith(".otf") -> "font"
+            path.endsWith(".mp4") || path.endsWith(".webm") || path.endsWith(".m3u8") ||
+                path.endsWith(".mpd") || path.endsWith(".ts") -> "media"
+            else -> "other"
+        }
     }
 
     private fun inspectCandidateAsync(

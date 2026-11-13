@@ -266,6 +266,11 @@ class AdblockEngine(
         return shouldBlockFallback(url, urlHost)
     }
 
+    fun isUrlAllowed(url: String): Boolean {
+        val host = extractHostFromUrl(url)
+        return host.isNotEmpty() && isSiteAllowed(host)
+    }
+
     fun getCosmeticResources(url: String): CosmeticResources {
         if (!isEnabled || url.isBlank()) return CosmeticResources()
         val host = extractHostFromUrl(url)
