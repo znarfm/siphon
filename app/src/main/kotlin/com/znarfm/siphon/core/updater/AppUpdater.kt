@@ -25,8 +25,7 @@ data class ReleaseInfo(
     val releaseNotes: String,
     val apkUrl: String,
     val apkSizeBytes: Long,
-    val expectedSha256: String?,
-    val sha256AssetUrl: String? = null
+    val expectedSha256: String?
 )
 
 sealed interface UpdateState {
@@ -76,29 +75,10 @@ class AppUpdater(private val client: OkHttpClient = defaultClient()) {
                     )
                 }
 
-                var release = parseReleaseJson(body)
+                val release = parseReleaseJson(body)
                     ?: return@withContext Result.failure(
                         IllegalStateException("Latest release does not contain a valid APK asset")
                     )
-
-                if (release.expectedSha256 == null && release.sha256AssetUrl != null) {
-                    val shaRequest = Request.Builder()
-                        .url(release.sha256AssetUrl)
-                        .header("User-Agent", USER_AGENT)
-                        .get()
-                        .build()
-
-                    val shaText = runCatching {
-                        client.newCall(shaRequest).execute().use { shaResponse ->
-                            if (shaResponse.isSuccessful) shaResponse.body?.string() else null
-                        }
-                    }.getOrNull()
-
-                    val parsedSha = shaText?.let(::parseSha256Text)
-                    if (parsedSha != null) {
-                        release = release.copy(expectedSha256 = parsedSha)
-                    }
-                }
 
                 if (isNewerVersion(release.versionName, currentVersion)) {
                     Result.success(release)
@@ -117,7 +97,7 @@ class AppUpdater(private val client: OkHttpClient = defaultClient()) {
         release: ReleaseInfo,
         onProgress: (Int, Long, Long) -> Unit
     ): Result<Pair<File, String>> = withContext(Dispatchers.IO) {
-        val expectedSha256 = parseSha256Text(release.expectedSha256.orEmpty())
+        val expectedSha256 = normalizeSha256Hex(release.expectedSha256)
         if (expectedSha256 == null) {
             return@withContext Result.failure(
                 IllegalStateException("Release is missing a valid SHA-256 checksum; aborting update for security.")
@@ -249,7 +229,7 @@ class AppUpdater(private val client: OkHttpClient = defaultClient()) {
         const val AUTHOR_GITHUB_URL = "https://github.com/znarfm"
         private const val USER_AGENT = "Siphon-Android"
         private const val DEFAULT_BUFFER_SIZE = 16 * 1024
-        private val SHA256_REGEX = Regex("\\b([0-9a-fA-F]{64})\\b")
+        private val SHA256_HEX_REGEX = Regex("^[0-9a-fA-F]{64}$")
 
         private fun defaultClient(): OkHttpClient {
             return OkHttpClient.Builder()
@@ -301,7 +281,6 @@ class AppUpdater(private val client: OkHttpClient = defaultClient()) {
             var apkUrl: String? = null
             var apkSizeBytes = 0L
             var expectedSha256: String? = null
-            var sha256AssetUrl: String? = null
 
             for (item in assets) {
                 val asset = item as? Map<*, *> ?: continue
@@ -311,18 +290,15 @@ class AppUpdater(private val client: OkHttpClient = defaultClient()) {
 
                 val isApk = name.endsWith(".apk", ignoreCase = true) ||
                     downloadUrl.endsWith(".apk", ignoreCase = true)
-                val isSha256 = name.endsWith(".sha256", ignoreCase = true) ||
-                    downloadUrl.endsWith(".sha256", ignoreCase = true)
 
                 if (isApk && apkUrl == null) {
                     apkUrl = downloadUrl
                     apkSizeBytes = (asset["size"] as? Number)?.toLong() ?: 0L
                     val digest = asset["digest"] as? String
                     if (digest != null && digest.startsWith("sha256:", ignoreCase = true)) {
-                        expectedSha256 = parseSha256Text(digest.substringAfter(':'))
+                        expectedSha256 = normalizeSha256Hex(digest.substringAfter(':'))
                     }
-                } else if (isSha256 && sha256AssetUrl == null) {
-                    sha256AssetUrl = downloadUrl
+                    break
                 }
             }
 
@@ -336,13 +312,13 @@ class AppUpdater(private val client: OkHttpClient = defaultClient()) {
                 releaseNotes = releaseNotes,
                 apkUrl = apkUrl,
                 apkSizeBytes = apkSizeBytes,
-                expectedSha256 = expectedSha256,
-                sha256AssetUrl = sha256AssetUrl
+                expectedSha256 = expectedSha256
             )
         }
 
-        internal fun parseSha256Text(text: String): String? {
-            return SHA256_REGEX.find(text)?.groupValues?.get(1)?.lowercase()
+        internal fun normalizeSha256Hex(hex: String?): String? {
+            val trimmed = hex?.trim() ?: return null
+            return if (SHA256_HEX_REGEX.matches(trimmed)) trimmed.lowercase() else null
         }
 
         internal fun sha256Hex(file: File): String {
