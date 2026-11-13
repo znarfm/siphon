@@ -82,7 +82,6 @@ fun QueueScreen(
     workersPerDownload: Int,
     bandwidthLimitBytes: Long = 0L,
     isWifiOnly: Boolean = false,
-    customDownloadUri: String? = null,
     selectedFilter: QueueFilter = QueueFilter.ALL,
     onSelectFilter: (QueueFilter) -> Unit = {},
     selectedSort: QueueSortOption = QueueSortOption.DATE_DESC,
@@ -100,7 +99,6 @@ fun QueueScreen(
     onCancel: (Long) -> Unit,
     onDelete: (downloadId: Long, deleteFile: Boolean) -> Unit,
     onRebind: (DownloadEntity) -> Unit,
-    onSaveSettings: (maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean, customDownloadUri: String?) -> Unit,
     onClearCompleted: () -> Unit,
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit,
@@ -108,6 +106,7 @@ fun QueueScreen(
     onRename: (Long, String) -> Unit,
     onBulkDelete: (List<Long>, Boolean) -> Unit,
     onBulkCancel: (List<Long>) -> Unit,
+    onOpenDownloadSettings: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
     downloadFilesMap: Map<Long, List<DownloadFileEntity>>? = null,
     modifier: Modifier = Modifier
@@ -134,7 +133,6 @@ fun QueueScreen(
     }
 
 
-    var showSettingsDialog by remember { mutableStateOf(false) }
     var pendingDeleteDownload by remember { mutableStateOf<DownloadEntity?>(null) }
     var pendingRenameDownload by remember { mutableStateOf<DownloadEntity?>(null) }
     var renameInput by remember { mutableStateOf("") }
@@ -300,7 +298,7 @@ fun QueueScreen(
                                 contentDescription = "Search downloads"
                             )
                         }
-                        IconButton(onClick = { showSettingsDialog = true }) {
+                        IconButton(onClick = onOpenDownloadSettings) {
                             Icon(
                                 imageVector = Icons.Rounded.Settings,
                                 contentDescription = "Download settings"
@@ -681,21 +679,6 @@ fun QueueScreen(
                         Text("Records Only")
                     }
                 }
-            }
-        )
-    }
-
-    if (showSettingsDialog) {
-        ConcurrencySettingsDialog(
-            currentMaxDownloads = maxConcurrentDownloads,
-            currentWorkers = workersPerDownload,
-            currentBandwidthLimit = bandwidthLimitBytes,
-            currentWifiOnly = isWifiOnly,
-            currentCustomDownloadUri = customDownloadUri,
-            onDismiss = { showSettingsDialog = false },
-            onConfirm = { maxD, w, limit, wifi, customUri ->
-                onSaveSettings(maxD, w, limit, wifi, customUri)
-                showSettingsDialog = false
             }
         )
     }
