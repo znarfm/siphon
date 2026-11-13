@@ -181,12 +181,12 @@ fun BrowserBottomOmnibox(
 
                             while (true) {
                                 val event = awaitPointerEvent()
-                                if (event.type == PointerEventType.Cancel) {
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change == null) {
                                     wasCancelled = true
                                     break
                                 }
-                                val change = event.changes.firstOrNull { it.id == down.id }
-                                if (change == null || !change.pressed) {
+                                if (!change.pressed) {
                                     break
                                 }
                                 val delta = change.positionChange()
