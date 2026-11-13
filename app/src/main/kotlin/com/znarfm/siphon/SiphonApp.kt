@@ -6,7 +6,7 @@ import android.app.NotificationManager
 import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import com.znarfm.siphon.core.adblock.FastHostFilter
+import com.znarfm.siphon.core.adblock.AdblockEngine
 import com.znarfm.siphon.core.storage.DownloadStorageProvider
 import com.znarfm.siphon.data.db.SiphonDatabase
 import com.znarfm.siphon.data.repository.BrowserRepository
@@ -23,10 +23,8 @@ class AppContainer(val application: Application) {
         DownloadStorageProvider(application)
     }
 
-    val fastHostFilter: FastHostFilter by lazy {
-        FastHostFilter().apply {
-            loadFromAssets(application)
-        }
+    val adblockEngine: AdblockEngine by lazy {
+        AdblockEngine()
     }
 
     val downloadRepository: DownloadRepository by lazy {
@@ -41,7 +39,7 @@ class AppContainer(val application: Application) {
         BrowserRepository(
             application = application,
             browserDao = database.browserDao(),
-            hostFilter = fastHostFilter
+            adblockEngine = adblockEngine
         )
     }
 
