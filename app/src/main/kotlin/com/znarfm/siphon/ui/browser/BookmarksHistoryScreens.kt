@@ -13,15 +13,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -37,8 +36,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -46,8 +48,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,6 +58,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -120,6 +121,7 @@ fun BookmarksScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             SearchableTopAppBar(
@@ -205,6 +207,7 @@ private fun BookmarkItemRow(
         tonalElevation = 1.dp,
         modifier = Modifier
             .fillMaxWidth()
+            .clip(ExpressiveShapeTokens.RestingCardShape)
             .clickable(onClick = onOpen)
     ) {
         Row(
@@ -214,7 +217,7 @@ private fun BookmarkItemRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = CircleShape,
+                shape = ExpressiveShapeTokens.PillShape,
                 color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(40.dp)
             ) {
@@ -405,6 +408,7 @@ fun HistoryScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             SearchableTopAppBar(
                 title = "History",
@@ -427,11 +431,18 @@ fun HistoryScreen(
                 },
                 extraActions = {
                     if (history.isNotEmpty()) {
-                        TextButton(onClick = { showClearConfirmDialog = true }) {
+                        FilledTonalButton(
+                            onClick = { showClearConfirmDialog = true },
+                            shape = ExpressiveShapeTokens.PillShape,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
                             Text(
                                 text = "Clear",
-                                color = MaterialTheme.colorScheme.error,
-                                fontWeight = FontWeight.Bold
+                                style = MaterialTheme.typography.labelLarge
                             )
                         }
                     }
@@ -492,6 +503,7 @@ private fun HistoryItemRow(
         tonalElevation = 1.dp,
         modifier = Modifier
             .fillMaxWidth()
+            .clip(ExpressiveShapeTokens.RestingCardShape)
             .clickable(onClick = onOpen)
     ) {
         Row(
@@ -501,13 +513,13 @@ private fun HistoryItemRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = CircleShape,
+                shape = ExpressiveShapeTokens.PillShape,
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 modifier = Modifier.size(40.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = Icons.Rounded.Bookmark,
+                        imageVector = Icons.Rounded.History,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.size(18.dp)
@@ -533,13 +545,19 @@ private fun HistoryItemRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = formattedTime,
-                    style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle),
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1
-                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Surface(
+                    shape = ExpressiveShapeTokens.PillShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Text(
+                        text = formattedTime,
+                        style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle),
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
             }
 
             IconButton(onClick = onDelete) {
@@ -573,63 +591,89 @@ private fun SearchableTopAppBar(
         }
     }
 
-    TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        navigationIcon = {
-            IconButton(onClick = onBack) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 3.dp,
+        shape = ExpressiveShapeTokens.HeaderSheetShape,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilledTonalIconButton(
+                onClick = onBack,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                )
+            ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                     contentDescription = "Back"
                 )
             }
-        },
-        title = {
+
             if (isSearching) {
-                BasicTextField(
-                    value = searchQuery,
-                    onValueChange = onSearchQueryChange,
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                Surface(
+                    shape = ExpressiveShapeTokens.PillShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester)
+                        .weight(1f)
+                        .height(44.dp)
                         .graphicsLayer {
                             val s = 1f - (searchBackProgress * 0.08f)
                             scaleX = s
                             scaleY = s
                             alpha = 1f - (searchBackProgress * 0.85f)
                             translationX = searchBackProgress * 16.dp.toPx()
-                        },
-                    decorationBox = { innerTextField ->
-                        Box(contentAlignment = Alignment.CenterStart) {
-                            if (searchQuery.isEmpty()) {
-                                Text(
-                                    text = searchPlaceholder,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            innerTextField()
                         }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = onSearchQueryChange,
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(focusRequester),
+                            decorationBox = { innerTextField ->
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (searchQuery.isEmpty()) {
+                                        Text(
+                                            text = searchPlaceholder,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            }
+                        )
                     }
-                )
-            } else {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        },
-        actions = {
-            if (isSearching) {
-                IconButton(
+                }
+
+                FilledTonalIconButton(
                     onClick = {
                         if (searchQuery.isNotEmpty()) {
                             onSearchQueryChange("")
@@ -637,6 +681,10 @@ private fun SearchableTopAppBar(
                             onToggleSearch()
                         }
                     },
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
                     modifier = Modifier.graphicsLayer {
                         val s = 1f - (searchBackProgress * 0.2f)
                         scaleX = s
@@ -650,16 +698,35 @@ private fun SearchableTopAppBar(
                     )
                 }
             } else {
-                IconButton(onClick = onToggleSearch) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 4.dp)
+                )
+
+                FilledTonalIconButton(
+                    onClick = onToggleSearch,
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                ) {
                     Icon(
                         imageVector = Icons.Rounded.Search,
                         contentDescription = "Search"
                     )
                 }
+
                 extraActions()
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -675,7 +742,7 @@ private fun EmptyStateView(
         verticalArrangement = Arrangement.Center
     ) {
         Surface(
-            shape = CircleShape,
+            shape = ExpressiveShapeTokens.ActiveCardShape,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.size(64.dp)
         ) {
