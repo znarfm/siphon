@@ -88,6 +88,7 @@ import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.HistoryEntity
 import com.znarfm.siphon.ui.theme.AppColorSeed
 import com.znarfm.siphon.ui.theme.AppThemeMode
+import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import kotlinx.coroutines.CancellationException
 
 private const val DARK_MODE_INJECT_JS = """
@@ -188,6 +189,7 @@ fun BrowserScreen(
     activeDownloadCount: Int = 0,
     isAdBlockEnabled: Boolean,
     rebindTarget: DownloadEntity?,
+    isScreenActive: Boolean = true,
     isBarsVisible: Boolean = true,
     isWebDarkMode: Boolean = false,
     isDesktopMode: Boolean = false,
@@ -437,7 +439,7 @@ fun BrowserScreen(
         }
     }
 
-    BackHandler(enabled = customVideoView != null) {
+    BackHandler(enabled = isScreenActive && customVideoView != null) {
         customViewCallback?.onCustomViewHidden()
         customVideoView = null
         customViewCallback = null
@@ -445,7 +447,13 @@ fun BrowserScreen(
 
     var backGestureProgress by remember { mutableFloatStateOf(0f) }
 
-    PredictiveBackHandler(enabled = isOmniboxFocused || isFindInPageOpen || canGoBack) { progress ->
+    LaunchedEffect(isScreenActive) {
+        if (!isScreenActive) {
+            backGestureProgress = 0f
+        }
+    }
+
+    PredictiveBackHandler(enabled = isScreenActive && (isOmniboxFocused || isFindInPageOpen || canGoBack)) { progress ->
         try {
             progress.collect { backEvent ->
                 backGestureProgress = backEvent.progress
@@ -486,9 +494,10 @@ fun BrowserScreen(
             if (rebindTarget != null) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                    shape = RoundedCornerShape(0.dp),
+                    shape = ExpressiveShapeTokens.ActiveCardShape,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
                         .zIndex(2f)
                 ) {
                     Row(
@@ -530,11 +539,21 @@ fun BrowserScreen(
                 }
             }
 
+            val findBackProgress = if (!isOmniboxFocused && isFindInPageOpen) backGestureProgress else 0f
+
             AnimatedVisibility(
                 visible = isFindInPageOpen && !isNewTab,
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut(),
-                modifier = Modifier.zIndex(2f)
+                modifier = Modifier
+                    .zIndex(2f)
+                    .graphicsLayer {
+                        val s = 1f - (findBackProgress * 0.05f)
+                        scaleX = s
+                        scaleY = s
+                        alpha = 1f - (findBackProgress * 0.45f)
+                        translationY = -findBackProgress * 16.dp.toPx()
+                    }
             ) {
                 FindInPageBar(
                     query = findQuery,
@@ -569,7 +588,8 @@ fun BrowserScreen(
                     .fillMaxWidth()
                     .background(Color(webViewBgArgb))
                     .graphicsLayer {
-                        val s = 1f - (backGestureProgress * 0.04f)
+                        val webBackProgress = if (!isOmniboxFocused && !isFindInPageOpen) backGestureProgress else 0f
+                        val s = 1f - (webBackProgress * 0.04f)
                         scaleX = s
                         scaleY = s
                     }
@@ -956,10 +976,20 @@ fun BrowserScreen(
 
         // Fullscreen Omnibox Search Overlay
         if (isOmniboxFocused) {
+            val omniboxBackProgress = backGestureProgress
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .zIndex(30f)
+                    .graphicsLayer {
+                        val s = 1f - (omniboxBackProgress * 0.08f)
+                        scaleX = s
+                        scaleY = s
+                        alpha = 1f - (omniboxBackProgress * 0.25f)
+                        translationY = omniboxBackProgress * 24.dp.toPx()
+                        shape = RoundedCornerShape((omniboxBackProgress * 28f).dp)
+                        clip = omniboxBackProgress > 0f
+                    }
             ) {
                 OmniboxSearchOverlay(
                     urlTextFieldValue = urlTextFieldValue,

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,9 +34,12 @@ import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -45,11 +49,15 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
+import com.znarfm.siphon.ui.theme.TabularNumberStyle
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowserMenuSheet(
     isMenuOpen: Boolean,
@@ -89,36 +97,46 @@ fun BrowserMenuSheet(
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
-        dragHandle = null
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = 12.dp)
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Top Quick-Action Icon Row
+            // Connected Expressive Quick-Action Button Group
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                shape = ExpressiveShapeTokens.RestingCardShape,
+                tonalElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
+                    val actionColors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    FilledTonalIconButton(
                         onClick = {
                             onDismissRequest()
                             onBack()
                         },
-                        enabled = canGoBack
+                        enabled = canGoBack,
+                        shape = ExpressiveShapeTokens.PillShape,
+                        colors = actionColors,
+                        modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
@@ -126,12 +144,15 @@ fun BrowserMenuSheet(
                         )
                     }
 
-                    IconButton(
+                    FilledTonalIconButton(
                         onClick = {
                             onDismissRequest()
                             onForward()
                         },
-                        enabled = canGoForward
+                        enabled = canGoForward,
+                        shape = ExpressiveShapeTokens.PillShape,
+                        colors = actionColors,
+                        modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
@@ -139,24 +160,34 @@ fun BrowserMenuSheet(
                         )
                     }
 
-                    IconButton(
+                    FilledTonalIconButton(
                         onClick = {
                             onDismissRequest()
                             onToggleBookmark()
-                        }
+                        },
+                        shape = ExpressiveShapeTokens.PillShape,
+                        colors = if (isBookmarked) {
+                            IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        } else actionColors,
+                        modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
                             imageVector = if (isBookmarked) Icons.Rounded.Star else Icons.Outlined.StarBorder,
-                            contentDescription = if (isBookmarked) "Remove bookmark" else "Bookmark",
-                            tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            contentDescription = if (isBookmarked) "Remove bookmark" else "Bookmark"
                         )
                     }
 
-                    IconButton(
+                    FilledTonalIconButton(
                         onClick = {
                             onDismissRequest()
                             onShare()
-                        }
+                        },
+                        shape = ExpressiveShapeTokens.PillShape,
+                        colors = actionColors,
+                        modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Share,
@@ -164,11 +195,14 @@ fun BrowserMenuSheet(
                         )
                     }
 
-                    IconButton(
+                    FilledTonalIconButton(
                         onClick = {
                             onDismissRequest()
                             onOpenPageInfo()
-                        }
+                        },
+                        shape = ExpressiveShapeTokens.PillShape,
+                        colors = actionColors,
+                        modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Info,
@@ -176,11 +210,14 @@ fun BrowserMenuSheet(
                         )
                     }
 
-                    IconButton(
+                    FilledTonalIconButton(
                         onClick = {
                             onDismissRequest()
                             onReloadOrStop()
-                        }
+                        },
+                        shape = ExpressiveShapeTokens.PillShape,
+                        colors = actionColors,
+                        modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
                             imageVector = if (isLoading) Icons.Rounded.Close else Icons.Rounded.Refresh,
@@ -190,157 +227,213 @@ fun BrowserMenuSheet(
                 }
             }
 
-            // Tab & Navigation Items
-            BrowserMenuItemRow(
-                icon = Icons.Rounded.Add,
-                title = "New tab",
-                onClick = {
-                    onDismissRequest()
-                    onNewTab()
+            // Tabs Group Card
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = ExpressiveShapeTokens.RestingCardShape,
+                tonalElevation = 1.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(ExpressiveShapeTokens.RestingCardShape)
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    BrowserMenuItemRow(
+                        icon = Icons.Rounded.Add,
+                        title = "New tab",
+                        onClick = {
+                            onDismissRequest()
+                            onNewTab()
+                        }
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    BrowserMenuItemRow(
+                        icon = Icons.Rounded.PrivacyTip,
+                        title = "New incognito tab",
+                        onClick = {
+                            onDismissRequest()
+                            onNewIncognitoTab()
+                        }
+                    )
                 }
-            )
+            }
 
-            BrowserMenuItemRow(
-                icon = Icons.Rounded.PrivacyTip,
-                title = "New incognito tab",
-                onClick = {
-                    onDismissRequest()
-                    onNewIncognitoTab()
+            // Library & Tools Group Card
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = ExpressiveShapeTokens.RestingCardShape,
+                tonalElevation = 1.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(ExpressiveShapeTokens.RestingCardShape)
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    BrowserMenuItemRow(
+                        icon = Icons.Rounded.Star,
+                        title = "Bookmarks",
+                        onClick = {
+                            onDismissRequest()
+                            onOpenBookmarks()
+                        }
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    BrowserMenuItemRow(
+                        icon = Icons.Rounded.History,
+                        title = "History",
+                        onClick = {
+                            onDismissRequest()
+                            onOpenHistory()
+                        }
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    BrowserMenuItemRow(
+                        icon = Icons.Rounded.Download,
+                        title = "Downloads",
+                        onClick = {
+                            onDismissRequest()
+                            onOpenDownloads()
+                        },
+                        trailingContent = if (activeDownloadCount > 0) {
+                            {
+                                Badge(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                ) {
+                                    Text(
+                                        text = activeDownloadCount.toString(),
+                                        style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        } else null
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    BrowserMenuItemRow(
+                        icon = Icons.Rounded.FindInPage,
+                        title = "Find in page",
+                        onClick = {
+                            onDismissRequest()
+                            onOpenFindInPage()
+                        }
+                    )
                 }
-            )
+            }
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-            BrowserMenuItemRow(
-                icon = Icons.Rounded.Star,
-                title = "Bookmarks",
-                onClick = {
-                    onDismissRequest()
-                    onOpenBookmarks()
-                }
-            )
-
-            BrowserMenuItemRow(
-                icon = Icons.Rounded.History,
-                title = "History",
-                onClick = {
-                    onDismissRequest()
-                    onOpenHistory()
-                }
-            )
-
-            BrowserMenuItemRow(
-                icon = Icons.Rounded.Download,
-                title = "Downloads",
-                onClick = {
-                    onDismissRequest()
-                    onOpenDownloads()
-                },
-                trailingContent = if (activeDownloadCount > 0) {
-                    {
-                        Badge(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ) {
-                            Text(
-                                text = activeDownloadCount.toString(),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+            // Page & Shield Toggles Group Card
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = ExpressiveShapeTokens.RestingCardShape,
+                tonalElevation = 1.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(ExpressiveShapeTokens.RestingCardShape)
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    BrowserMenuItemRow(
+                        icon = Icons.Rounded.DarkMode,
+                        title = "Web Dark Mode",
+                        onClick = onToggleWebDarkMode,
+                        trailingContent = {
+                            Switch(
+                                checked = isWebDarkMode,
+                                onCheckedChange = { onToggleWebDarkMode() }
                             )
                         }
-                    }
-                } else null
-            )
-
-            BrowserMenuItemRow(
-                icon = Icons.Rounded.FindInPage,
-                title = "Find in page",
-                onClick = {
-                    onDismissRequest()
-                    onOpenFindInPage()
-                }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-            // Toggles
-            BrowserMenuItemRow(
-                icon = Icons.Rounded.DarkMode,
-                title = "Web Dark Mode",
-                onClick = onToggleWebDarkMode,
-                trailingContent = {
-                    Switch(
-                        checked = isWebDarkMode,
-                        onCheckedChange = { onToggleWebDarkMode() }
                     )
-                }
-            )
-
-            BrowserMenuItemRow(
-                icon = Icons.Rounded.DesktopWindows,
-                title = "Desktop site",
-                onClick = onToggleDesktopMode,
-                trailingContent = {
-                    Switch(
-                        checked = isDesktopMode,
-                        onCheckedChange = { onToggleDesktopMode() }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
-                }
-            )
-
-            BrowserMenuItemRow(
-                icon = Icons.Rounded.Shield,
-                title = "Ad Blocker",
-                onClick = onToggleAdBlock,
-                trailingContent = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (tabBlockedCount > 0) {
-                            Surface(
-                                shape = RoundedCornerShape(50),
-                                color = MaterialTheme.colorScheme.secondaryContainer
+                    BrowserMenuItemRow(
+                        icon = Icons.Rounded.DesktopWindows,
+                        title = "Desktop site",
+                        onClick = onToggleDesktopMode,
+                        trailingContent = {
+                            Switch(
+                                checked = isDesktopMode,
+                                onCheckedChange = { onToggleDesktopMode() }
+                            )
+                        }
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    BrowserMenuItemRow(
+                        icon = Icons.Rounded.Shield,
+                        title = "Ad Blocker",
+                        onClick = onToggleAdBlock,
+                        trailingContent = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(
-                                    text = "$tabBlockedCount blocked",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                if (tabBlockedCount > 0) {
+                                    Surface(
+                                        shape = ExpressiveShapeTokens.PillShape,
+                                        color = MaterialTheme.colorScheme.secondaryContainer
+                                    ) {
+                                        Text(
+                                            text = "$tabBlockedCount blocked",
+                                            style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle),
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                                AssistChip(
+                                    onClick = {
+                                        onDismissRequest()
+                                        onOpenAdblockDialog()
+                                    },
+                                    shape = ExpressiveShapeTokens.PillShape,
+                                    label = {
+                                        Text(
+                                            text = "$adblockRuleCount rules",
+                                            style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle)
+                                        )
+                                    }
+                                )
+                                Switch(
+                                    checked = isAdBlockEnabled,
+                                    onCheckedChange = { onToggleAdBlock() }
                                 )
                             }
                         }
-                        AssistChip(
-                            onClick = {
-                                onDismissRequest()
-                                onOpenAdblockDialog()
-                            },
-                            label = {
-                                Text(
-                                    text = "$adblockRuleCount rules",
-                                    fontSize = 11.sp
-                                )
-                            }
-                        )
-                        Switch(
-                            checked = isAdBlockEnabled,
-                            onCheckedChange = { onToggleAdBlock() }
-                        )
+                    )
+                }
+            }
+
+            // Settings Pill Card
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = ExpressiveShapeTokens.PillShape,
+                tonalElevation = 1.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(ExpressiveShapeTokens.PillShape)
+            ) {
+                BrowserMenuItemRow(
+                    icon = Icons.Rounded.Settings,
+                    title = "Settings",
+                    onClick = {
+                        onDismissRequest()
+                        onOpenSettings()
                     }
-                }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-            BrowserMenuItemRow(
-                icon = Icons.Rounded.Settings,
-                title = "Settings",
-                onClick = {
-                    onDismissRequest()
-                    onOpenSettings()
-                }
-            )
+                )
+            }
         }
     }
 }
@@ -356,7 +449,7 @@ private fun BrowserMenuItemRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 18.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(

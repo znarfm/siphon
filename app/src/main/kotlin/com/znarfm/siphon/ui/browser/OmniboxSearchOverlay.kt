@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -30,9 +29,10 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -48,8 +48,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -62,6 +65,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.znarfm.siphon.data.db.BookmarkEntity
 import com.znarfm.siphon.data.db.HistoryEntity
+import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
+import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import java.net.URLEncoder
 
 private enum class OmniboxFilter(val label: String) {
@@ -137,53 +142,58 @@ fun OmniboxSearchOverlay(
     }
 
     Surface(
-        color = MaterialTheme.colorScheme.surface,
+        color = MaterialTheme.colorScheme.background,
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
             .imePadding()
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top Omnibox Input Row
+            // Top Expressive Omnibox Input Row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                IconButton(
+                FilledTonalIconButton(
                     onClick = onDismiss,
-                    modifier = Modifier.size(40.dp)
+                    shape = ExpressiveShapeTokens.PillShape,
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Close search",
-                        tint = MaterialTheme.colorScheme.onSurface
+                        contentDescription = "Close search"
                     )
                 }
 
                 Surface(
-                    shape = CircleShape,
+                    shape = ExpressiveShapeTokens.PillShape,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 2.dp,
                     modifier = Modifier
                         .weight(1f)
-                        .height(46.dp)
+                        .height(50.dp)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 14.dp),
+                            .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Search,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
 
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
 
                         Box(
                             modifier = Modifier.weight(1f),
@@ -192,7 +202,7 @@ fun OmniboxSearchOverlay(
                             if (urlTextFieldValue.text.isEmpty()) {
                                 Text(
                                     text = "Search or type URL",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -200,7 +210,7 @@ fun OmniboxSearchOverlay(
                                 value = urlTextFieldValue,
                                 onValueChange = onUrlChange,
                                 singleLine = true,
-                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
                                     color = MaterialTheme.colorScheme.onSurface
                                 ),
                                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -223,7 +233,7 @@ fun OmniboxSearchOverlay(
                         if (urlTextFieldValue.text.isNotEmpty()) {
                             IconButton(
                                 onClick = { onUrlChange(TextFieldValue("")) },
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(30.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Close,
@@ -251,6 +261,7 @@ fun OmniboxSearchOverlay(
                             val target = sanitizeUrl(clipboardText, searchEngineBase)
                             onSubmitUrl(target)
                         },
+                        shape = ExpressiveShapeTokens.PillShape,
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.ContentPaste,
@@ -261,9 +272,9 @@ fun OmniboxSearchOverlay(
                         label = {
                             Text(
                                 text = "Paste & Go: $clipboardText",
+                                style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontSize = 12.sp
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     )
@@ -295,7 +306,7 @@ fun OmniboxSearchOverlay(
                             label = {
                                 Text(
                                     text = filter.label + countSuffix,
-                                    fontSize = 12.sp,
+                                    style = MaterialTheme.typography.labelMedium.merge(TabularNumberStyle),
                                     maxLines = 1
                                 )
                             }
@@ -317,14 +328,12 @@ fun OmniboxSearchOverlay(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "Clear All",
-                            fontSize = 12.sp,
+                            style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.error
                         )
                     }
                 }
             }
-
-            HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
 
             // Matching Bookmarks & History List
             if (matchedBookmarks.isEmpty() && matchedHistory.isEmpty()) {
@@ -345,12 +354,15 @@ fun OmniboxSearchOverlay(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
-                    contentPadding = PaddingValues(vertical = 4.dp)
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(matchedBookmarks, key = { "bm_${it.id}" }) { bookmark ->
-                        OmniboxSuggestionRow(
+                        OmniboxSuggestionCard(
                             icon = Icons.Rounded.Star,
-                            iconTint = MaterialTheme.colorScheme.primary,
+                            iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            shape = ExpressiveShapeTokens.ActiveCardShape,
                             title = bookmark.title,
                             url = bookmark.url,
                             onSelect = { onSelectUrl(bookmark.url) },
@@ -359,9 +371,11 @@ fun OmniboxSearchOverlay(
                     }
 
                     items(matchedHistory, key = { "hi_${it.id}" }) { entry ->
-                        OmniboxSuggestionRow(
+                        OmniboxSuggestionCard(
                             icon = Icons.Rounded.History,
                             iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            iconContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = ExpressiveShapeTokens.RestingCardShape,
                             title = entry.title,
                             url = entry.url,
                             onSelect = { onSelectUrl(entry.url) },
@@ -375,57 +389,77 @@ fun OmniboxSearchOverlay(
 }
 
 @Composable
-private fun OmniboxSuggestionRow(
+private fun OmniboxSuggestionCard(
     icon: ImageVector,
-    iconTint: androidx.compose.ui.graphics.Color,
+    iconTint: Color,
+    iconContainerColor: Color,
+    shape: Shape,
     title: String,
     url: String,
     onSelect: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Row(
+    Surface(
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
         modifier = Modifier
             .fillMaxWidth()
+            .clip(shape)
             .clickable(onClick = onSelect)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = iconTint,
-            modifier = Modifier.size(20.dp)
-        )
-
-        Spacer(modifier = Modifier.width(14.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title.ifBlank { url },
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = url,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        IconButton(
-            onClick = onDelete,
-            modifier = Modifier.size(32.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Close,
-                contentDescription = "Remove entry",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp)
-            )
+            Surface(
+                shape = ExpressiveShapeTokens.ActiveCardShape,
+                color = iconContainerColor,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title.ifBlank { url },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = url,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Remove entry",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }
