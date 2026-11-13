@@ -55,11 +55,11 @@ class AppUpdaterTest {
         )
         assertEquals(12345678L, release.apkSizeBytes)
         assertEquals(sampleDigest, release.expectedSha256)
-        assertNull(release.sha256AssetUrl)
     }
 
     @Test
-    fun parseReleaseJson_fallsBackToSha256AssetUrl() {
+    fun parseReleaseJson_normalizesUppercaseDigestSha256() {
+        val hexUpper = "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789"
         val json = """
             {
               "tag_name": "v0.4.0",
@@ -69,12 +69,8 @@ class AppUpdaterTest {
                 {
                   "name": "app-release.apk",
                   "size": 9876543,
+                  "digest": "SHA256:$hexUpper",
                   "browser_download_url": "https://github.com/znarfm/siphon/releases/download/v0.4.0/app-release.apk"
-                },
-                {
-                  "name": "app-release.apk.sha256",
-                  "size": 82,
-                  "browser_download_url": "https://github.com/znarfm/siphon/releases/download/v0.4.0/app-release.apk.sha256"
                 }
               ]
             }
@@ -83,22 +79,49 @@ class AppUpdaterTest {
         val release = AppUpdater.parseReleaseJson(json)
         assertNotNull(release)
         release!!
-        assertEquals("0.4.0", release.versionName)
-        assertNull(release.expectedSha256)
-        assertEquals(
-            "https://github.com/znarfm/siphon/releases/download/v0.4.0/app-release.apk.sha256",
-            release.sha256AssetUrl
-        )
+        assertEquals(hexUpper.lowercase(), release.expectedSha256)
     }
 
     @Test
-    fun parseSha256Text_handlesSha256SumFormatAndBareHex() {
-        val hexUpper = "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789"
-        val hexLower = hexUpper.lowercase()
+    fun parseReleaseJson_returnsNullExpectedSha256WhenDigestMissingOrInvalid() {
+        val missingDigestJson = """
+            {
+              "tag_name": "v0.4.0",
+              "html_url": "https://github.com/znarfm/siphon/releases/tag/v0.4.0",
+              "body": "Release notes",
+              "assets": [
+                {
+                  "name": "app-release.apk",
+                  "size": 9876543,
+                  "browser_download_url": "https://github.com/znarfm/siphon/releases/download/v0.4.0/app-release.apk"
+                }
+              ]
+            }
+        """.trimIndent()
 
-        assertEquals(hexLower, AppUpdater.parseSha256Text("$hexUpper  app-release.apk\n"))
-        assertEquals(hexLower, AppUpdater.parseSha256Text("  $hexLower  "))
-        assertNull(AppUpdater.parseSha256Text("not-a-valid-sha256"))
+        val missingRelease = AppUpdater.parseReleaseJson(missingDigestJson)
+        assertNotNull(missingRelease)
+        assertNull(missingRelease!!.expectedSha256)
+
+        val invalidDigestJson = """
+            {
+              "tag_name": "v0.4.0",
+              "html_url": "https://github.com/znarfm/siphon/releases/tag/v0.4.0",
+              "body": "Release notes",
+              "assets": [
+                {
+                  "name": "app-release.apk",
+                  "size": 9876543,
+                  "digest": "sha256:not-a-valid-sha256",
+                  "browser_download_url": "https://github.com/znarfm/siphon/releases/download/v0.4.0/app-release.apk"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val invalidRelease = AppUpdater.parseReleaseJson(invalidDigestJson)
+        assertNotNull(invalidRelease)
+        assertNull(invalidRelease!!.expectedSha256)
     }
 
     @Test
