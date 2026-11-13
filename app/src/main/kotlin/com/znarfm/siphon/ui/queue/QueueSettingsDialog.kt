@@ -42,8 +42,9 @@ fun ConcurrencySettingsDialog(
     currentWorkers: Int,
     currentBandwidthLimit: Long = 0L,
     currentWifiOnly: Boolean = false,
+    currentCustomDownloadUri: String? = null,
     onDismiss: () -> Unit,
-    onConfirm: (maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean) -> Unit
+    onConfirm: (maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean, customDownloadUri: String?) -> Unit
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("siphon_prefs", Context.MODE_PRIVATE) }
@@ -52,8 +53,8 @@ fun ConcurrencySettingsDialog(
     var workers by remember { mutableIntStateOf(currentWorkers) }
     var bandwidthMb by remember { mutableIntStateOf((currentBandwidthLimit / (1024 * 1024)).toInt().coerceIn(0, 50)) }
     var wifiOnly by remember { mutableStateOf(currentWifiOnly) }
-    var customUri by remember {
-        mutableStateOf(prefs.getString("pref_custom_download_uri", null))
+    var customUri by remember(currentCustomDownloadUri) {
+        mutableStateOf(currentCustomDownloadUri ?: prefs.getString("pref_custom_download_uri", null))
     }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
@@ -179,14 +180,7 @@ fun ConcurrencySettingsDialog(
             Button(
                 onClick = {
                     val limitBytes = if (bandwidthMb <= 0) 0L else bandwidthMb * 1024L * 1024L
-                    prefs.edit().apply {
-                        if (customUri != null) {
-                            putString("pref_custom_download_uri", customUri)
-                        } else {
-                            remove("pref_custom_download_uri")
-                        }
-                    }.apply()
-                    onConfirm(maxD, workers, limitBytes, wifiOnly)
+                    onConfirm(maxD, workers, limitBytes, wifiOnly, customUri)
                 }
             ) {
                 Text("Save")

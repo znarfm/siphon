@@ -78,6 +78,7 @@ fun QueueScreen(
     workersPerDownload: Int,
     bandwidthLimitBytes: Long = 0L,
     isWifiOnly: Boolean = false,
+    customDownloadUri: String? = null,
     selectedFilter: QueueFilter = QueueFilter.ALL,
     onSelectFilter: (QueueFilter) -> Unit = {},
     selectedSort: QueueSortOption = QueueSortOption.DATE_DESC,
@@ -95,7 +96,7 @@ fun QueueScreen(
     onCancel: (Long) -> Unit,
     onDelete: (downloadId: Long, deleteFile: Boolean) -> Unit,
     onRebind: (DownloadEntity) -> Unit,
-    onSaveSettings: (maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean) -> Unit,
+    onSaveSettings: (maxDownloads: Int, workers: Int, bandwidthLimit: Long, wifiOnly: Boolean, customDownloadUri: String?) -> Unit,
     onClearCompleted: () -> Unit,
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit,
@@ -644,9 +645,10 @@ fun QueueScreen(
             currentWorkers = workersPerDownload,
             currentBandwidthLimit = bandwidthLimitBytes,
             currentWifiOnly = isWifiOnly,
+            currentCustomDownloadUri = customDownloadUri,
             onDismiss = { showSettingsDialog = false },
-            onConfirm = { maxD, w, limit, wifi ->
-                onSaveSettings(maxD, w, limit, wifi)
+            onConfirm = { maxD, w, limit, wifi, customUri ->
+                onSaveSettings(maxD, w, limit, wifi, customUri)
                 showSettingsDialog = false
             }
         )

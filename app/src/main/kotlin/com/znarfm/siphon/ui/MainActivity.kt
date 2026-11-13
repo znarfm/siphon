@@ -558,6 +558,7 @@ fun MainContent(
                                 workersPerDownload = concurrencySettings.workers,
                                 bandwidthLimitBytes = concurrencySettings.bandwidthLimit,
                                 isWifiOnly = concurrencySettings.wifiOnly,
+                                customDownloadUri = concurrencySettings.customDownloadUri,
                                 selectedFilter = queueFilter,
                                 onSelectFilter = { queueViewModel.setFilter(it) },
                                 selectedSort = queueSortOption,
@@ -578,7 +579,9 @@ fun MainContent(
                                     onSelectScreen(AppScreen.BROWSER)
                                     browserViewModel.startRebindFlow(download)
                                 },
-                                onSaveSettings = { maxD, w, limit, wifi -> queueViewModel.setConcurrency(maxD, w, limit, wifi) },
+                                onSaveSettings = { maxD, w, limit, wifi, customUri ->
+                                    queueViewModel.setConcurrency(maxD, w, limit, wifi, customUri)
+                                },
                                 onClearCompleted = { queueViewModel.clearCompleted() },
                                 onPauseAll = { queueViewModel.pauseAll() },
                                 onResumeAll = { queueViewModel.resumeAll() },
@@ -673,9 +676,10 @@ fun MainContent(
                     currentWorkers = concurrencySettings.workers,
                     currentBandwidthLimit = concurrencySettings.bandwidthLimit,
                     currentWifiOnly = concurrencySettings.wifiOnly,
+                    currentCustomDownloadUri = concurrencySettings.customDownloadUri,
                     onDismiss = { showDownloadSettingsDialog = false },
-                    onConfirm = { maxD, w, limit, wifi ->
-                        queueViewModel.setConcurrency(maxD, w, limit, wifi)
+                    onConfirm = { maxD, w, limit, wifi, customUri ->
+                        queueViewModel.setConcurrency(maxD, w, limit, wifi, customUri)
                         showDownloadSettingsDialog = false
                     }
                 )
