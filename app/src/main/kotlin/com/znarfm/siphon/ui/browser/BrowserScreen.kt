@@ -764,8 +764,10 @@ fun BrowserScreen(
                                                         canGoForward = forward
                                                     }
                                                 }
-                                                onWebViewPageStarted = { view, url ->
+                                                onResetAdBlockedCount = {
                                                     currentOnResetTabBlockedCount.value(tab.id)
+                                                }
+                                                onWebViewPageStarted = { view, url ->
                                                     if (currentWebDarkMode.value) {
                                                         applyWebDarkModeToWebView(view, true)
                                                     }
@@ -844,6 +846,17 @@ fun BrowserScreen(
                                                                 if (!popupUrl.isNullOrBlank()) {
                                                                     if (popupUrl.startsWith("magnet:", ignoreCase = true)) {
                                                                         currentOnMagnetLinkClicked.value(popupUrl)
+                                                                        destroy()
+                                                                        return true
+                                                                    }
+                                                                    val sourceUrl = tabSnifferClient.resolveSourceUrl(
+                                                                        popupUrl,
+                                                                        request.requestHeaders
+                                                                    )
+                                                                    if (tabSnifferClient.adblockEngine.shouldBlockRequest(popupUrl, sourceUrl, "popup") ||
+                                                                        tabSnifferClient.adblockEngine.shouldBlockRequest(popupUrl, sourceUrl, "main_frame")
+                                                                    ) {
+                                                                        tabSnifferClient.notifyAdBlocked(sourceUrl, popupUrl)
                                                                         destroy()
                                                                         return true
                                                                     }
