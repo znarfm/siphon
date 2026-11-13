@@ -400,7 +400,8 @@ fun MainContent(
     val history by browserViewModel.history.collectAsStateWithLifecycle()
     val isCurrentBookmarked by browserViewModel.isCurrentUrlBookmarked.collectAsStateWithLifecycle()
     val adblockRuleCount by browserViewModel.adblockRuleCount.collectAsStateWithLifecycle()
-    val adblockConfig by browserViewModel.adblockConfig.collectAsStateWithLifecycle()
+    val adblockSettings by browserViewModel.adblockSettings.collectAsStateWithLifecycle()
+    val blockedCountsByTab by browserViewModel.blockedCountsByTab.collectAsStateWithLifecycle()
     val pendingMagnetUri by browserViewModel.pendingMagnetUri.collectAsStateWithLifecycle()
 
     val downloads by queueViewModel.downloads.collectAsStateWithLifecycle()
@@ -475,7 +476,9 @@ fun MainContent(
                     bookmarks = bookmarks,
                     history = history,
                     adblockRuleCount = adblockRuleCount,
-                    adblockConfig = adblockConfig,
+                    adblockSettings = adblockSettings,
+                    blockedCountsByTab = blockedCountsByTab,
+                    isSiteAllowlisted = { url -> browserViewModel.isSiteAllowlisted(url) },
                     searchEngineBase = browserPrefs.searchEngine,
                     showAdblockDialog = showAdblockDialog,
                     onShowAdblockDialogChange = { showAdblockDialog = it },
@@ -486,6 +489,12 @@ fun MainContent(
                     onSetColorSeed = { browserViewModel.setColorSeed(it) },
                     onNavigateUrl = { browserViewModel.setBrowserUrl(it) },
                     onToggleAdBlock = { browserViewModel.toggleAdBlock() },
+                    onToggleSiteAllowlist = { url -> browserViewModel.toggleSiteAllowlist(url) },
+                    onResetTabBlockedCount = { tabId -> browserViewModel.resetTabBlockedCount(tabId) },
+                    onToggleFilterList = { id, enabled -> browserViewModel.toggleFilterList(id, enabled) },
+                    onAddCustomFilterList = { name, url -> browserViewModel.addCustomFilterList(name, url) },
+                    onRemoveCustomFilterList = { id -> browserViewModel.removeCustomFilterList(id) },
+                    onUpdateCustomUserRules = { rules -> browserViewModel.updateCustomUserRules(rules) },
                     onOpenSniffer = { browserViewModel.openSnifferSheet() },
                     onCancelRebind = { browserViewModel.cancelRebindFlow() },
                     onNewTab = { url, isIncognito, inBackground ->
@@ -512,14 +521,25 @@ fun MainContent(
                     onDeleteBookmark = { browserViewModel.deleteBookmark(it) },
                     onDeleteHistory = { browserViewModel.deleteHistory(it) },
                     onClearHistory = { browserViewModel.clearHistory() },
-                    onRefreshAdblock = { config ->
-                        browserViewModel.refreshAdblockSubscriptions(config) { result ->
-                            val msg = result.fold(
-                                onSuccess = { (blocked, allowed) -> "Adblock: $blocked blocked, $allowed allowed" },
-                                onFailure = { err -> "Adblock error: ${err.message ?: "Failed to update"}" }
-                            )
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                        }
+                    onRefreshAdblock = { onComplete ->
+                        browserViewModel.refreshAdblockSubscriptions(
+                            onError = { err ->
+                                onComplete()
+                                Toast.makeText(
+                                    context,
+                                    "Adblock error: ${err.message ?: "Failed to update"}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            onResult = { rules, lists ->
+                                onComplete()
+                                Toast.makeText(
+                                    context,
+                                    "Adblock updated: $rules rules ($lists lists)",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        )
                     },
                     onUpdateTabMeta = { url, title -> browserViewModel.updateActiveTabMeta(url, title) },
                     onRegisterDomScan = { scanner -> browserViewModel.onRequestDomScan = scanner },
@@ -660,6 +680,7 @@ fun MainContent(
                                 colorSeed = colorSeed,
                                 isAdBlockEnabled = isAdBlockEnabled,
                                 adblockRuleCount = adblockRuleCount,
+                                enabledListCount = adblockSettings.enabledLists.count { it.isEnabled },
                                 onSetSearchEngine = { browserViewModel.setSearchEngine(it) },
                                 onSetThemeMode = { browserViewModel.setThemeMode(it) },
                                 onSetColorSeed = { browserViewModel.setColorSeed(it) },

@@ -89,6 +89,7 @@ fun BrowserSettingsScreen(
     colorSeed: AppColorSeed,
     isAdBlockEnabled: Boolean,
     adblockRuleCount: Int,
+    enabledListCount: Int = 0,
     onSetSearchEngine: (String) -> Unit,
     onSetThemeMode: (AppThemeMode) -> Unit,
     onSetColorSeed: (AppColorSeed) -> Unit,
@@ -396,8 +397,8 @@ fun BrowserSettingsScreen(
 
                         SettingsNavigationRow(
                             icon = Icons.Rounded.Tune,
-                            title = "Manage Adblock Subscriptions",
-                            subtitle = "$adblockRuleCount active rules",
+                            title = "Manage Adblock Filter Lists",
+                            subtitle = "$adblockRuleCount active rules • $enabledListCount lists enabled",
                             onClick = onOpenAdblockSubscriptions
                         )
 

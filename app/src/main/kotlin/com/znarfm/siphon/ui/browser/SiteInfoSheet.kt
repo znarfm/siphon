@@ -48,9 +48,12 @@ fun SiteInfoSheet(
     isIncognito: Boolean,
     isAdBlockEnabled: Boolean,
     adblockRuleCount: Int,
+    isSiteAllowlisted: Boolean = false,
+    tabBlockedCount: Int = 0,
     desktopMode: Boolean,
     webDarkMode: Boolean,
     onToggleAdBlock: () -> Unit,
+    onToggleSiteAllowlist: () -> Unit = {},
     onToggleDesktopMode: () -> Unit,
     onToggleWebDarkMode: () -> Unit,
     onManageAdblock: () -> Unit,
@@ -210,9 +213,9 @@ fun SiteInfoSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = if (isAdBlockEnabled) Icons.Rounded.Shield else Icons.Outlined.Shield,
+                            imageVector = if (isAdBlockEnabled && !isSiteAllowlisted) Icons.Rounded.Shield else Icons.Outlined.Shield,
                             contentDescription = null,
-                            tint = if (isAdBlockEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (isAdBlockEnabled && !isSiteAllowlisted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
@@ -223,7 +226,11 @@ fun SiteInfoSheet(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "$adblockRuleCount active rules",
+                                text = when {
+                                    !isAdBlockEnabled -> "Paused globally • $adblockRuleCount active rules"
+                                    isSiteAllowlisted -> "Paused on this site • $adblockRuleCount active rules"
+                                    else -> "$tabBlockedCount ads blocked on this page • $adblockRuleCount active rules"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -234,6 +241,31 @@ fun SiteInfoSheet(
                         )
                     }
 
+                    if (isHttp || isHttps) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Pause adblock on this site",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = if (isSiteAllowlisted) "Site is allowlisted" else "Allow ads on this domain",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = isSiteAllowlisted,
+                                onCheckedChange = { onToggleSiteAllowlist() }
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(10.dp))
 
                     FilledTonalButton(
@@ -241,7 +273,7 @@ fun SiteInfoSheet(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text("Subscriptions")
+                        Text("Manage Lists")
                     }
                 }
             }

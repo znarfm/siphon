@@ -5,7 +5,8 @@ import android.net.Uri
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.znarfm.siphon.core.adblock.AdblockConfig
+import com.znarfm.siphon.core.adblock.AdblockEngine
+import com.znarfm.siphon.core.adblock.AdblockSettings
 import com.znarfm.siphon.core.service.DownloadForegroundService
 import com.znarfm.siphon.core.sniffer.MediaSnifferClient
 import com.znarfm.siphon.core.sniffer.SniffedMedia
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
@@ -33,7 +35,7 @@ class BrowserViewModel(
     val downloadRepository: DownloadRepository
 ) : ViewModel() {
 
-    val hostFilter = browserRepository.hostFilter
+    val adblockEngine: AdblockEngine = browserRepository.adblockEngine
 
     private val initialTab = BrowserTab()
     private val _browserTabs = MutableStateFlow<List<BrowserTab>>(listOf(initialTab))
@@ -51,10 +53,11 @@ class BrowserViewModel(
         return synchronized(tabSnifferClients) {
             tabSnifferClients.getOrPut(tabId) {
                 MediaSnifferClient(
-                    hostFilter = hostFilter,
+                    adblockEngine = adblockEngine,
                     dao = downloadRepository.dao,
                     storage = downloadRepository.storage,
-                    tabId = tabId
+                    tabId = tabId,
+                    onAdBlocked = { _, _ -> recordAdBlocked(tabId) }
                 ).apply {
                     onMagnetLinkClicked = { uri ->
                         showMagnetDownloadPopup(uri)
@@ -102,15 +105,14 @@ class BrowserViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val adblockRuleCount: StateFlow<Int> = browserRepository.adblockRuleCount
+    val adblockSettings: StateFlow<AdblockSettings> = browserRepository.adblockSettings
+    val isAdBlockEnabled: StateFlow<Boolean> = browserRepository.isAdBlockEnabled
 
-    private val _adblockConfig = MutableStateFlow(browserRepository.getActiveAdblockConfig())
-    val adblockConfig: StateFlow<AdblockConfig> = _adblockConfig.asStateFlow()
+    private val _blockedCountsByTab = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val blockedCountsByTab: StateFlow<Map<String, Int>> = _blockedCountsByTab.asStateFlow()
 
     private val _isSnifferSheetOpen = MutableStateFlow(false)
     val isSnifferSheetOpen = _isSnifferSheetOpen.asStateFlow()
-
-    private val _isAdBlockEnabled = MutableStateFlow(true)
-    val isAdBlockEnabled = _isAdBlockEnabled.asStateFlow()
 
     private val prefs = browserRepository.application.getSharedPreferences(
         DownloadForegroundService.PREFS_NAME,
@@ -218,6 +220,7 @@ class BrowserViewModel(
         _lastClosedTab.value = closedTab
         lastClosedTabIndex = closedIndex
         _tabThumbnails.value = _tabThumbnails.value - tabId
+        _blockedCountsByTab.update { it - tabId }
         tabSnifferClients.remove(tabId)
 
         if (currentList.size <= 1) {
@@ -263,6 +266,7 @@ class BrowserViewModel(
         if (incognitoOnly) {
             val closedIds = currentList.filter { it.isIncognito }.map { it.id }.toSet()
             _tabThumbnails.value = _tabThumbnails.value - closedIds
+            _blockedCountsByTab.update { it - closedIds }
             closedIds.forEach { tabSnifferClients.remove(it) }
             val remaining = currentList.filter { !it.isIncognito }
             if (remaining.isEmpty()) {
@@ -282,6 +286,7 @@ class BrowserViewModel(
             }
         } else {
             _tabThumbnails.value = emptyMap()
+            _blockedCountsByTab.value = emptyMap()
             tabSnifferClients.clear()
             val freshTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
             _browserTabs.value = listOf(freshTab)
@@ -345,21 +350,76 @@ class BrowserViewModel(
         }
     }
 
-    fun refreshAdblockSubscriptions(
-        config: AdblockConfig,
-        onResult: ((Result<Pair<Int, Int>>) -> Unit)? = null
-    ) {
-        _adblockConfig.value = config
-        viewModelScope.launch {
-            val result = browserRepository.refreshAdblockSubscriptions(config)
-            onResult?.invoke(result)
+    fun recordAdBlocked(tabId: String) {
+        if (tabId.isBlank()) return
+        _blockedCountsByTab.update { current ->
+            current + (tabId to ((current[tabId] ?: 0) + 1))
+        }
+    }
+
+    fun resetTabBlockedCount(tabId: String) {
+        if (tabId.isBlank()) return
+        _blockedCountsByTab.update { current ->
+            if (current.containsKey(tabId)) current - tabId else current
         }
     }
 
     fun toggleAdBlock() {
-        val next = !_isAdBlockEnabled.value
-        _isAdBlockEnabled.value = next
-        hostFilter.isEnabled = next
+        browserRepository.toggleAdBlock()
+    }
+
+    fun toggleSiteAllowlist(urlOrHost: String) {
+        val host = AdblockEngine.extractHostFromUrl(urlOrHost)
+            ?: AdblockEngine.normalizeHost(urlOrHost)
+            ?: return
+        browserRepository.toggleSiteAllowlist(host)
+    }
+
+    fun isSiteAllowlisted(urlOrHost: String): Boolean {
+        val host = AdblockEngine.extractHostFromUrl(urlOrHost)
+            ?: AdblockEngine.normalizeHost(urlOrHost)
+            ?: return false
+        val allowed = adblockSettings.value.allowedSites
+        if (allowed.isEmpty()) return false
+        var current = host
+        while (current.contains('.')) {
+            if (allowed.contains(current)) return true
+            val dotIndex = current.indexOf('.')
+            if (dotIndex == -1) break
+            current = current.substring(dotIndex + 1)
+        }
+        return allowed.contains(current)
+    }
+
+    fun toggleFilterList(id: String, enabled: Boolean) {
+        browserRepository.toggleList(id, enabled)
+    }
+
+    fun addCustomFilterList(name: String, url: String) {
+        browserRepository.addCustomList(name, url)
+    }
+
+    fun removeCustomFilterList(id: String) {
+        browserRepository.removeCustomList(id)
+    }
+
+    fun updateCustomUserRules(rules: String) {
+        browserRepository.updateCustomUserRules(rules)
+    }
+
+    fun refreshAdblockSubscriptions(
+        onError: ((Throwable) -> Unit)? = null,
+        onResult: (Int, Int) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            val result = browserRepository.refreshAdblockSubscriptions()
+            result.onSuccess { updatedSettings ->
+                val enabledCount = updatedSettings.enabledLists.count { it.isEnabled }
+                onResult(adblockRuleCount.value, enabledCount)
+            }.onFailure { err ->
+                onError?.invoke(err)
+            }
+        }
     }
 
     fun clearDetectedMedia() {

@@ -82,7 +82,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
-import com.znarfm.siphon.core.adblock.AdblockConfig
+import com.znarfm.siphon.core.adblock.AdblockSettings
 import com.znarfm.siphon.core.sniffer.MediaSnifferClient
 import com.znarfm.siphon.data.db.BookmarkEntity
 import com.znarfm.siphon.data.db.DownloadEntity
@@ -198,7 +198,9 @@ fun BrowserScreen(
     bookmarks: List<BookmarkEntity> = emptyList(),
     history: List<HistoryEntity> = emptyList(),
     adblockRuleCount: Int = 0,
-    adblockConfig: AdblockConfig = AdblockConfig(),
+    adblockSettings: AdblockSettings = AdblockSettings(),
+    blockedCountsByTab: Map<String, Int> = emptyMap(),
+    isSiteAllowlisted: (String) -> Boolean = { false },
     searchEngineBase: String = "https://www.google.com/search?q=",
     showAdblockDialog: Boolean = false,
     onShowAdblockDialogChange: (Boolean) -> Unit = {},
@@ -209,6 +211,12 @@ fun BrowserScreen(
     onSetColorSeed: (AppColorSeed) -> Unit = {},
     onNavigateUrl: (String) -> Unit,
     onToggleAdBlock: () -> Unit,
+    onToggleSiteAllowlist: (String) -> Unit = {},
+    onResetTabBlockedCount: (String) -> Unit = {},
+    onToggleFilterList: (String, Boolean) -> Unit = { _, _ -> },
+    onAddCustomFilterList: (String, String) -> Unit = { _, _ -> },
+    onRemoveCustomFilterList: (String) -> Unit = {},
+    onUpdateCustomUserRules: (String) -> Unit = {},
     onOpenSniffer: () -> Unit,
     onCancelRebind: () -> Unit,
     onNewTab: (url: String, isIncognito: Boolean, inBackground: Boolean) -> Unit,
@@ -218,7 +226,7 @@ fun BrowserScreen(
     onDeleteBookmark: (Long) -> Unit = {},
     onDeleteHistory: (Long) -> Unit = {},
     onClearHistory: () -> Unit = {},
-    onRefreshAdblock: (AdblockConfig) -> Unit = {},
+    onRefreshAdblock: (onComplete: () -> Unit) -> Unit = { it() },
     onUpdateTabMeta: (url: String, title: String) -> Unit,
     onRegisterDomScan: (((() -> Unit) -> Unit))? = null,
     onRegisterPageReload: (((() -> Unit) -> Unit))? = null,
@@ -273,6 +281,7 @@ fun BrowserScreen(
     val currentWebDarkMode = rememberUpdatedState(isWebDarkMode)
     val currentOnMagnetLinkClicked = rememberUpdatedState(onMagnetLinkClicked)
     val currentOnUpdateTabMeta = rememberUpdatedState(onUpdateTabMeta)
+    val currentOnResetTabBlockedCount = rememberUpdatedState(onResetTabBlockedCount)
     val currentIsOmniboxFocused = rememberUpdatedState(isOmniboxFocused)
     val defaultUserAgent = remember { mutableStateOf<String?>(null) }
     val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -744,6 +753,7 @@ fun BrowserScreen(
                                                     }
                                                 }
                                                 onWebViewPageStarted = { view, url ->
+                                                    currentOnResetTabBlockedCount.value(tab.id)
                                                     if (currentWebDarkMode.value) {
                                                         applyWebDarkModeToWebView(view, true)
                                                     }
@@ -999,9 +1009,12 @@ fun BrowserScreen(
                 isIncognito = activeTab?.isIncognito ?: false,
                 isAdBlockEnabled = isAdBlockEnabled,
                 adblockRuleCount = adblockRuleCount,
+                isSiteAllowlisted = isSiteAllowlisted(displayUrl),
+                tabBlockedCount = blockedCountsByTab[activeTabId] ?: 0,
                 desktopMode = isDesktopMode,
                 webDarkMode = isWebDarkMode,
                 onToggleAdBlock = onToggleAdBlock,
+                onToggleSiteAllowlist = { onToggleSiteAllowlist(displayUrl) },
                 onToggleDesktopMode = onToggleDesktopMode,
                 onToggleWebDarkMode = onToggleWebDarkMode,
                 onManageAdblock = {
@@ -1024,6 +1037,7 @@ fun BrowserScreen(
             isLoading = !isNewTab && pageProgress in 1..99,
             isBookmarked = isCurrentBookmarked,
             adblockRuleCount = adblockRuleCount,
+            tabBlockedCount = blockedCountsByTab[activeTabId] ?: 0,
             activeDownloadCount = activeDownloadCount,
             isWebDarkMode = isWebDarkMode,
             isDesktopMode = isDesktopMode,
@@ -1087,14 +1101,15 @@ fun BrowserScreen(
         }
 
         if (showAdblockDialog) {
-            AdblockSubscriptionDialog(
-                currentRuleCount = adblockRuleCount,
-                initialConfig = adblockConfig,
-                onDismiss = { onShowAdblockDialogChange(false) },
-                onApply = { config ->
-                    onRefreshAdblock(config)
-                    onShowAdblockDialogChange(false)
-                }
+            AdblockFilterManagerDialog(
+                settings = adblockSettings,
+                activeRuleCount = adblockRuleCount,
+                onToggleList = onToggleFilterList,
+                onAddCustomList = onAddCustomFilterList,
+                onRemoveCustomList = onRemoveCustomFilterList,
+                onUpdateCustomRules = onUpdateCustomUserRules,
+                onRefreshSubscriptions = onRefreshAdblock,
+                onDismiss = { onShowAdblockDialogChange(false) }
             )
         }
 
