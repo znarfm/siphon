@@ -1,6 +1,6 @@
 package com.znarfm.siphon.ui.browser
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +51,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -70,6 +72,7 @@ import com.znarfm.siphon.data.db.BookmarkEntity
 import com.znarfm.siphon.data.db.HistoryEntity
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -85,13 +88,22 @@ fun BookmarksScreen(
 ) {
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var searchBackProgress by remember { mutableFloatStateOf(0f) }
     val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    BackHandler(enabled = isSearching) {
-        isSearching = false
-        searchQuery = ""
+    PredictiveBackHandler(enabled = isSearching) { progress ->
+        try {
+            progress.collect { backEvent ->
+                searchBackProgress = backEvent.progress
+            }
+            searchBackProgress = 0f
+            isSearching = false
+            searchQuery = ""
+        } catch (e: CancellationException) {
+            searchBackProgress = 0f
+        }
     }
 
     val filteredBookmarks = remember(bookmarks, searchQuery) {
@@ -115,6 +127,7 @@ fun BookmarksScreen(
                 searchPlaceholder = "Search bookmarks…",
                 isSearching = isSearching,
                 searchQuery = searchQuery,
+                searchBackProgress = searchBackProgress,
                 onSearchQueryChange = { searchQuery = it },
                 onToggleSearch = {
                     isSearching = !isSearching
@@ -323,11 +336,20 @@ fun HistoryScreen(
 ) {
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var searchBackProgress by remember { mutableFloatStateOf(0f) }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = isSearching) {
-        isSearching = false
-        searchQuery = ""
+    PredictiveBackHandler(enabled = isSearching) { progress ->
+        try {
+            progress.collect { backEvent ->
+                searchBackProgress = backEvent.progress
+            }
+            searchBackProgress = 0f
+            isSearching = false
+            searchQuery = ""
+        } catch (e: CancellationException) {
+            searchBackProgress = 0f
+        }
     }
 
     val dateFormatter = remember {
@@ -389,6 +411,7 @@ fun HistoryScreen(
                 searchPlaceholder = "Search history…",
                 isSearching = isSearching,
                 searchQuery = searchQuery,
+                searchBackProgress = searchBackProgress,
                 onSearchQueryChange = { searchQuery = it },
                 onToggleSearch = {
                     isSearching = !isSearching
@@ -536,6 +559,7 @@ private fun SearchableTopAppBar(
     searchPlaceholder: String,
     isSearching: Boolean,
     searchQuery: String,
+    searchBackProgress: Float = 0f,
     onSearchQueryChange: (String) -> Unit,
     onToggleSearch: () -> Unit,
     onBack: () -> Unit,
@@ -573,7 +597,14 @@ private fun SearchableTopAppBar(
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .focusRequester(focusRequester),
+                        .focusRequester(focusRequester)
+                        .graphicsLayer {
+                            val s = 1f - (searchBackProgress * 0.08f)
+                            scaleX = s
+                            scaleY = s
+                            alpha = 1f - (searchBackProgress * 0.85f)
+                            translationX = searchBackProgress * 16.dp.toPx()
+                        },
                     decorationBox = { innerTextField ->
                         Box(contentAlignment = Alignment.CenterStart) {
                             if (searchQuery.isEmpty()) {
@@ -605,6 +636,12 @@ private fun SearchableTopAppBar(
                         } else {
                             onToggleSearch()
                         }
+                    },
+                    modifier = Modifier.graphicsLayer {
+                        val s = 1f - (searchBackProgress * 0.2f)
+                        scaleX = s
+                        scaleY = s
+                        alpha = 1f - searchBackProgress
                     }
                 ) {
                     Icon(

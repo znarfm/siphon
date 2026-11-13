@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Hub
@@ -457,11 +458,18 @@ fun MainContent(
                 .consumeWindowInsets(innerPadding)
         ) {
             val isBrowserVisible = currentScreen == AppScreen.BROWSER
+            val isSettingsSubPage = currentScreen == AppScreen.SETTINGS_BROWSER ||
+                currentScreen == AppScreen.SETTINGS_APPEARANCE ||
+                currentScreen == AppScreen.SETTINGS_ADBLOCK ||
+                currentScreen == AppScreen.SETTINGS_DOWNLOADS
+            val underlyingScreen = if (isSettingsSubPage) settingsSubPageOrigin else AppScreen.BROWSER
+            val isBackInProgress = backProgress > 0f
+            val showBrowserUnderlay = isBrowserVisible || (isBackInProgress && underlyingScreen == AppScreen.BROWSER)
 
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .alpha(if (isBrowserVisible) 1f else 0f)
+                    .alpha(if (showBrowserUnderlay) 1f else 0f)
                     .zIndex(if (isBrowserVisible) 1f else 0f)
                     .pointerInput(isBrowserVisible) {
                         if (!isBrowserVisible) {
@@ -483,6 +491,7 @@ fun MainContent(
                     activeDownloadCount = activeDownloadsCount,
                     isAdBlockEnabled = isAdBlockEnabled,
                     rebindTarget = rebindTarget,
+                    isScreenActive = isBrowserVisible,
                     isBarsVisible = isBarsVisible,
                     isWebDarkMode = browserPrefs.webDarkMode,
                     isDesktopMode = browserPrefs.desktopMode,
@@ -546,10 +555,96 @@ fun MainContent(
                 )
             }
 
-            if (currentScreen != AppScreen.BROWSER) {
+            if (isBackInProgress && underlyingScreen == AppScreen.SETTINGS) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                        .zIndex(1f)
+                ) {
+                    SettingsHubScreen(
+                        browserPreferences = browserPrefs,
+                        themeMode = themeMode,
+                        colorSeed = colorSeed,
+                        isAdBlockEnabled = isAdBlockEnabled,
+                        adblockRuleCount = adblockRuleCount,
+                        enabledListCount = adblockSettings.enabledLists.count { it.isEnabled },
+                        maxConcurrentDownloads = concurrencySettings.maxDownloads,
+                        workersPerDownload = concurrencySettings.workers,
+                        bandwidthLimit = concurrencySettings.bandwidthLimit,
+                        onOpenBrowserSearch = {},
+                        onOpenAppearance = {},
+                        onOpenPrivacyAdblock = {},
+                        onOpenDownloads = {},
+                        onBack = {}
+                    )
+                }
+            } else if (isBackInProgress && underlyingScreen == AppScreen.QUEUE) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                        .zIndex(1f)
+                ) {
+                    QueueScreen(
+                        downloads = downloads,
+                        chunksMap = chunksMap,
+                        maxConcurrentDownloads = concurrencySettings.maxDownloads,
+                        workersPerDownload = concurrencySettings.workers,
+                        bandwidthLimitBytes = concurrencySettings.bandwidthLimit,
+                        isWifiOnly = concurrencySettings.wifiOnly,
+                        selectedFilter = queueFilter,
+                        onSelectFilter = {},
+                        selectedSort = queueSortOption,
+                        onSelectSort = {},
+                        searchQuery = queueSearchQuery,
+                        onSearchQueryChange = {},
+                        isSelectionMode = queueIsSelectionMode,
+                        onSetSelectionMode = {},
+                        selectedIds = queueSelectedIds,
+                        onToggleSelectId = {},
+                        onSelectAllIds = {},
+                        onClearSelection = {},
+                        onPause = {},
+                        onResume = {},
+                        onCancel = {},
+                        onDelete = { _, _ -> },
+                        onRebind = {},
+                        onClearCompleted = {},
+                        onPauseAll = {},
+                        onResumeAll = {},
+                        onRetry = {},
+                        onRename = { _, _ -> },
+                        onBulkDelete = { _, _ -> },
+                        onBulkCancel = {},
+                        onOpenDownloadSettings = {},
+                        onNavigateBack = {}
+                    )
+                }
+            }
+
+            if (currentScreen != AppScreen.BROWSER) {
+                if (isBackInProgress) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.36f * (1f - backProgress)))
+                            .zIndex(1.5f)
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(2f)
+                        .graphicsLayer {
+                            val s = 1f - (backProgress * 0.10f)
+                            scaleX = s
+                            scaleY = s
+                            alpha = 1f - (backProgress * 0.15f)
+                            shape = RoundedCornerShape((backProgress * 28f).dp)
+                            clip = backProgress > 0f
+                        }
                         .background(MaterialTheme.colorScheme.background)
                         .pointerInput(Unit) {
                             awaitPointerEventScope {
@@ -559,13 +654,6 @@ fun MainContent(
                                 }
                             }
                         }
-                        .graphicsLayer {
-                            val s = 1f - (backProgress * 0.08f)
-                            scaleX = s
-                            scaleY = s
-                            alpha = 1f - (backProgress * 0.25f)
-                        }
-                        .zIndex(2f)
                 ) {
                     when (currentScreen) {
                         AppScreen.QUEUE -> {
