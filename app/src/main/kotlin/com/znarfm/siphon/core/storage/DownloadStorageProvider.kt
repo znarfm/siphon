@@ -56,12 +56,22 @@ class DownloadStorageProvider(context: Context) {
         displayName: String,
         mimeType: String,
         customTreeUri: Uri? = null,
-        categorySubfolder: String? = null
+        categorySubfolder: String? = null,
+        subfolder: String? = null
     ): Uri {
         val safeName = sanitizeDisplayName(displayName)
         val safeMime = mimeType.ifBlank { "application/octet-stream" }
-        val folder = categorySubfolder?.takeIf { it.isNotBlank() }
-            ?: SmartRouting.resolveCategoryFolder(safeName, safeMime)
+        val sanitizedSubfolder = subfolder
+            ?.split('/', '\\')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() && it != "." && it != ".." }
+            ?.joinToString("/") { sanitizeDisplayName(it) }
+            ?.takeIf { it.isNotBlank() }
+        val folder = when {
+            sanitizedSubfolder != null -> "Torrents/$sanitizedSubfolder"
+            !categorySubfolder.isNullOrBlank() -> categorySubfolder
+            else -> SmartRouting.resolveCategoryFolder(safeName, safeMime)
+        }
 
         val effectiveTreeUri = customTreeUri ?: appContext
             .getSharedPreferences("siphon_prefs", Context.MODE_PRIVATE)
@@ -224,9 +234,12 @@ class DownloadStorageProvider(context: Context) {
         val rootDir = DocumentFile.fromTreeUri(appContext, treeUri)
             ?: throw IOException("Unable to access SAF tree URI: $treeUri")
 
-        val targetDir = rootDir.findFile(categorySubfolder)?.takeIf { it.isDirectory }
-            ?: rootDir.createDirectory(categorySubfolder)
-            ?: throw IOException("Failed to create SAF subfolder '$categorySubfolder' in $treeUri")
+        var targetDir = rootDir
+        for (segment in categorySubfolder.split('/').filter { it.isNotBlank() }) {
+            targetDir = targetDir.findFile(segment)?.takeIf { it.isDirectory }
+                ?: targetDir.createDirectory(segment)
+                ?: throw IOException("Failed to create SAF subfolder '$segment' in $treeUri")
+        }
 
         val existingNames = targetDir.listFiles().mapNotNull { it.name }.toSet()
         val uniqueName = SmartRouting.resolveUniqueName(displayName, existingNames)

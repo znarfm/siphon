@@ -7,18 +7,28 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -29,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,6 +49,8 @@ import com.znarfm.siphon.core.network.HeadersCodec
 import com.znarfm.siphon.data.db.ChunkEntity
 import com.znarfm.siphon.data.db.ChunkState
 import com.znarfm.siphon.data.db.DownloadEntity
+import com.znarfm.siphon.data.db.DownloadFileEntity
+import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.db.DownloadType
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
@@ -52,7 +65,9 @@ fun TaskInspectorBottomSheet(
     onCopyStreamUrl: () -> Unit,
     onCopyPageUrl: () -> Unit,
     onOpenFile: () -> Unit,
-    onRename: () -> Unit
+    onRename: () -> Unit,
+    files: List<DownloadFileEntity> = emptyList(),
+    onViewFiles: (() -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val headers = remember(download.headersJson) { HeadersCodec.decode(download.headersJson) }
@@ -117,14 +132,28 @@ fun TaskInspectorBottomSheet(
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)
                     ) {
-                        Text("Show in Files / Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (files.size > 1) "View Files (${files.size})" else "Show in Files / Open",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    OutlinedButton(
-                        onClick = onShare,
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-                    ) {
-                        Text("Share", fontSize = 11.sp)
+                    if (files.size > 1 && onViewFiles != null) {
+                        OutlinedButton(
+                            onClick = onViewFiles,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                        ) {
+                            Text("All Files", fontSize = 11.sp)
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = onShare,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                        ) {
+                            Text("Share", fontSize = 11.sp)
+                        }
                     }
                 }
             }
@@ -137,8 +166,13 @@ fun TaskInspectorBottomSheet(
             val metaText = when {
                 isTorrent -> {
                     val sizeLabel = if (download.totalBytes > 0L) formatFileSize(download.totalBytes) else "Fetching metadata…"
+                    val activeMetrics = if (download.state == DownloadState.ACTIVE) {
+                        val peerLabel = if (download.peers == 1) "1 peer" else "${download.peers} peers"
+                        " • ${formatSpeed(download.speedBytesPerSec)} • $peerLabel"
+                    } else ""
+                    val filesSuffix = if (files.size > 1) "\nFiles: ${files.size} files" else ""
                     val chunkSuffix = if (chunks.isNotEmpty()) "\nPieces: $completedChunks / ${chunks.size}" else ""
-                    "Size: $sizeLabel • Type: BitTorrent$chunkSuffix"
+                    "Size: $sizeLabel$activeMetrics • Type: BitTorrent$filesSuffix$chunkSuffix"
                 }
                 isHls -> {
                     "Segments: $completedChunks / ${chunks.size} • MIME: ${download.mimeType.ifBlank { "video/mp4" }}\n" +
@@ -214,42 +248,150 @@ fun TaskInspectorBottomSheet(
 }
 
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TorrentFilesSheet(
+    download: DownloadEntity,
+    files: List<DownloadFileEntity>,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = download.displayName,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${files.size} files • ${formatFileSize(download.totalBytes)}",
+                style = MaterialTheme.typography.bodySmall.merge(TabularNumberStyle),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(8.dp))
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(files, key = { it.id }) { file ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                openUriWithMime(context, Uri.parse(file.uri), file.mimeType)
+                            }
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.InsertDriveFile,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = file.relativePath,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${formatFileSize(file.sizeBytes)} • ${file.mimeType}",
+                                style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                shareUriWithMime(context, Uri.parse(file.uri), file.mimeType)
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Share,
+                                contentDescription = "Share ${file.name}",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+private fun resolveSafeViewMime(rawMimeType: String): String = when {
+    rawMimeType.contains("mpegurl") -> "video/mp4"
+    rawMimeType.equals("application/x-bittorrent", ignoreCase = true) || rawMimeType.isBlank() -> "*/*"
+    else -> rawMimeType
+}
+
+fun openUriWithMime(context: Context, uri: Uri, rawMimeType: String) {
+    val mime = resolveSafeViewMime(rawMimeType)
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, mime)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    try {
+        context.startActivity(Intent.createChooser(intent, "Open with"))
+    } catch (_: Exception) {
+        val fallback = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "*/*")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { context.startActivity(Intent.createChooser(fallback, "Open with")) }
+    }
+}
+
+fun shareUriWithMime(context: Context, uri: Uri, rawMimeType: String) {
+    val mime = resolveSafeViewMime(rawMimeType)
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = mime
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    try {
+        context.startActivity(Intent.createChooser(shareIntent, "Share file"))
+    } catch (_: Exception) {
+        Toast.makeText(context, "No app available to share file", Toast.LENGTH_SHORT).show()
+    }
+}
+
 fun openCompletedFile(context: Context, download: DownloadEntity) {
     val uriStr = download.destinationUri
     if (!uriStr.isNullOrBlank()) {
-        val uri = Uri.parse(uriStr)
-        val mime = if (download.mimeType.contains("mpegurl")) "video/mp4" else download.mimeType.ifBlank { "video/*" }
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mime)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        try {
-            context.startActivity(Intent.createChooser(intent, "Open with"))
-        } catch (_: Exception) {
-            val fallback = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "*/*")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            runCatching { context.startActivity(Intent.createChooser(fallback, "Open with")) }
-        }
+        openUriWithMime(context, Uri.parse(uriStr), download.mimeType)
     }
 }
 
 fun shareDownloadFile(context: Context, download: DownloadEntity) {
     val uriStr = download.destinationUri
     if (!uriStr.isNullOrBlank()) {
-        val uri = Uri.parse(uriStr)
-        val mime = if (download.mimeType.contains("mpegurl")) "video/mp4" else download.mimeType.ifBlank { "*/*" }
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = mime
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        try {
-            context.startActivity(Intent.createChooser(shareIntent, "Share file"))
-        } catch (_: Exception) {
-            Toast.makeText(context, "No app available to share file", Toast.LENGTH_SHORT).show()
-        }
+        shareUriWithMime(context, Uri.parse(uriStr), download.mimeType)
     } else {
         Toast.makeText(context, "File location is not yet ready", Toast.LENGTH_SHORT).show()
     }

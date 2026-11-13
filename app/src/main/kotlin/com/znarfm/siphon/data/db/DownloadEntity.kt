@@ -42,5 +42,8 @@ data class DownloadEntity(
     val state: DownloadState,
     val sourcePageUrl: String?,
     val headersJson: String?,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val downloadedBytes: Long = 0L,
+    val speedBytesPerSec: Long = 0L,
+    val peers: Int = 0
 )

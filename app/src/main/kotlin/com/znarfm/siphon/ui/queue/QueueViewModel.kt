@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.znarfm.siphon.data.db.ChunkEntity
 import com.znarfm.siphon.data.db.DownloadEntity
+import com.znarfm.siphon.data.db.DownloadFileEntity
 import com.znarfm.siphon.data.repository.ConcurrencySettings
 import com.znarfm.siphon.data.repository.DownloadRepository
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +40,12 @@ class QueueViewModel(
 
     val chunksMap: StateFlow<Map<Long, List<ChunkEntity>>> = downloadRepository.chunksMap
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val downloadFilesMap: StateFlow<Map<Long, List<DownloadFileEntity>>> = downloadRepository.downloadFilesMap
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    fun observeDownloadFiles(downloadId: Long): Flow<List<DownloadFileEntity>> =
+        downloadRepository.observeDownloadFiles(downloadId)
 
     val concurrencySettings: StateFlow<ConcurrencySettings> = downloadRepository.concurrencySettings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ConcurrencySettings())
