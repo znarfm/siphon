@@ -44,12 +44,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.SplitButtonDefaults
 import androidx.compose.material3.SplitButtonLayout
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -169,6 +171,11 @@ fun DownloadItemCard(
                 val totalSegments = chunks.size
                 val completedSegments = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
                 val progressFraction = computeProgress(download, chunks)
+                val animatedProgress by animateFloatAsState(
+                    targetValue = progressFraction,
+                    animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
+                    label = "downloadProgress"
+                )
                 val progressPercent = (progressFraction * 100).toInt()
                 val downloadedBytes = computeDownloadedBytes(download, chunks)
 
@@ -274,30 +281,27 @@ fun DownloadItemCard(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Progress Bar: LinearWavyProgressIndicator for MERGING or ACTIVE with empty chunks (indeterminate only when torrent totalBytes <= 0)
-                if (download.state == DownloadState.MERGING) {
-                    LinearWavyProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                    )
-                } else if (download.state == DownloadState.ACTIVE && chunks.isEmpty() && (!isTorrent || download.totalBytes <= 0L)) {
-                    LinearWavyProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                    )
+                val isIndeterminate = download.state == DownloadState.MERGING ||
+                    (download.state == DownloadState.ACTIVE && chunks.isEmpty() && (!isTorrent || download.totalBytes <= 0L))
+                val progressTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+
+                if (isIndeterminate) {
+                    key(download.state, true) {
+                        LinearWavyProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                            trackColor = progressTrackColor
+                        )
+                    }
                 } else if (chunks.isNotEmpty()) {
                     SegmentedChunkBar(chunks = chunks, totalBytes = download.totalBytes, isHls = isHls)
                 } else {
-                    LinearWavyProgressIndicator(
-                        progress = { progressFraction },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                    )
+                    key(download.state, false) {
+                        LinearWavyProgressIndicator(
+                            progress = { animatedProgress },
+                            modifier = Modifier.fillMaxWidth(),
+                            trackColor = progressTrackColor
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
