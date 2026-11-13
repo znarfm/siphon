@@ -11,6 +11,7 @@ import com.znarfm.siphon.core.storage.DownloadStorageProvider
 import com.znarfm.siphon.data.db.SiphonDatabase
 import com.znarfm.siphon.data.repository.BrowserRepository
 import com.znarfm.siphon.data.repository.DownloadRepository
+import com.znarfm.siphon.data.repository.UpdateRepository
 import com.znarfm.siphon.ui.browser.BrowserViewModel
 import com.znarfm.siphon.ui.queue.QueueViewModel
 
@@ -41,6 +42,10 @@ class AppContainer(val application: Application) {
             browserDao = database.browserDao(),
             adblockEngine = adblockEngine
         )
+    }
+
+    val updateRepository: UpdateRepository by lazy {
+        UpdateRepository(application = application)
     }
 
     val viewModelFactory: ViewModelProvider.Factory by lazy {
