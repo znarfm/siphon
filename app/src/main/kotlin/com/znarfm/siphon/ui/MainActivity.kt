@@ -568,6 +568,8 @@ fun MainContent(
                     },
                     onSelectTab = { browserViewModel.switchBrowserTab(it) },
                     onCloseTab = { browserViewModel.closeBrowserTab(it) },
+                    onSwitchPreviousTab = { browserViewModel.switchToPreviousTab() },
+                    onSwitchNextTab = { browserViewModel.switchToNextTab() },
                     onToggleBookmark = {
                         val activeTab = browserTabs.firstOrNull { it.id == activeTabId }
                         val title = activeTab?.title.orEmpty()
