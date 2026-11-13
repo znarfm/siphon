@@ -12,6 +12,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -33,10 +34,13 @@ fun SettingsHubScreen(
     maxConcurrentDownloads: Int,
     workersPerDownload: Int,
     bandwidthLimit: Long,
+    versionName: String,
+    updateAvailableTag: String?,
     onOpenBrowserSearch: () -> Unit,
     onOpenAppearance: () -> Unit,
     onOpenPrivacyAdblock: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenAboutUpdates: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -145,6 +149,27 @@ fun SettingsHubScreen(
                         subtitle = downloadsSummary,
                         iconTint = MaterialTheme.colorScheme.primary,
                         onClick = onOpenDownloads
+                    )
+                }
+            }
+
+            item(key = "category_about_updates") {
+                Surface(
+                    shape = ExpressiveShapeTokens.RestingCardShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    tonalElevation = 1.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    SettingsNavigationRow(
+                        icon = Icons.Rounded.SystemUpdate,
+                        title = "About & Updates",
+                        subtitle = if (updateAvailableTag != null) {
+                            "Update available: $updateAvailableTag • v$versionName"
+                        } else {
+                            "v$versionName • by @znarfm"
+                        },
+                        iconTint = MaterialTheme.colorScheme.primary,
+                        onClick = onOpenAboutUpdates
                     )
                 }
             }

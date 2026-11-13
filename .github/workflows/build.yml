@@ -128,15 +128,27 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
         run: ./gradlew assembleRelease --build-cache --stacktrace
 
+      - name: Generate SHA-256 Checksum
+        working-directory: app/build/outputs/apk/release
+        run: |
+          for apk in *.apk; do
+            sha256sum "$apk" > "${apk}.sha256"
+          done
+          cat *.sha256
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: app/build/outputs/apk/release/*.apk
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/*.sha256
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') || inputs.create_release == true
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/*.apk
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/*.sha256
           generate_release_notes: true
