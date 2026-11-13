@@ -268,7 +268,7 @@ class AdblockEngine(
 
     fun isUrlAllowed(url: String): Boolean {
         val host = extractHostFromUrl(url)
-        return host.isNotEmpty() && isSiteAllowed(host)
+        return !host.isNullOrEmpty() && isSiteAllowed(host)
     }
 
     fun getCosmeticResources(url: String): CosmeticResources {
@@ -348,7 +348,7 @@ class AdblockEngine(
         if (host.isNullOrBlank()) return false
         val sites = allowedSites
         if (sites.isEmpty()) return false
-        var current = host
+        var current: String = host
         while (current.contains('.')) {
             if (sites.contains(current)) return true
             val dotIndex = current.indexOf('.')
