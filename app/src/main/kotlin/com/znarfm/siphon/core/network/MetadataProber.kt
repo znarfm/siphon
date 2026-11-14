@@ -34,7 +34,7 @@ class MetadataProber(
                 .build()
 
             client.newCall(rangeReq).execute().use { resp ->
-                if (resp.code == 405 || resp.code == 501) {
+                if (resp.code == 405 || resp.code == 501 || resp.code == 400 || resp.code == 403 || resp.code == 416) {
                     return@withContext fallbackHeadProbe(url, headers)
                 }
                 if (!resp.isSuccessful) {
@@ -109,8 +109,25 @@ class MetadataProber(
             .head()
             .build()
         client.newCall(headReq).execute().use { resp ->
+            if (resp.code == 405 || resp.code == 501) {
+                return fallbackPlainGetProbe(url, headers)
+            }
             if (!resp.isSuccessful) {
                 throw HttpStatusException(resp.code, "HEAD probe failed with HTTP ${resp.code}")
+            }
+            return parseProbeResponse(resp)
+        }
+    }
+
+    private fun fallbackPlainGetProbe(url: String, headers: Headers): ProbeResult {
+        val getReq = Request.Builder()
+            .url(url)
+            .headers(headers)
+            .get()
+            .build()
+        client.newCall(getReq).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw HttpStatusException(resp.code, "GET probe failed with HTTP ${resp.code}")
             }
             return parseProbeResponse(resp)
         }
@@ -170,22 +187,28 @@ class MetadataProber(
          */
         fun parseStartFromContentRange(header: String?): Long {
             if (header.isNullOrBlank()) return -1L
-            val rangePart = header.substringAfter("bytes", "").trim()
-            val dashIdx = rangePart.indexOf('-')
-            if (dashIdx <= 0) return -1L
-            return rangePart.substring(0, dashIdx).trim().toLongOrNull() ?: -1L
+            val match = Regex("""(?i)bytes\s+(\d+)-""").find(header) ?: return -1L
+            return match.groupValues[1].toLongOrNull() ?: -1L
         }
 
-        private fun parseFilenameFromDisposition(disposition: String?): String? {
+        fun parseFilenameFromDisposition(disposition: String?): String? {
             if (disposition.isNullOrBlank()) return null
             val parts = disposition.split(';')
+            var fallbackFilename: String? = null
             for (part in parts) {
                 val trimmed = part.trim()
-                if (trimmed.startsWith("filename=", ignoreCase = true)) {
-                    return trimmed.substringAfter('=').trim('"', '\'', ' ').ifEmpty { null }
+                if (trimmed.startsWith("filename*=", ignoreCase = true)) {
+                    val rawVal = trimmed.substringAfter('=').trim('"', '\'', ' ')
+                    val encoded = if (rawVal.contains("''")) rawVal.substringAfter("''") else rawVal
+                    val decoded = runCatching {
+                        java.net.URLDecoder.decode(encoded, "UTF-8")
+                    }.getOrDefault(encoded).trim('"', '\'', ' ')
+                    if (decoded.isNotEmpty()) return decoded
+                } else if (trimmed.startsWith("filename=", ignoreCase = true)) {
+                    fallbackFilename = trimmed.substringAfter('=').trim('"', '\'', ' ').ifEmpty { null }
                 }
             }
-            return null
+            return fallbackFilename
         }
     }
 }

@@ -64,16 +64,18 @@ object HlsPlaylistParser {
                 currentResolution = extractAttribute(line, "RESOLUTION")
                 currentCodecs = extractAttribute(line, "CODECS")
                 currentAudioGroup = extractAttribute(line, "AUDIO")
-            } else if (!line.startsWith("#") && currentBandwidth > 0L) {
-                variants.add(
-                    ParsedHlsVariant(
-                        url = resolveUri(baseUrl, line),
-                        bandwidth = currentBandwidth,
-                        resolution = currentResolution,
-                        codecs = currentCodecs,
-                        audioGroupId = currentAudioGroup
+            } else if (!line.startsWith("#")) {
+                if (currentBandwidth > 0L || currentResolution != null || currentCodecs != null) {
+                    variants.add(
+                        ParsedHlsVariant(
+                            url = resolveUri(baseUrl, line),
+                            bandwidth = currentBandwidth,
+                            resolution = currentResolution,
+                            codecs = currentCodecs,
+                            audioGroupId = currentAudioGroup
+                        )
                     )
-                )
+                }
                 currentBandwidth = 0L
                 currentResolution = null
                 currentCodecs = null
@@ -167,9 +169,9 @@ object HlsPlaylistParser {
                                 sequenceNumber = currentSeqNum,
                                 url = initUrl,
                                 durationSec = 0.0,
-                                keyMethod = currentKeyMethod,
-                                keyUrl = currentKeyUrl,
-                                ivHex = currentIvHex,
+                                keyMethod = null,
+                                keyUrl = null,
+                                ivHex = null,
                                 byteRangeOffset = mapOffset,
                                 byteRangeLength = mapLength
                             )
@@ -228,7 +230,7 @@ object HlsPlaylistParser {
     }
 
     fun extractAttribute(line: String, attributeName: String): String? {
-        val regex = Regex("""(?:^|[:,\\s])${Regex.escape(attributeName)}=(?:"([^"]*)"|([^,\s]+))""")
+        val regex = Regex("""(?:^|[:,\s])${Regex.escape(attributeName)}=(?:"([^"]*)"|([^,\s]+))""")
         val match = regex.find(line) ?: return null
         return match.groups[1]?.value ?: match.groups[2]?.value?.trim()
     }

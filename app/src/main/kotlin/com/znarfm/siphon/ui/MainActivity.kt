@@ -574,6 +574,17 @@ fun MainContent(
                         browserViewModel.downloadDirectMedia(url)
                         Toast.makeText(context, "Download started", Toast.LENGTH_SHORT).show()
                     },
+                    onStandardDownload = { url, userAgent, contentDisposition, mimetype, contentLength, refererUrl ->
+                        browserViewModel.startStandardDownload(
+                            url = url,
+                            userAgent = userAgent,
+                            contentDisposition = contentDisposition,
+                            mimetype = mimetype,
+                            contentLength = contentLength,
+                            refererUrl = refererUrl
+                        )
+                        Toast.makeText(context, "Download started", Toast.LENGTH_SHORT).show()
+                    },
                     onMagnetLinkClicked = { uri ->
                         browserViewModel.showMagnetDownloadPopup(uri)
                     },

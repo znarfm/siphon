@@ -279,7 +279,7 @@ private fun SnifferPanelContent(
     val filteredAndSortedMedia = remember(detectedMedia, activeFilter, activeSort) {
         val filtered = when (activeFilter) {
             SnifferFilter.ALL -> detectedMedia
-            SnifferFilter.HLS -> detectedMedia.filter { it.mediaType == DownloadType.HLS }
+            SnifferFilter.HLS -> detectedMedia.filter { it.mediaType == DownloadType.HLS || it.mediaType == DownloadType.DASH }
             SnifferFilter.DIRECT -> detectedMedia.filter { it.mediaType == DownloadType.HTTP }
         }
         when (activeSort) {
@@ -770,11 +770,12 @@ private fun SniffedMediaItemCard(
                     } else ""
                     val langLabel = if (!media.language.isNullOrBlank()) " • [${media.language}]" else ""
 
+                    val isStream = media.mediaType == DownloadType.HLS || media.mediaType == DownloadType.DASH
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = formatFileSize(
                                 currentEstimatedBytes,
-                                isEstimate = media.mediaType == DownloadType.HLS,
+                                isEstimate = isStream,
                                 isSubtitle = media.isSubtitle
                             ),
                             style = MaterialTheme.typography.bodySmall,
@@ -784,8 +785,8 @@ private fun SniffedMediaItemCard(
                         Text(
                             text = "$durationLabel$langLabel • " + when {
                                 media.isSubtitle -> media.mimeType
-                                media.isAudio && media.mediaType == DownloadType.HLS -> "audio/mp4"
-                                media.mediaType == DownloadType.HLS -> "video/mp4"
+                                media.isAudio && isStream -> "audio/mp4"
+                                isStream -> "video/mp4"
                                 else -> media.mimeType
                             },
                             style = MaterialTheme.typography.bodySmall,
@@ -811,6 +812,11 @@ private fun SniffedMediaItemCard(
                     )
                     media.mediaType == DownloadType.HLS -> Triple(
                         "HLS",
+                        MaterialTheme.colorScheme.primaryContainer,
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    media.mediaType == DownloadType.DASH -> Triple(
+                        "DASH",
                         MaterialTheme.colorScheme.primaryContainer,
                         MaterialTheme.colorScheme.onPrimaryContainer
                     )

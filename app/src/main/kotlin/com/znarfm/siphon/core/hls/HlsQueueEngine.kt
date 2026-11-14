@@ -134,9 +134,11 @@ class HlsQueueEngine(
 
             val totalSegmentsCount = segmentsByTrack.values.sumOf { it.size }
             var currentMergedCount = 0
+            var completedTracksBytes = 0L
 
             // 2. Process each track with sliding-window assembly
             for ((trackIndex, trackSegments) in segmentsByTrack) {
+                var lastTrackBytes = 0L
                 downloadAndAssembleTrack(
                     downloadId = downloadId,
                     trackIndex = trackIndex,
@@ -144,9 +146,11 @@ class HlsQueueEngine(
                     headers = headers,
                     workDir = workDir,
                     onSegmentMerged = { bytesMerged ->
+                        lastTrackBytes = bytesMerged
+                        val cumulativeBytes = completedTracksBytes + bytesMerged
                         currentMergedCount++
                         val estTotal = if (currentMergedCount > 0 && totalSegmentsCount > 0) {
-                            val projected = (bytesMerged.toDouble() / currentMergedCount * totalSegmentsCount).toLong()
+                            val projected = (cumulativeBytes.toDouble() / currentMergedCount * totalSegmentsCount).toLong()
                             if (download.totalBytes > 0L) {
                                 maxOf(download.totalBytes, projected)
                             } else {
@@ -158,9 +162,10 @@ class HlsQueueEngine(
                         if (estTotal > 0L) {
                             dao.updateTotalBytes(downloadId, estTotal)
                         }
-                        onProgress?.invoke(bytesMerged, estTotal)
+                        onProgress?.invoke(cumulativeBytes, estTotal)
                     }
                 )
+                completedTracksBytes += lastTrackBytes
             }
 
             // 3. Remux track files into final destination (or keep raw concatenated track for subtitle playlists)
@@ -271,6 +276,16 @@ class HlsQueueEngine(
             File(workDir, "media_track_0.m3u8").writeText(rootContent)
             File(workDir, "media_track_0.url").writeText(download.url)
             result[0] = HlsPlaylistParser.parseMediaPlaylist(download.url, rootContent, trackIndex = 0).segments
+
+            val externalAudioUrl = HeadersCodec.decodeMeta(download.headersJson, HeadersCodec.META_HLS_AUDIO_URL)
+            if (!externalAudioUrl.isNullOrBlank() && externalAudioUrl != download.url) {
+                runCatching {
+                    val audioContent = fetchPlaylistText(externalAudioUrl, headers)
+                    File(workDir, "media_track_1.m3u8").writeText(audioContent)
+                    File(workDir, "media_track_1.url").writeText(externalAudioUrl)
+                    result[1] = HlsPlaylistParser.parseMediaPlaylist(externalAudioUrl, audioContent, trackIndex = 1).segments
+                }
+            }
         }
 
         return result

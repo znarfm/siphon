@@ -50,6 +50,7 @@ class BrowserViewModel(
     val rebindTarget: StateFlow<DownloadEntity?> = _rebindTarget.asStateFlow()
 
     fun getSnifferClientForTab(tabId: String): MediaSnifferClient {
+        val tabIncognito = _browserTabs.value.firstOrNull { it.id == tabId }?.isIncognito == true
         return synchronized(tabSnifferClients) {
             tabSnifferClients.getOrPut(tabId) {
                 MediaSnifferClient(
@@ -59,6 +60,7 @@ class BrowserViewModel(
                     tabId = tabId,
                     onAdBlocked = { _, _ -> recordAdBlocked(tabId) }
                 ).apply {
+                    isIncognito = tabIncognito
                     onMagnetLinkClicked = { uri ->
                         showMagnetDownloadPopup(uri)
                     }
@@ -69,7 +71,7 @@ class BrowserViewModel(
                         }
                     }
                 }
-            }
+            }.also { it.isIncognito = tabIncognito }
         }
     }
 
@@ -233,7 +235,7 @@ class BrowserViewModel(
         lastClosedTabIndex = closedIndex
         _tabThumbnails.value = _tabThumbnails.value - tabId
         _blockedCountsByTab.update { it - tabId }
-        tabSnifferClients.remove(tabId)
+        synchronized(tabSnifferClients) { tabSnifferClients.remove(tabId) }
 
         if (currentList.size <= 1) {
             val resetTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
@@ -279,7 +281,7 @@ class BrowserViewModel(
             val closedIds = currentList.filter { it.isIncognito }.map { it.id }.toSet()
             _tabThumbnails.value = _tabThumbnails.value - closedIds
             _blockedCountsByTab.update { it - closedIds }
-            closedIds.forEach { tabSnifferClients.remove(it) }
+            synchronized(tabSnifferClients) { closedIds.forEach { tabSnifferClients.remove(it) } }
             val remaining = currentList.filter { !it.isIncognito }
             if (remaining.isEmpty()) {
                 val freshTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
@@ -299,7 +301,7 @@ class BrowserViewModel(
         } else {
             _tabThumbnails.value = emptyMap()
             _blockedCountsByTab.value = emptyMap()
-            tabSnifferClients.clear()
+            synchronized(tabSnifferClients) { tabSnifferClients.clear() }
             val freshTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
             _browserTabs.value = listOf(freshTab)
             _activeTabId.value = freshTab.id
@@ -484,21 +486,75 @@ class BrowserViewModel(
     }
 
     fun downloadDirectMedia(url: String) {
+        startStandardDownload(
+            url = url,
+            userAgent = null,
+            contentDisposition = null,
+            mimetype = "image/*",
+            contentLength = -1L,
+            refererUrl = _browserUrl.value,
+            tabId = _activeTabId.value
+        )
+    }
+
+    fun startStandardDownload(
+        url: String,
+        userAgent: String? = null,
+        contentDisposition: String? = null,
+        mimetype: String? = null,
+        contentLength: Long = -1L,
+        refererUrl: String? = null,
+        tabId: String = _activeTabId.value
+    ) {
+        if (url.isBlank() || url.startsWith("blob:", ignoreCase = true) || url.startsWith("data:", ignoreCase = true)) {
+            return
+        }
         viewModelScope.launch {
-            val fileName = com.znarfm.siphon.core.sniffer.SnifferUrlClassifier.extractDisplayNameFromUrl(
-                url = url,
-                fallback = "download_${System.currentTimeMillis()}"
-            )
+            val snifferClient = getSnifferClientForTab(tabId)
+            val isIncognito = snifferClient.isIncognito
+            val effectiveReferer = refererUrl?.takeIf { it.startsWith("http", ignoreCase = true) }
+                ?: _browserUrl.value.takeIf { it.startsWith("http", ignoreCase = true) }
+                ?: ""
+            val effectiveUa = userAgent?.takeIf { it.isNotBlank() } ?: snifferClient.defaultUserAgent
+
+            val headers = mutableMapOf<String, String>()
+            if (effectiveReferer.isNotBlank()) {
+                headers["Referer"] = effectiveReferer
+            }
+            if (!effectiveUa.isNullOrBlank()) {
+                headers["User-Agent"] = effectiveUa
+            }
+            if (!isIncognito) {
+                val cookies = runCatching { android.webkit.CookieManager.getInstance().getCookie(url) }.getOrNull()
+                if (!cookies.isNullOrBlank()) {
+                    headers["Cookie"] = cookies
+                }
+            }
+
+            val parsedDispName = com.znarfm.siphon.core.network.MetadataProber.parseFilenameFromDisposition(contentDisposition)
+            val guessedName = runCatching {
+                android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype)
+            }.getOrNull()?.takeIf { it.isNotBlank() && it != "downloadfile.bin" }
+            val fileName = parsedDispName
+                ?: guessedName
+                ?: com.znarfm.siphon.core.sniffer.SnifferUrlClassifier.extractDisplayNameFromUrl(
+                    url = url,
+                    fallback = "download_${System.currentTimeMillis()}"
+                )
+
+            val resolvedMime = mimetype?.substringBefore(';')?.trim()?.takeIf { it.isNotBlank() }
+                ?: "application/octet-stream"
+
             val sniffed = SniffedMedia(
                 id = java.util.UUID.randomUUID().toString(),
-                tabId = _activeTabId.value,
+                tabId = tabId,
                 url = url,
                 displayName = fileName,
-                mimeType = "image/*",
-                totalBytes = -1L,
+                mimeType = resolvedMime,
+                totalBytes = contentLength,
                 mediaType = com.znarfm.siphon.data.db.DownloadType.HTTP,
-                sourcePageUrl = _browserUrl.value,
-                headers = emptyMap()
+                sourcePageUrl = effectiveReferer,
+                headers = headers
             )
             downloadRepository.startDownload(sniffed)
         }
