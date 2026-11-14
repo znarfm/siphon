@@ -39,9 +39,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ContentPaste
-import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -112,6 +109,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 enum class AppScreen {
     BROWSER,
@@ -1382,7 +1380,7 @@ private fun ClipboardDetectionBanner(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = if (isMagnet) Icons.Rounded.Hub else Icons.Rounded.ContentPaste,
+                        imageVector = if (isMagnet) SiphonIcons.Hub else SiphonIcons.ContentPaste,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(20.dp)

@@ -12,11 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.DarkMode
-import androidx.compose.material.icons.rounded.DesktopWindows
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -29,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.znarfm.siphon.data.repository.BrowserPreferences
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 private data class SearchEngineOption(
     val name: String,
@@ -72,7 +68,7 @@ fun BrowserSearchSettingsScreen(
         ) {
             item(key = "section_search_engine") {
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.Public,
+                    icon = SiphonIcons.Public,
                     title = "Search Engine"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -117,7 +113,7 @@ fun BrowserSearchSettingsScreen(
 
             item(key = "section_browsing_defaults") {
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.Tune,
+                    icon = SiphonIcons.Tune,
                     title = "Browsing Defaults"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -129,7 +125,7 @@ fun BrowserSearchSettingsScreen(
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         SettingsSwitchRow(
-                            icon = Icons.Rounded.DarkMode,
+                            icon = SiphonIcons.DarkMode,
                             title = "Web Dark Mode",
                             subtitle = "Force dark appearance on web pages",
                             checked = browserPreferences.webDarkMode,
@@ -140,7 +136,7 @@ fun BrowserSearchSettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant
                         )
                         SettingsSwitchRow(
-                            icon = Icons.Rounded.DesktopWindows,
+                            icon = SiphonIcons.DesktopWindows,
                             title = "Desktop Mode",
                             subtitle = "Request desktop sites by default",
                             checked = browserPreferences.desktopMode,

@@ -20,14 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.ContentPaste
-import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -68,6 +60,7 @@ import com.znarfm.siphon.data.db.HistoryEntity
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import java.net.URLEncoder
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 private enum class OmniboxFilter(val label: String) {
     ALL("All"),
@@ -167,7 +160,7 @@ fun OmniboxSearchOverlay(
                     modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        imageVector = SiphonIcons.ArrowBack,
                         contentDescription = "Close search"
                     )
                 }
@@ -187,7 +180,7 @@ fun OmniboxSearchOverlay(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Search,
+                            imageVector = SiphonIcons.Search,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
@@ -236,7 +229,7 @@ fun OmniboxSearchOverlay(
                                 modifier = Modifier.size(30.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Close,
+                                    imageVector = SiphonIcons.Close,
                                     contentDescription = "Clear URL",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(18.dp)
@@ -264,7 +257,7 @@ fun OmniboxSearchOverlay(
                         shape = ExpressiveShapeTokens.PillShape,
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Rounded.ContentPaste,
+                                imageVector = SiphonIcons.ContentPaste,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -320,7 +313,7 @@ fun OmniboxSearchOverlay(
                         contentPadding = PaddingValues(horizontal = 8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.DeleteSweep,
+                            imageVector = SiphonIcons.DeleteSweep,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(16.dp)
@@ -359,7 +352,7 @@ fun OmniboxSearchOverlay(
                 ) {
                     items(matchedBookmarks, key = { "bm_${it.id}" }) { bookmark ->
                         OmniboxSuggestionCard(
-                            icon = Icons.Rounded.Star,
+                            icon = SiphonIcons.Star,
                             iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
                             iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
                             shape = ExpressiveShapeTokens.ActiveCardShape,
@@ -372,7 +365,7 @@ fun OmniboxSearchOverlay(
 
                     items(matchedHistory, key = { "hi_${it.id}" }) { entry ->
                         OmniboxSuggestionCard(
-                            icon = Icons.Rounded.History,
+                            icon = SiphonIcons.History,
                             iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
                             iconContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             shape = ExpressiveShapeTokens.RestingCardShape,
@@ -454,7 +447,7 @@ private fun OmniboxSuggestionCard(
                 modifier = Modifier.size(32.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Close,
+                    imageVector = SiphonIcons.Close,
                     contentDescription = "Remove entry",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(16.dp)

@@ -23,15 +23,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -76,6 +67,7 @@ import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import kotlinx.coroutines.flow.map
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -203,7 +195,7 @@ fun QueueScreen(
                                 onClearSelection()
                             }) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Close,
+                                    imageVector = SiphonIcons.Close,
                                     contentDescription = "Exit selection mode"
                                 )
                             }
@@ -260,7 +252,7 @@ fun QueueScreen(
                     ) {
                         IconButton(onClick = onNavigateBack) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                imageVector = SiphonIcons.ArrowBack,
                                 contentDescription = "Back"
                             )
                         }
@@ -290,13 +282,13 @@ fun QueueScreen(
 
                         IconButton(onClick = { isSearchExpanded = !isSearchExpanded }) {
                             Icon(
-                                imageVector = Icons.Rounded.Search,
+                                imageVector = SiphonIcons.Search,
                                 contentDescription = "Search downloads"
                             )
                         }
                         IconButton(onClick = onOpenDownloadSettings) {
                             Icon(
-                                imageVector = Icons.Rounded.Settings,
+                                imageVector = SiphonIcons.Settings,
                                 contentDescription = "Download settings"
                             )
                         }
@@ -317,7 +309,7 @@ fun QueueScreen(
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Pause,
+                                        imageVector = SiphonIcons.Pause,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -331,7 +323,7 @@ fun QueueScreen(
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.PlayArrow,
+                                        imageVector = SiphonIcons.PlayArrow,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -347,7 +339,7 @@ fun QueueScreen(
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.DeleteSweep,
+                                        imageVector = SiphonIcons.DeleteSweep,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -383,7 +375,7 @@ fun QueueScreen(
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { onSearchQueryChange("") }) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Close,
+                                    imageVector = SiphonIcons.Close,
                                     contentDescription = "Clear search",
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -563,7 +555,7 @@ fun QueueScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Download,
+                                imageVector = SiphonIcons.Download,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant

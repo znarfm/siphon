@@ -21,20 +21,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.rounded.BookmarkBorder
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.SearchOff
-import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -82,6 +68,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @Composable
 fun BookmarksScreen(
@@ -153,7 +140,7 @@ fun BookmarksScreen(
     ) { innerPadding ->
         if (filteredBookmarks.isEmpty()) {
             EmptyStateView(
-                icon = if (searchQuery.isNotBlank()) Icons.Rounded.SearchOff else Icons.Rounded.BookmarkBorder,
+                icon = if (searchQuery.isNotBlank()) SiphonIcons.SearchOff else SiphonIcons.BookmarkBorder,
                 title = if (searchQuery.isNotBlank()) "No matching bookmarks" else "No bookmarks yet",
                 subtitle = if (searchQuery.isNotBlank()) {
                     "Try a different title or URL keyword."
@@ -257,7 +244,7 @@ private fun BookmarkItemRow(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = Icons.Rounded.Star,
+                        imageVector = SiphonIcons.Star,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(20.dp)
@@ -288,7 +275,7 @@ private fun BookmarkItemRow(
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
                     Icon(
-                        imageVector = Icons.Rounded.MoreVert,
+                        imageVector = SiphonIcons.MoreVert,
                         contentDescription = "Bookmark options",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -302,7 +289,7 @@ private fun BookmarkItemRow(
                         text = { Text("Open in new tab") },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Rounded.OpenInNew,
+                                imageVector = SiphonIcons.OpenInNew,
                                 contentDescription = null
                             )
                         },
@@ -315,7 +302,7 @@ private fun BookmarkItemRow(
                         text = { Text("Open in incognito tab") },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Rounded.VisibilityOff,
+                                imageVector = SiphonIcons.VisibilityOff,
                                 contentDescription = null
                             )
                         },
@@ -328,7 +315,7 @@ private fun BookmarkItemRow(
                         text = { Text("Copy URL") },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Rounded.ContentCopy,
+                                imageVector = SiphonIcons.ContentCopy,
                                 contentDescription = null
                             )
                         },
@@ -346,7 +333,7 @@ private fun BookmarkItemRow(
                         },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Outlined.Delete,
+                                imageVector = SiphonIcons.Outlined.Delete,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.error
                             )
@@ -411,7 +398,7 @@ fun HistoryScreen(
             onDismissRequest = { showClearConfirmDialog = false },
             icon = {
                 Icon(
-                    imageVector = Icons.Rounded.DeleteSweep,
+                    imageVector = SiphonIcons.DeleteSweep,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.error
                 )
@@ -487,7 +474,7 @@ fun HistoryScreen(
     ) { innerPadding ->
         if (filteredHistory.isEmpty()) {
             EmptyStateView(
-                icon = if (searchQuery.isNotBlank()) Icons.Rounded.SearchOff else Icons.Rounded.History,
+                icon = if (searchQuery.isNotBlank()) SiphonIcons.SearchOff else SiphonIcons.History,
                 title = if (searchQuery.isNotBlank()) "No matching history" else "No browsing history",
                 subtitle = if (searchQuery.isNotBlank()) {
                     "Try a different title or URL keyword."
@@ -579,7 +566,7 @@ private fun HistoryItemRow(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = Icons.Rounded.History,
+                        imageVector = SiphonIcons.History,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.size(18.dp)
@@ -622,7 +609,7 @@ private fun HistoryItemRow(
 
             IconButton(onClick = onDelete) {
                 Icon(
-                    imageVector = Icons.Outlined.Delete,
+                    imageVector = SiphonIcons.Outlined.Delete,
                     contentDescription = "Delete history entry",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -673,7 +660,7 @@ private fun SearchableTopAppBar(
                 )
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    imageVector = SiphonIcons.ArrowBack,
                     contentDescription = "Back"
                 )
             }
@@ -700,7 +687,7 @@ private fun SearchableTopAppBar(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Search,
+                            imageVector = SiphonIcons.Search,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
@@ -753,7 +740,7 @@ private fun SearchableTopAppBar(
                     }
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Close,
+                        imageVector = SiphonIcons.Close,
                         contentDescription = "Close search"
                     )
                 }
@@ -778,7 +765,7 @@ private fun SearchableTopAppBar(
                     )
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Search,
+                        imageVector = SiphonIcons.Search,
                         contentDescription = "Search"
                     )
                 }

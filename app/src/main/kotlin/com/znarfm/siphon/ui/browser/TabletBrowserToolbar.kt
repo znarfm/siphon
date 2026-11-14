@@ -19,21 +19,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.PrivacyTip
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -59,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -102,12 +88,12 @@ fun TabletBrowserToolbar(
         val displayUrl = if (isNewTab) "Search or type URL" else url
 
         val siteIcon = when {
-            isIncognito && isNewTab -> Icons.Rounded.PrivacyTip
-            isNewTab && isAdBlockEnabled -> Icons.Rounded.Shield
-            isNewTab -> Icons.Rounded.Public
-            url.startsWith("https://", ignoreCase = true) -> Icons.Rounded.Lock
-            isAdBlockEnabled -> Icons.Rounded.Shield
-            else -> Icons.Rounded.Public
+            isIncognito && isNewTab -> SiphonIcons.PrivacyTip
+            isNewTab && isAdBlockEnabled -> SiphonIcons.Shield
+            isNewTab -> SiphonIcons.Public
+            url.startsWith("https://", ignoreCase = true) -> SiphonIcons.Lock
+            isAdBlockEnabled -> SiphonIcons.Shield
+            else -> SiphonIcons.Public
         }
         val siteIconTint = when {
             isAdBlockEnabled && !isIncognito -> MaterialTheme.colorScheme.primary
@@ -172,7 +158,7 @@ fun TabletBrowserToolbar(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(
-                                        imageVector = if (tab.isIncognito) Icons.Rounded.PrivacyTip else Icons.Rounded.Public,
+                                        imageVector = if (tab.isIncognito) SiphonIcons.PrivacyTip else SiphonIcons.Public,
                                         contentDescription = null,
                                         tint = tabContentColor,
                                         modifier = Modifier.size(15.dp)
@@ -190,7 +176,7 @@ fun TabletBrowserToolbar(
                                         modifier = Modifier.size(24.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Rounded.Close,
+                                            imageVector = SiphonIcons.Close,
                                             contentDescription = "Close tab",
                                             tint = tabContentColor,
                                             modifier = Modifier.size(14.dp)
@@ -206,7 +192,7 @@ fun TabletBrowserToolbar(
                         modifier = Modifier.size(34.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Add,
+                            imageVector = SiphonIcons.Add,
                             contentDescription = "New tab",
                             tint = primaryContentColor,
                             modifier = Modifier.size(20.dp)
@@ -228,7 +214,7 @@ fun TabletBrowserToolbar(
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            imageVector = SiphonIcons.ArrowBack,
                             contentDescription = "Back",
                             tint = if (canGoBack) primaryContentColor else secondaryContentColor.copy(alpha = 0.38f),
                             modifier = Modifier.size(20.dp)
@@ -241,7 +227,7 @@ fun TabletBrowserToolbar(
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                            imageVector = SiphonIcons.ArrowForward,
                             contentDescription = "Forward",
                             tint = if (canGoForward) primaryContentColor else secondaryContentColor.copy(alpha = 0.38f),
                             modifier = Modifier.size(20.dp)
@@ -253,7 +239,7 @@ fun TabletBrowserToolbar(
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = if (isLoading) Icons.Rounded.Close else Icons.Rounded.Refresh,
+                            imageVector = if (isLoading) SiphonIcons.Close else SiphonIcons.Refresh,
                             contentDescription = if (isLoading) "Stop loading" else "Reload page",
                             tint = primaryContentColor,
                             modifier = Modifier.size(20.dp)
@@ -309,7 +295,7 @@ fun TabletBrowserToolbar(
                                 modifier = Modifier.size(34.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (isBookmarked) Icons.Rounded.Star else Icons.Outlined.StarBorder,
+                                    imageVector = if (isBookmarked) SiphonIcons.Star else SiphonIcons.Outlined.StarBorder,
                                     contentDescription = if (isBookmarked) "Remove bookmark" else "Bookmark page",
                                     tint = if (isBookmarked) MaterialTheme.colorScheme.primary else secondaryContentColor,
                                     modifier = Modifier.size(19.dp)
@@ -345,7 +331,7 @@ fun TabletBrowserToolbar(
                             modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Bolt,
+                                imageVector = SiphonIcons.Bolt,
                                 contentDescription = "Media Sniffer",
                                 modifier = Modifier.size(20.dp)
                             )
@@ -379,7 +365,7 @@ fun TabletBrowserToolbar(
                             modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Download,
+                                imageVector = SiphonIcons.Download,
                                 contentDescription = "Downloads",
                                 modifier = Modifier.size(20.dp)
                             )
@@ -421,7 +407,7 @@ fun TabletBrowserToolbar(
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.MoreVert,
+                            imageVector = SiphonIcons.MoreVert,
                             contentDescription = "More options",
                             tint = primaryContentColor,
                             modifier = Modifier.size(21.dp)

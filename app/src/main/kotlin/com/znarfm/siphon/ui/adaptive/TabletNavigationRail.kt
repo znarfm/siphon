@@ -5,19 +5,6 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Bookmarks
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Tab
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Bookmarks
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Tab
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.FloatingActionButton
@@ -30,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import com.znarfm.siphon.ui.AppScreen
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @Composable
 fun TabletNavigationRail(
@@ -51,7 +39,7 @@ fun TabletNavigationRail(
         header = {
             FloatingActionButton(onClick = onNewTab) {
                 Icon(
-                    imageVector = Icons.Rounded.Add,
+                    imageVector = SiphonIcons.Add,
                     contentDescription = "New tab"
                 )
             }
@@ -63,9 +51,9 @@ fun TabletNavigationRail(
             icon = {
                 Icon(
                     imageVector = if (currentScreen == AppScreen.BROWSER) {
-                        Icons.Rounded.Public
+                        SiphonIcons.Public
                     } else {
-                        Icons.Outlined.Public
+                        SiphonIcons.Outlined.Public
                     },
                     contentDescription = "Browser"
                 )
@@ -94,9 +82,9 @@ fun TabletNavigationRail(
                 ) {
                     Icon(
                         imageVector = if (currentScreen == AppScreen.QUEUE) {
-                            Icons.Rounded.Download
+                            SiphonIcons.Download
                         } else {
-                            Icons.Outlined.Download
+                            SiphonIcons.Outlined.Download
                         },
                         contentDescription = "Queue"
                     )
@@ -126,9 +114,9 @@ fun TabletNavigationRail(
                 ) {
                     Icon(
                         imageVector = if (currentScreen == AppScreen.TAB_SWITCHER) {
-                            Icons.Rounded.Tab
+                            SiphonIcons.Tab
                         } else {
-                            Icons.Outlined.Tab
+                            SiphonIcons.Outlined.Tab
                         },
                         contentDescription = "Tabs"
                     )
@@ -149,9 +137,9 @@ fun TabletNavigationRail(
             icon = {
                 Icon(
                     imageVector = if (currentScreen == AppScreen.BOOKMARKS) {
-                        Icons.Rounded.Bookmarks
+                        SiphonIcons.Bookmarks
                     } else {
-                        Icons.Outlined.Bookmarks
+                        SiphonIcons.Outlined.Bookmarks
                     },
                     contentDescription = "Bookmarks"
                 )
@@ -170,7 +158,7 @@ fun TabletNavigationRail(
             onClick = { onNavigate(AppScreen.HISTORY) },
             icon = {
                 Icon(
-                    imageVector = Icons.Rounded.History,
+                    imageVector = SiphonIcons.History,
                     contentDescription = "History"
                 )
             },
@@ -189,9 +177,9 @@ fun TabletNavigationRail(
             icon = {
                 Icon(
                     imageVector = if (isSettingsSelected) {
-                        Icons.Rounded.Settings
+                        SiphonIcons.Settings
                     } else {
-                        Icons.Outlined.Settings
+                        SiphonIcons.Outlined.Settings
                     },
                     contentDescription = "Settings"
                 )

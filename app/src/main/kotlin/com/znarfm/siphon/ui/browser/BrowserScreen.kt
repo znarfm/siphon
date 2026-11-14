@@ -44,9 +44,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -97,6 +94,7 @@ import com.znarfm.siphon.ui.theme.AppColorSeed
 import com.znarfm.siphon.ui.theme.AppThemeMode
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import kotlinx.coroutines.CancellationException
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 private const val DARK_MODE_INJECT_JS = """
 (function() {
@@ -604,7 +602,7 @@ fun BrowserScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Link,
+                            imageVector = SiphonIcons.Link,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onErrorContainer,
                             modifier = Modifier.size(20.dp)
@@ -627,7 +625,7 @@ fun BrowserScreen(
                         }
                         IconButton(onClick = onCancelRebind) {
                             Icon(
-                                imageVector = Icons.Rounded.Close,
+                                imageVector = SiphonIcons.Close,
                                 contentDescription = "Cancel rebind",
                                 tint = MaterialTheme.colorScheme.onErrorContainer
                             )

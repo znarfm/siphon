@@ -26,14 +26,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Tab
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -85,6 +77,7 @@ import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -168,7 +161,7 @@ fun TabSwitcherScreen(
                             )
                         ) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                imageVector = SiphonIcons.ArrowBack,
                                 contentDescription = "Done"
                             )
                         }
@@ -187,7 +180,7 @@ fun TabSwitcherScreen(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Tab,
+                                        imageVector = SiphonIcons.Tab,
                                         contentDescription = "Normal tabs",
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -209,7 +202,7 @@ fun TabSwitcherScreen(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.VisibilityOff,
+                                        imageVector = SiphonIcons.VisibilityOff,
                                         contentDescription = "Incognito tabs",
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -230,7 +223,7 @@ fun TabSwitcherScreen(
                             )
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Add,
+                                imageVector = SiphonIcons.Add,
                                 contentDescription = if (isIncognitoTabSelected) "New Incognito tab" else "New tab"
                             )
                         }
@@ -244,7 +237,7 @@ fun TabSwitcherScreen(
                                 )
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.MoreVert,
+                                    imageVector = SiphonIcons.MoreVert,
                                     contentDescription = "More options"
                                 )
                             }
@@ -288,7 +281,7 @@ fun TabSwitcherScreen(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = if (isIncognitoTabSelected) Icons.Rounded.VisibilityOff else Icons.Rounded.Tab,
+                                    imageVector = if (isIncognitoTabSelected) SiphonIcons.VisibilityOff else SiphonIcons.Tab,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(30.dp)
@@ -305,7 +298,7 @@ fun TabSwitcherScreen(
                             shape = ExpressiveShapeTokens.PillShape
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Add,
+                                imageVector = SiphonIcons.Add,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -502,7 +495,7 @@ private fun TabGridCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = if (isIncognito) Icons.Rounded.VisibilityOff else Icons.Rounded.Public,
+                    imageVector = if (isIncognito) SiphonIcons.VisibilityOff else SiphonIcons.Public,
                     contentDescription = null,
                     tint = if (isActive) MaterialTheme.colorScheme.primary else headerFg.copy(alpha = 0.78f),
                     modifier = Modifier.size(16.dp)
@@ -527,7 +520,7 @@ private fun TabGridCard(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = Icons.Rounded.Close,
+                            imageVector = SiphonIcons.Close,
                             contentDescription = "Close tab",
                             tint = headerFg.copy(alpha = 0.85f),
                             modifier = Modifier.size(16.dp)
@@ -563,7 +556,7 @@ private fun TabGridCard(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = if (isIncognito) Icons.Rounded.VisibilityOff else Icons.Rounded.Tab,
+                                    imageVector = if (isIncognito) SiphonIcons.VisibilityOff else SiphonIcons.Tab,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(22.dp)

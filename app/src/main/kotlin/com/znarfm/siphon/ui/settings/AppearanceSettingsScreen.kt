@@ -18,9 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -42,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.znarfm.siphon.ui.theme.AppColorSeed
 import com.znarfm.siphon.ui.theme.AppThemeMode
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -69,7 +67,7 @@ fun AppearanceSettingsScreen(
         ) {
             item(key = "section_appearance") {
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.Palette,
+                    icon = SiphonIcons.Palette,
                     title = "Theme & Color"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -152,7 +150,7 @@ fun AppearanceSettingsScreen(
                                             leadingIcon = if (isSelected) {
                                                 {
                                                     Icon(
-                                                        imageVector = Icons.Rounded.Check,
+                                                        imageVector = SiphonIcons.Check,
                                                         contentDescription = null,
                                                         modifier = Modifier.size(16.dp)
                                                     )
@@ -186,7 +184,7 @@ fun AppearanceSettingsScreen(
                                         ) {
                                             if (isSelected) {
                                                 Icon(
-                                                    imageVector = Icons.Rounded.Check,
+                                                    imageVector = SiphonIcons.Check,
                                                     contentDescription = seed.title,
                                                     tint = Color.White,
                                                     modifier = Modifier.size(18.dp)

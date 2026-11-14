@@ -9,9 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Hub
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -28,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.net.URLDecoder
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 private data class ParsedMagnetInfo(
     val displayName: String,
@@ -88,7 +86,7 @@ fun MagnetDownloadDialog(
         onDismissRequest = onDismiss,
         icon = {
             Icon(
-                imageVector = Icons.Rounded.Hub,
+                imageVector = SiphonIcons.Hub,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary
             )
@@ -146,7 +144,7 @@ fun MagnetDownloadDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Folder,
+                        imageVector = SiphonIcons.Folder,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)

@@ -23,11 +23,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.InsertDriveFile
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -58,6 +53,7 @@ import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.db.DownloadType
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -147,7 +143,7 @@ fun TaskInspectorContent(
                 Spacer(modifier = Modifier.width(4.dp))
                 IconButton(onClick = onClose) {
                     Icon(
-                        imageVector = Icons.Rounded.Close,
+                        imageVector = SiphonIcons.Close,
                         contentDescription = "Close inspector"
                     )
                 }
@@ -332,7 +328,7 @@ fun TorrentFilesContent(
             if (onBack != null) {
                 IconButton(onClick = onBack) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        imageVector = SiphonIcons.ArrowBack,
                         contentDescription = "Back to details"
                     )
                 }
@@ -382,7 +378,7 @@ fun TorrentFilesContent(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.InsertDriveFile,
+                        imageVector = SiphonIcons.InsertDriveFile,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(22.dp)
@@ -410,7 +406,7 @@ fun TorrentFilesContent(
                         }
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Share,
+                            imageVector = SiphonIcons.Share,
                             contentDescription = "Share ${file.name}",
                             modifier = Modifier.size(18.dp)
                         )

@@ -1,5 +1,5 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 use adblock::lists::ParseOptions;
 use adblock::request::Request;
@@ -41,18 +41,50 @@ fn jobject_array_to_vec(env: &mut JNIEnv, array: &JObjectArray) -> Vec<String> {
                 if let Some(s) = jstring_to_string(env, &jstr) {
                     out.push(s);
                 }
+                let _ = env.delete_local_ref(jstr);
             }
         }
     }
     out
 }
 
-unsafe fn engine_from_handle<'a>(handle: jlong) -> Option<&'a Engine> {
-    if handle == 0 {
-        None
-    } else {
-        Some(&*(handle as *const Engine))
+fn strings_to_jobject_array<'local>(
+    env: &mut JNIEnv<'local>,
+    strings: &[String],
+) -> JObjectArray<'local> {
+    let Ok(str_cls) = env.find_class("java/lang/String") else {
+        return JObjectArray::from(JObject::null());
+    };
+    let Ok(out_arr) = env.new_object_array(strings.len() as i32, &str_cls, JObject::null()) else {
+        let _ = env.delete_local_ref(str_cls);
+        return JObjectArray::from(JObject::null());
+    };
+    let _ = env.delete_local_ref(str_cls);
+    for (idx, s) in strings.iter().enumerate() {
+        if let Ok(jstr) = env.new_string(s) {
+            let _ = env.set_object_array_element(&out_arr, idx as i32, &jstr);
+            let _ = env.delete_local_ref(jstr);
+        }
     }
+    out_arr
+}
+
+fn validate_handle(handle: jlong) -> Option<NonNull<Engine>> {
+    NonNull::new(handle as *mut Engine)
+}
+
+/// Converts a raw JNI `jlong` handle into a shared reference to [`Engine`].
+///
+/// # Safety & Locking Invariant
+/// - `handle` must either be `0` or a valid pointer previously returned by
+///   `Box::into_raw(Box::new(engine))` that has not yet been passed to `nativeDestroy`.
+/// - Concurrent access relies on Kotlin's `ReentrantReadWriteLock`: callers of
+///   read/query methods (`nativeSerialize`, `nativeCheckNetwork`,
+///   `nativeCosmeticResourcesJson`, `nativeHiddenClassIdSelectors`) must hold
+///   the read lock (or write lock), while `nativeDestroy` must hold the write lock
+///   so no shared `&Engine` reference exists when the `Engine` is dropped.
+unsafe fn engine_from_handle<'a>(handle: jlong) -> Option<&'a Engine> {
+    validate_handle(handle).map(|ptr| ptr.as_ref())
 }
 
 #[no_mangle]
@@ -187,18 +219,9 @@ pub extern "system" fn Java_com_znarfm_siphon_core_adblock_NativeAdblockJni_nati
     ids: JObjectArray<'local>,
     exceptions: JObjectArray<'local>,
 ) -> JObjectArray<'local> {
-    let empty_array = |env: &mut JNIEnv<'local>| -> JObjectArray<'local> {
-        match env.find_class("java/lang/String") {
-            Ok(cls) => env
-                .new_object_array(0, cls, JObject::null())
-                .unwrap_or_else(|_| JObjectArray::from(JObject::null())),
-            Err(_) => JObjectArray::from(JObject::null()),
-        }
-    };
-
     let result = catch_unwind(AssertUnwindSafe(|| -> JObjectArray<'local> {
         let Some(engine) = (unsafe { engine_from_handle(handle) }) else {
-            return empty_array(&mut env);
+            return strings_to_jobject_array(&mut env, &[]);
         };
         let class_vec = jobject_array_to_vec(&mut env, &classes);
         let id_vec = jobject_array_to_vec(&mut env, &ids);
@@ -206,18 +229,7 @@ pub extern "system" fn Java_com_znarfm_siphon_core_adblock_NativeAdblockJni_nati
             jobject_array_to_vec(&mut env, &exceptions).into_iter().collect();
 
         let selectors = engine.hidden_class_id_selectors(&class_vec, &id_vec, &exception_set);
-        let Ok(str_cls) = env.find_class("java/lang/String") else {
-            return JObjectArray::from(JObject::null());
-        };
-        let Ok(out_arr) = env.new_object_array(selectors.len() as i32, str_cls, JObject::null()) else {
-            return JObjectArray::from(JObject::null());
-        };
-        for (idx, sel) in selectors.into_iter().enumerate() {
-            if let Ok(jstr) = env.new_string(sel) {
-                let _ = env.set_object_array_element(&out_arr, idx as i32, jstr);
-            }
-        }
-        out_arr
+        strings_to_jobject_array(&mut env, &selectors)
     }));
     result.unwrap_or_else(|_| JObjectArray::from(JObject::null()))
 }
@@ -229,9 +241,9 @@ pub extern "system" fn Java_com_znarfm_siphon_core_adblock_NativeAdblockJni_nati
     handle: jlong,
 ) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
-        if handle != 0 {
+        if let Some(ptr) = validate_handle(handle) {
             unsafe {
-                drop(Box::from_raw(handle as *mut Engine));
+                drop(Box::from_raw(ptr.as_ptr()));
             }
         }
     }));

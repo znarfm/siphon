@@ -25,16 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowDropDown
-import androidx.compose.material.icons.rounded.AudioFile
-import androidx.compose.material.icons.rounded.ClearAll
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Deselect
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.SelectAll
-import androidx.compose.material.icons.rounded.Subtitles
-import androidx.compose.material.icons.rounded.VideoFile
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -84,6 +74,7 @@ import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.DownloadType
 import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
 import java.util.Locale
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @Immutable
 data class SelectedMediaRequest(
@@ -343,7 +334,7 @@ private fun SnifferPanelContent(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Icon(
-                            imageVector = if (allSelected) Icons.Rounded.Deselect else Icons.Rounded.SelectAll,
+                            imageVector = if (allSelected) SiphonIcons.Deselect else SiphonIcons.SelectAll,
                             contentDescription = null,
                             modifier = Modifier.size(15.dp)
                         )
@@ -360,7 +351,7 @@ private fun SnifferPanelContent(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.ClearAll,
+                            imageVector = SiphonIcons.ClearAll,
                             contentDescription = null,
                             modifier = Modifier.size(15.dp)
                         )
@@ -373,7 +364,7 @@ private fun SnifferPanelContent(
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Refresh,
+                        imageVector = SiphonIcons.Refresh,
                         contentDescription = null,
                         modifier = Modifier.size(15.dp)
                     )
@@ -392,7 +383,7 @@ private fun SnifferPanelContent(
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Close,
+                            imageVector = SiphonIcons.Close,
                             contentDescription = "Close",
                             modifier = Modifier.size(20.dp)
                         )
@@ -592,7 +583,7 @@ private fun SnifferPanelContent(
                                         onCheckedChange = { batchSplitMenuExpanded = it }
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Rounded.ArrowDropDown,
+                                            imageVector = SiphonIcons.ArrowDropDown,
                                             contentDescription = "More options",
                                             modifier = Modifier.size(18.dp)
                                         )
@@ -724,9 +715,9 @@ private fun SniffedMediaItemCard(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         val mediaIcon = when {
-                            media.isAudio -> Icons.Rounded.AudioFile
-                            media.isSubtitle -> Icons.Rounded.Subtitles
-                            else -> Icons.Rounded.VideoFile
+                            media.isAudio -> SiphonIcons.AudioFile
+                            media.isSubtitle -> SiphonIcons.Subtitles
+                            else -> SiphonIcons.VideoFile
                         }
                         Icon(
                             imageVector = mediaIcon,

@@ -18,21 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowDropDown
-import androidx.compose.material.icons.rounded.Cancel
-import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material.icons.rounded.HourglassTop
-import androidx.compose.material.icons.rounded.Hub
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Language
-import androidx.compose.material.icons.rounded.Link
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -79,6 +64,7 @@ import com.znarfm.siphon.ui.theme.StateFailed
 import com.znarfm.siphon.ui.theme.StatePaused
 import com.znarfm.siphon.ui.theme.StateWaiting
 import java.util.Locale
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -199,7 +185,7 @@ fun DownloadItemCard(
                                 horizontalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Hub,
+                                    imageVector = SiphonIcons.Hub,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.size(12.dp)
@@ -322,12 +308,12 @@ fun DownloadItemCard(
                     }
 
                     val (primaryIcon, primaryLabel) = when (download.state) {
-                        DownloadState.ACTIVE, DownloadState.QUEUED -> Icons.Rounded.Pause to "Pause"
-                        DownloadState.MERGING -> Icons.Rounded.HourglassTop to "Merging…"
-                        DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK -> Icons.Rounded.PlayArrow to "Resume"
-                        DownloadState.FAILED, DownloadState.CANCELLED -> Icons.Rounded.Refresh to "Retry"
-                        DownloadState.AUTH_EXPIRED -> Icons.Rounded.Link to "Update Link"
-                        DownloadState.COMPLETED -> Icons.Rounded.FolderOpen to "Open"
+                        DownloadState.ACTIVE, DownloadState.QUEUED -> SiphonIcons.Pause to "Pause"
+                        DownloadState.MERGING -> SiphonIcons.HourglassTop to "Merging…"
+                        DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK -> SiphonIcons.PlayArrow to "Resume"
+                        DownloadState.FAILED, DownloadState.CANCELLED -> SiphonIcons.Refresh to "Retry"
+                        DownloadState.AUTH_EXPIRED -> SiphonIcons.Link to "Update Link"
+                        DownloadState.COMPLETED -> SiphonIcons.FolderOpen to "Open"
                     }
 
                     val chevronRotation by animateFloatAsState(
@@ -361,7 +347,7 @@ fun DownloadItemCard(
                                     onCheckedChange = { isMenuExpanded = it }
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.ArrowDropDown,
+                                        imageVector = SiphonIcons.ArrowDropDown,
                                         contentDescription = "More actions",
                                         modifier = Modifier
                                             .size(18.dp)
@@ -377,7 +363,7 @@ fun DownloadItemCard(
                                     DropdownMenuItem(
                                         leadingIcon = {
                                             Icon(
-                                                imageVector = if (isTerminal) Icons.Rounded.DeleteOutline else Icons.Rounded.Cancel,
+                                                imageVector = if (isTerminal) SiphonIcons.DeleteOutline else SiphonIcons.Cancel,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(18.dp)
                                             )
@@ -392,7 +378,7 @@ fun DownloadItemCard(
                                         DropdownMenuItem(
                                             leadingIcon = {
                                                 Icon(
-                                                    imageVector = Icons.Rounded.Share,
+                                                    imageVector = SiphonIcons.Share,
                                                     contentDescription = null,
                                                     modifier = Modifier.size(18.dp)
                                                 )
@@ -407,7 +393,7 @@ fun DownloadItemCard(
                                     DropdownMenuItem(
                                         leadingIcon = {
                                             Icon(
-                                                imageVector = Icons.Rounded.Link,
+                                                imageVector = SiphonIcons.Link,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(18.dp)
                                             )
@@ -422,7 +408,7 @@ fun DownloadItemCard(
                                         DropdownMenuItem(
                                             leadingIcon = {
                                                 Icon(
-                                                    imageVector = Icons.Rounded.Language,
+                                                    imageVector = SiphonIcons.Language,
                                                     contentDescription = null,
                                                     modifier = Modifier.size(18.dp)
                                                 )
@@ -437,7 +423,7 @@ fun DownloadItemCard(
                                     DropdownMenuItem(
                                         leadingIcon = {
                                             Icon(
-                                                imageVector = Icons.Rounded.Edit,
+                                                imageVector = SiphonIcons.Edit,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(18.dp)
                                             )
@@ -451,7 +437,7 @@ fun DownloadItemCard(
                                     DropdownMenuItem(
                                         leadingIcon = {
                                             Icon(
-                                                imageVector = Icons.Rounded.Info,
+                                                imageVector = SiphonIcons.Info,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(18.dp)
                                             )

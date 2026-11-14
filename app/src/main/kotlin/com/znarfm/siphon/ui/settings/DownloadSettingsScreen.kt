@@ -17,11 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -45,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import kotlin.math.roundToInt
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @Composable
 fun DownloadSettingsScreen(
@@ -120,7 +116,7 @@ fun DownloadSettingsScreen(
             // Concurrency Card
             item(key = "section_concurrency") {
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.Download,
+                    icon = SiphonIcons.Download,
                     title = "Concurrency"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -186,7 +182,7 @@ fun DownloadSettingsScreen(
             // Network & Speed Card
             item(key = "section_network_speed") {
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.Speed,
+                    icon = SiphonIcons.Speed,
                     title = "Network & Speed"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -232,7 +228,7 @@ fun DownloadSettingsScreen(
                         )
 
                         SettingsSwitchRow(
-                            icon = Icons.Rounded.Wifi,
+                            icon = SiphonIcons.Wifi,
                             title = "Download on Wi-Fi only",
                             subtitle = "Pause or defer downloads on cellular networks",
                             checked = wifiOnly,
@@ -248,7 +244,7 @@ fun DownloadSettingsScreen(
             // Storage Location Card
             item(key = "section_storage_location") {
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.Folder,
+                    icon = SiphonIcons.Folder,
                     title = "Storage Location"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -302,7 +298,7 @@ fun DownloadSettingsScreen(
                                 shape = ExpressiveShapeTokens.PillShape
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Folder,
+                                    imageVector = SiphonIcons.Folder,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )

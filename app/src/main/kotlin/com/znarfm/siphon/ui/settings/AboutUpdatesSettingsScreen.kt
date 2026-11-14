@@ -12,16 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.InstallMobile
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.SystemUpdate
-import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -41,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.znarfm.siphon.core.updater.UpdateState
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @Composable
 fun AboutUpdatesSettingsScreen(
@@ -76,7 +67,7 @@ fun AboutUpdatesSettingsScreen(
         ) {
             item(key = "section_app_info") {
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.Info,
+                    icon = SiphonIcons.Info,
                     title = "App Info"
                 )
             }
@@ -114,7 +105,7 @@ fun AboutUpdatesSettingsScreen(
                         )
 
                         SettingsNavigationRow(
-                            icon = Icons.Rounded.Person,
+                            icon = SiphonIcons.Person,
                             title = "Author: @znarfm",
                             subtitle = "github.com/znarfm • Tap to open profile",
                             iconTint = MaterialTheme.colorScheme.primary,
@@ -126,7 +117,7 @@ fun AboutUpdatesSettingsScreen(
 
             item(key = "section_updates") {
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.SystemUpdate,
+                    icon = SiphonIcons.SystemUpdate,
                     title = "Updates"
                 )
             }
@@ -144,7 +135,7 @@ fun AboutUpdatesSettingsScreen(
                             subtitle = "Check GitHub Releases for new versions on startup",
                             checked = autoUpdateEnabled,
                             onCheckedChange = onToggleAutoUpdate,
-                            icon = Icons.Rounded.Refresh
+                            icon = SiphonIcons.Refresh
                         )
 
                         HorizontalDivider(
@@ -174,7 +165,7 @@ fun AboutUpdatesSettingsScreen(
                                     shape = ExpressiveShapeTokens.PillShape
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Refresh,
+                                        imageVector = SiphonIcons.Refresh,
                                         contentDescription = null,
                                         modifier = Modifier.size(18.dp)
                                     )
@@ -214,7 +205,7 @@ private fun UpdateStatusContent(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.CheckCircle,
+                    imageVector = SiphonIcons.CheckCircle,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
@@ -278,7 +269,7 @@ private fun UpdateStatusContent(
                     shape = ExpressiveShapeTokens.PillShape
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Download,
+                        imageVector = SiphonIcons.Download,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -323,7 +314,7 @@ private fun UpdateStatusContent(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.VerifiedUser,
+                        imageVector = SiphonIcons.VerifiedUser,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
@@ -340,7 +331,7 @@ private fun UpdateStatusContent(
                     shape = ExpressiveShapeTokens.PillShape
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.InstallMobile,
+                        imageVector = SiphonIcons.InstallMobile,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -357,7 +348,7 @@ private fun UpdateStatusContent(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.ErrorOutline,
+                        imageVector = SiphonIcons.ErrorOutline,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(20.dp)
@@ -374,7 +365,7 @@ private fun UpdateStatusContent(
                     shape = ExpressiveShapeTokens.PillShape
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Refresh,
+                        imageVector = SiphonIcons.Refresh,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )

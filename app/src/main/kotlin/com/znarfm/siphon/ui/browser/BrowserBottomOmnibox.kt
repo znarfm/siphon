@@ -23,17 +23,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -69,6 +58,7 @@ import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -121,11 +111,11 @@ fun BrowserBottomOmnibox(
         }
 
         val siteIcon = when {
-            isNewTab && isAdBlockEnabled -> Icons.Rounded.Shield
-            isNewTab -> Icons.Rounded.Public
-            url.startsWith("https://", ignoreCase = true) -> Icons.Rounded.Lock
-            isAdBlockEnabled -> Icons.Rounded.Shield
-            else -> Icons.Rounded.Public
+            isNewTab && isAdBlockEnabled -> SiphonIcons.Shield
+            isNewTab -> SiphonIcons.Public
+            url.startsWith("https://", ignoreCase = true) -> SiphonIcons.Lock
+            isAdBlockEnabled -> SiphonIcons.Shield
+            else -> SiphonIcons.Public
         }
         val siteIconTint = when {
             isAdBlockEnabled && !isIncognito -> MaterialTheme.colorScheme.primary
@@ -321,7 +311,7 @@ fun BrowserBottomOmnibox(
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (isBookmarked) Icons.Rounded.Star else Icons.Outlined.StarBorder,
+                                    imageVector = if (isBookmarked) SiphonIcons.Star else SiphonIcons.Outlined.StarBorder,
                                     contentDescription = if (isBookmarked) "Remove bookmark" else "Bookmark page",
                                     tint = if (isBookmarked) MaterialTheme.colorScheme.primary else secondaryContentColor,
                                     modifier = Modifier.size(19.dp)
@@ -333,7 +323,7 @@ fun BrowserBottomOmnibox(
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (isLoading) Icons.Rounded.Close else Icons.Rounded.Refresh,
+                                    imageVector = if (isLoading) SiphonIcons.Close else SiphonIcons.Refresh,
                                     contentDescription = if (isLoading) "Stop loading" else "Reload page",
                                     tint = secondaryContentColor,
                                     modifier = Modifier.size(19.dp)
@@ -398,7 +388,7 @@ fun BrowserBottomOmnibox(
                             modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Download,
+                                imageVector = SiphonIcons.Download,
                                 contentDescription = "Downloads",
                                 modifier = Modifier.size(20.dp)
                             )
@@ -432,7 +422,7 @@ fun BrowserBottomOmnibox(
                             modifier = Modifier.size(38.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Bolt,
+                                imageVector = SiphonIcons.Bolt,
                                 contentDescription = "Media Sniffer",
                                 modifier = Modifier.size(20.dp)
                             )
@@ -445,7 +435,7 @@ fun BrowserBottomOmnibox(
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.MoreVert,
+                            imageVector = SiphonIcons.MoreVert,
                             contentDescription = "More options",
                             tint = primaryContentColor,
                             modifier = Modifier.size(21.dp)

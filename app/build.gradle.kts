@@ -111,6 +111,27 @@ android {
     buildFeatures {
         compose = true
     }
+
+    androidResources {
+        localeFilters += listOf("en")
+    }
+
+    vcsInfo {
+        include = false
+    }
+
+    packaging {
+        resources {
+            excludes += listOf(
+                "DebugProbesKt.bin",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/*.kotlin_module",
+                "kotlin-tooling-metadata.json",
+                "META-INF/DEPENDENCIES"
+            )
+        }
+    }
 }
 
 kotlin {
@@ -123,14 +144,9 @@ kotlin {
     }
 }
 
-composeCompiler {
-    enableStrongSkippingMode = true
-}
-
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
-    implementation(libs.androidx.profileinstaller)
     implementation(libs.androidx.documentfile)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -140,10 +156,10 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
+    compileOnly(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material3.adaptive)
-    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.compose.material.icons.core)
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
@@ -154,7 +170,7 @@ dependencies {
 
     implementation(libs.libtorrent4j)
     implementation(libs.libtorrent4j.android.arm64)
-    implementation(libs.libtorrent4j.android.x64)
+    debugImplementation(libs.libtorrent4j.android.x64)
 
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)
