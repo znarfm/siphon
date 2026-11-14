@@ -245,7 +245,7 @@ class DashQueueEngine(
         }
     }
 
-    private fun downloadSegment(url: String, headers: Headers, target: File) {
+    private suspend fun downloadSegment(url: String, headers: Headers, target: File) {
         val req = Request.Builder().url(url).headers(headers).get().build()
         client.newCall(req).execute().use { resp ->
             if (resp.code == 403 || resp.code == 410) {
