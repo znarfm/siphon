@@ -54,7 +54,8 @@ fun AboutUpdatesSettingsScreen(
     onInstallUpdate: () -> Unit,
     onOpenAuthorProfile: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showBackButton: Boolean = true
 ) {
     val isBusy = updateState is UpdateState.Checking ||
         updateState is UpdateState.Downloading ||
@@ -63,6 +64,7 @@ fun AboutUpdatesSettingsScreen(
     SettingsSubPageScaffold(
         title = "About & Updates",
         onBack = onBack,
+        showBackButton = showBackButton,
         modifier = modifier
     ) { innerPadding ->
         LazyColumn(

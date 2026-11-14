@@ -17,8 +17,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.znarfm.siphon.data.repository.BrowserPreferences
+import com.znarfm.siphon.ui.AppScreen
 import com.znarfm.siphon.ui.theme.AppColorSeed
 import com.znarfm.siphon.ui.theme.AppThemeMode
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
@@ -42,7 +44,9 @@ fun SettingsHubScreen(
     onOpenDownloads: () -> Unit,
     onOpenAboutUpdates: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showBackButton: Boolean = true,
+    selectedCategory: AppScreen? = null
 ) {
     val browserSummary = buildList {
         add(searchEngineDisplayName(browserPreferences.searchEngine))
@@ -76,6 +80,7 @@ fun SettingsHubScreen(
     SettingsSubPageScaffold(
         title = "Settings",
         onBack = onBack,
+        showBackButton = showBackButton,
         modifier = modifier
     ) { innerPadding ->
         LazyColumn(
@@ -86,93 +91,95 @@ fun SettingsHubScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item(key = "category_browser_search") {
-                Surface(
-                    shape = ExpressiveShapeTokens.RestingCardShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    tonalElevation = 1.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SettingsNavigationRow(
-                        icon = Icons.Rounded.Public,
-                        title = "Browser & Search",
-                        subtitle = browserSummary,
-                        iconTint = MaterialTheme.colorScheme.primary,
-                        onClick = onOpenBrowserSearch
-                    )
-                }
+                SettingsCategoryCard(
+                    icon = Icons.Rounded.Public,
+                    title = "Browser & Search",
+                    subtitle = browserSummary,
+                    selected = selectedCategory == AppScreen.SETTINGS_BROWSER,
+                    onClick = onOpenBrowserSearch
+                )
             }
 
             item(key = "category_appearance") {
-                Surface(
-                    shape = ExpressiveShapeTokens.RestingCardShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    tonalElevation = 1.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SettingsNavigationRow(
-                        icon = Icons.Rounded.Palette,
-                        title = "Appearance",
-                        subtitle = appearanceSummary,
-                        iconTint = MaterialTheme.colorScheme.primary,
-                        onClick = onOpenAppearance
-                    )
-                }
+                SettingsCategoryCard(
+                    icon = Icons.Rounded.Palette,
+                    title = "Appearance",
+                    subtitle = appearanceSummary,
+                    selected = selectedCategory == AppScreen.SETTINGS_APPEARANCE,
+                    onClick = onOpenAppearance
+                )
             }
 
             item(key = "category_privacy_adblock") {
-                Surface(
-                    shape = ExpressiveShapeTokens.RestingCardShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    tonalElevation = 1.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SettingsNavigationRow(
-                        icon = Icons.Rounded.Shield,
-                        title = "Privacy & Ad Blocker",
-                        subtitle = privacySummary,
-                        iconTint = MaterialTheme.colorScheme.primary,
-                        onClick = onOpenPrivacyAdblock
-                    )
-                }
+                SettingsCategoryCard(
+                    icon = Icons.Rounded.Shield,
+                    title = "Privacy & Ad Blocker",
+                    subtitle = privacySummary,
+                    selected = selectedCategory == AppScreen.SETTINGS_ADBLOCK,
+                    onClick = onOpenPrivacyAdblock
+                )
             }
 
             item(key = "category_downloads_storage") {
-                Surface(
-                    shape = ExpressiveShapeTokens.RestingCardShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    tonalElevation = 1.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SettingsNavigationRow(
-                        icon = Icons.Rounded.Download,
-                        title = "Downloads & Storage",
-                        subtitle = downloadsSummary,
-                        iconTint = MaterialTheme.colorScheme.primary,
-                        onClick = onOpenDownloads
-                    )
-                }
+                SettingsCategoryCard(
+                    icon = Icons.Rounded.Download,
+                    title = "Downloads & Storage",
+                    subtitle = downloadsSummary,
+                    selected = selectedCategory == AppScreen.SETTINGS_DOWNLOADS,
+                    onClick = onOpenDownloads
+                )
             }
 
             item(key = "category_about_updates") {
-                Surface(
-                    shape = ExpressiveShapeTokens.RestingCardShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    tonalElevation = 1.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SettingsNavigationRow(
-                        icon = Icons.Rounded.SystemUpdate,
-                        title = "About & Updates",
-                        subtitle = if (updateAvailableTag != null) {
-                            "Update available: $updateAvailableTag • v$versionName"
-                        } else {
-                            "v$versionName • by @znarfm"
-                        },
-                        iconTint = MaterialTheme.colorScheme.primary,
-                        onClick = onOpenAboutUpdates
-                    )
-                }
+                SettingsCategoryCard(
+                    icon = Icons.Rounded.SystemUpdate,
+                    title = "About & Updates",
+                    subtitle = if (updateAvailableTag != null) {
+                        "Update available: $updateAvailableTag • v$versionName"
+                    } else {
+                        "v$versionName • by @znarfm"
+                    },
+                    selected = selectedCategory == AppScreen.SETTINGS_ABOUT,
+                    onClick = onOpenAboutUpdates
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun SettingsCategoryCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = ExpressiveShapeTokens.RestingCardShape,
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        tonalElevation = if (selected) 3.dp else 1.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        SettingsNavigationRow(
+            icon = icon,
+            title = title,
+            subtitle = subtitle,
+            titleColor = if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            iconTint = if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
+            onClick = onClick
+        )
     }
 }

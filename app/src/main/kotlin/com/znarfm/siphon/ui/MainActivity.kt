@@ -53,6 +53,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -413,6 +414,8 @@ fun MainContent(
     val context = LocalContext.current
     var isBarsVisible by remember { mutableStateOf(true) }
     var settingsSubPageOrigin by remember { mutableStateOf(AppScreen.SETTINGS) }
+    val windowSizeClass = rememberWindowSizeClass()
+    val isExpanded = windowSizeClass.isExpanded
 
     val navigateBack: () -> Unit = {
         when (currentScreen) {
@@ -420,7 +423,13 @@ fun MainContent(
             AppScreen.SETTINGS_APPEARANCE,
             AppScreen.SETTINGS_ADBLOCK,
             AppScreen.SETTINGS_DOWNLOADS,
-            AppScreen.SETTINGS_ABOUT -> onSelectScreen(settingsSubPageOrigin)
+            AppScreen.SETTINGS_ABOUT -> {
+                if (isExpanded) {
+                    onSelectScreen(AppScreen.BROWSER)
+                } else {
+                    onSelectScreen(settingsSubPageOrigin)
+                }
+            }
             else -> onSelectScreen(AppScreen.BROWSER)
         }
     }
@@ -492,8 +501,6 @@ fun MainContent(
         }
     }
 
-    val windowSizeClass = rememberWindowSizeClass()
-
     CompositionLocalProvider(LocalWindowSizeClass provides windowSizeClass) {
         Scaffold { innerPadding ->
             val screenLayers: @Composable BoxScope.() -> Unit = {
@@ -503,7 +510,7 @@ fun MainContent(
                 currentScreen == AppScreen.SETTINGS_ADBLOCK ||
                 currentScreen == AppScreen.SETTINGS_DOWNLOADS ||
                 currentScreen == AppScreen.SETTINGS_ABOUT
-            val underlyingScreen = if (isSettingsSubPage) settingsSubPageOrigin else AppScreen.BROWSER
+            val underlyingScreen = if (isSettingsSubPage && !isExpanded) settingsSubPageOrigin else AppScreen.BROWSER
             val isBackInProgress = backProgress > 0f
             val showBrowserUnderlay = isBrowserVisible || (isBackInProgress && underlyingScreen == AppScreen.BROWSER)
 
@@ -698,7 +705,156 @@ fun MainContent(
                             onClick = {}
                         )
                 ) {
-                    when (currentScreen) {
+                    if (isExpanded && (currentScreen == AppScreen.SETTINGS || currentScreen.name.startsWith("SETTINGS_"))) {
+                        val activeSettingsScreen = if (currentScreen == AppScreen.SETTINGS) {
+                            AppScreen.SETTINGS_BROWSER
+                        } else {
+                            currentScreen
+                        }
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            SettingsHubScreen(
+                                browserPreferences = browserPrefs,
+                                themeMode = themeMode,
+                                colorSeed = colorSeed,
+                                isAdBlockEnabled = isAdBlockEnabled,
+                                adblockRuleCount = adblockRuleCount,
+                                enabledListCount = adblockSettings.enabledLists.count { it.isEnabled },
+                                maxConcurrentDownloads = concurrencySettings.maxDownloads,
+                                workersPerDownload = concurrencySettings.workers,
+                                bandwidthLimit = concurrencySettings.bandwidthLimit,
+                                versionName = updateRepository.currentVersionName,
+                                updateAvailableTag = updateAvailableTag,
+                                onOpenBrowserSearch = { onSelectScreen(AppScreen.SETTINGS_BROWSER) },
+                                onOpenAppearance = { onSelectScreen(AppScreen.SETTINGS_APPEARANCE) },
+                                onOpenPrivacyAdblock = { onSelectScreen(AppScreen.SETTINGS_ADBLOCK) },
+                                onOpenDownloads = { onSelectScreen(AppScreen.SETTINGS_DOWNLOADS) },
+                                onOpenAboutUpdates = { onSelectScreen(AppScreen.SETTINGS_ABOUT) },
+                                onBack = { onSelectScreen(AppScreen.BROWSER) },
+                                showBackButton = true,
+                                selectedCategory = activeSettingsScreen,
+                                modifier = Modifier
+                                    .width(340.dp)
+                                    .fillMaxHeight()
+                            )
+                            VerticalDivider()
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                            ) {
+                                when (activeSettingsScreen) {
+                                    AppScreen.SETTINGS_BROWSER -> {
+                                        BrowserSearchSettingsScreen(
+                                            browserPreferences = browserPrefs,
+                                            onSetSearchEngine = { browserViewModel.setSearchEngine(it) },
+                                            onSetWebDarkMode = { enabled ->
+                                                if (enabled != browserPrefs.webDarkMode) {
+                                                    browserViewModel.toggleWebDarkMode()
+                                                }
+                                            },
+                                            onSetDesktopMode = { enabled ->
+                                                if (enabled != browserPrefs.desktopMode) {
+                                                    browserViewModel.toggleDesktopMode()
+                                                }
+                                            },
+                                            onBack = navigateBack,
+                                            showBackButton = false
+                                        )
+                                    }
+                                    AppScreen.SETTINGS_APPEARANCE -> {
+                                        AppearanceSettingsScreen(
+                                            themeMode = themeMode,
+                                            colorSeed = colorSeed,
+                                            onSetThemeMode = { browserViewModel.setThemeMode(it) },
+                                            onSetColorSeed = { browserViewModel.setColorSeed(it) },
+                                            onBack = navigateBack,
+                                            showBackButton = false
+                                        )
+                                    }
+                                    AppScreen.SETTINGS_ADBLOCK -> {
+                                        PrivacyAdblockSettingsScreen(
+                                            isAdBlockEnabled = isAdBlockEnabled,
+                                            adblockSettings = adblockSettings,
+                                            activeRuleCount = adblockRuleCount,
+                                            onToggleAdBlock = { browserViewModel.toggleAdBlock() },
+                                            onToggleList = { id, enabled -> browserViewModel.toggleFilterList(id, enabled) },
+                                            onAddCustomList = { name, url -> browserViewModel.addCustomFilterList(name, url) },
+                                            onRemoveCustomList = { id -> browserViewModel.removeCustomFilterList(id) },
+                                            onUpdateCustomRules = { rules -> browserViewModel.updateCustomUserRules(rules) },
+                                            onRefreshSubscriptions = { onComplete ->
+                                                browserViewModel.refreshAdblockSubscriptions(
+                                                    onError = { err ->
+                                                        onComplete()
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Adblock error: ${err.message ?: "Failed to update"}",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    },
+                                                    onResult = { rules, lists ->
+                                                        onComplete()
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Adblock updated: $rules rules ($lists lists)",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    }
+                                                )
+                                            },
+                                            onClearHistory = { browserViewModel.clearHistory() },
+                                            onBack = navigateBack,
+                                            showBackButton = false
+                                        )
+                                    }
+                                    AppScreen.SETTINGS_DOWNLOADS -> {
+                                        DownloadSettingsScreen(
+                                            currentMaxDownloads = concurrencySettings.maxDownloads,
+                                            currentWorkers = concurrencySettings.workers,
+                                            currentBandwidthLimit = concurrencySettings.bandwidthLimit,
+                                            currentWifiOnly = concurrencySettings.wifiOnly,
+                                            currentCustomDownloadUri = concurrencySettings.customDownloadUri,
+                                            onUpdateConcurrency = { maxD, w, limit, wifi, customUri ->
+                                                queueViewModel.setConcurrency(maxD, w, limit, wifi, customUri)
+                                            },
+                                            onBack = navigateBack,
+                                            showBackButton = false
+                                        )
+                                    }
+                                    AppScreen.SETTINGS_ABOUT -> {
+                                        AboutUpdatesSettingsScreen(
+                                            versionName = updateRepository.currentVersionName,
+                                            versionCode = updateRepository.currentVersionCode,
+                                            autoUpdateEnabled = autoUpdateEnabled,
+                                            updateState = updateState,
+                                            onToggleAutoUpdate = { updateRepository.setAutoUpdateEnabled(it) },
+                                            onCheckForUpdates = { updateRepository.checkForUpdates(silent = false) },
+                                            onDownloadAndVerify = { updateRepository.downloadAndVerifyUpdate() },
+                                            onInstallUpdate = {
+                                                if (!updateRepository.installReadyApk(context)) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Allow installing unknown apps for Siphon, then tap Install again",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                }
+                                            },
+                                            onOpenAuthorProfile = {
+                                                runCatching {
+                                                    context.startActivity(
+                                                        Intent(Intent.ACTION_VIEW, Uri.parse(AppUpdater.AUTHOR_GITHUB_URL))
+                                                    )
+                                                }
+                                            },
+                                            onBack = navigateBack,
+                                            showBackButton = false
+                                        )
+                                    }
+                                    else -> Unit
+                                }
+                            }
+                        }
+                    } else {
+                        when (currentScreen) {
                         AppScreen.QUEUE -> {
                             QueueScreen(
                                 downloads = downloads,
@@ -935,6 +1091,7 @@ fun MainContent(
                             )
                         }
                         AppScreen.BROWSER -> Unit
+                        }
                     }
                 }
             }

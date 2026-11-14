@@ -61,7 +61,8 @@ fun DownloadSettingsScreen(
         customDownloadUri: String?
     ) -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showBackButton: Boolean = true
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("siphon_prefs", Context.MODE_PRIVATE) }
@@ -106,6 +107,7 @@ fun DownloadSettingsScreen(
     SettingsSubPageScaffold(
         title = "Downloads & Storage",
         onBack = onBack,
+        showBackButton = showBackButton,
         modifier = modifier
     ) { innerPadding ->
         LazyColumn(
