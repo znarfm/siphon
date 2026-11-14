@@ -19,6 +19,7 @@ android {
         targetSdk = 35
         versionCode = 11
         versionName = "0.5.1"
+        resourceConfigurations += listOf("en")
     }
 
     signingConfigs {
@@ -110,14 +111,6 @@ android {
 
     buildFeatures {
         compose = true
-    }
-
-    androidResources {
-        localeFilters += listOf("en")
-    }
-
-    vcsInfo {
-        include = false
     }
 
     packaging {
