@@ -533,12 +533,13 @@ fun BrowserScreen(
     val activeTabUrl = activeTab?.url ?: currentUrl
     val isNewTab = activeTabUrl == NEW_TAB_URL
     val isTablet = LocalWindowSizeClass.current.isTablet
+    val currentIsTablet = rememberUpdatedState(isTablet)
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             if (isTablet) {
                 AnimatedVisibility(
-                    visible = (isBarsVisible || isNewTab) && !isOmniboxFocused && customVideoView == null,
+                    visible = !isOmniboxFocused && customVideoView == null,
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut()
                 ) {
@@ -791,7 +792,7 @@ fun BrowserScreen(
                                                                 }
                                                                 touchAccumDy += deltaY
                                                                 if (touchAccumDy < -toggleSlopPx && scrollY > (48 * density).toInt()) {
-                                                                    if (currentBarsVisible.value) onToggleBars(false)
+                                                                    if (!currentIsTablet.value && currentBarsVisible.value) onToggleBars(false)
                                                                     touchAccumDy = 0f
                                                                 } else if (touchAccumDy > toggleSlopPx) {
                                                                     if (!currentBarsVisible.value) onToggleBars(true)

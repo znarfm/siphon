@@ -1312,22 +1312,20 @@ fun MainContent(
                         .padding(innerPadding)
                         .consumeWindowInsets(innerPadding)
                 ) {
-                    if (currentScreen != AppScreen.BROWSER || isBarsVisible) {
-                        TabletNavigationRail(
-                            currentScreen = currentScreen,
-                            activeDownloadsCount = activeDownloadsCount,
-                            tabCount = browserTabs.size,
-                            onNavigate = { onSelectScreen(it) },
-                            onNewTab = {
-                                browserViewModel.openNewBrowserTab(
-                                    url = NEW_TAB_URL,
-                                    isIncognito = false,
-                                    switchImmediately = true
-                                )
-                                onSelectScreen(AppScreen.BROWSER)
-                            }
-                        )
-                    }
+                    TabletNavigationRail(
+                        currentScreen = currentScreen,
+                        activeDownloadsCount = activeDownloadsCount,
+                        tabCount = browserTabs.size,
+                        onNavigate = { onSelectScreen(it) },
+                        onNewTab = {
+                            browserViewModel.openNewBrowserTab(
+                                url = NEW_TAB_URL,
+                                isIncognito = false,
+                                switchImmediately = true
+                            )
+                            onSelectScreen(AppScreen.BROWSER)
+                        }
+                    )
                     Box(
                         modifier = Modifier
                             .weight(1f)
