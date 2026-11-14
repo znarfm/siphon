@@ -5,16 +5,21 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.ClearAll
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Deselect
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SelectAll
@@ -37,6 +43,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -64,6 +71,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,6 +80,7 @@ import com.znarfm.siphon.core.sniffer.HlsVariantInfo
 import com.znarfm.siphon.core.sniffer.SniffedMedia
 import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.DownloadType
+import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
 import java.util.Locale
 
 @Immutable
@@ -159,6 +168,75 @@ fun SnifferSheet(
 ) {
     if (!isOpen) return
 
+    val isExpanded = LocalWindowSizeClass.current.isExpanded
+
+    if (isExpanded) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { onDismiss() }
+            )
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .width(420.dp)
+                    .fillMaxHeight(),
+                shape = RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                tonalElevation = 6.dp,
+                shadowElevation = 12.dp
+            ) {
+                SnifferPanelContent(
+                    detectedMedia = detectedMedia,
+                    rebindTarget = rebindTarget,
+                    activeTabTitle = activeTabTitle,
+                    activeTabUrl = activeTabUrl,
+                    isSidePanel = true,
+                    onDismiss = onDismiss,
+                    onDownloadSelected = onDownloadSelected,
+                    onClearMedia = onClearMedia,
+                    onRefreshMedia = onRefreshMedia
+                )
+            }
+        }
+    } else {
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            sheetState = sheetState
+        ) {
+            SnifferPanelContent(
+                detectedMedia = detectedMedia,
+                rebindTarget = rebindTarget,
+                activeTabTitle = activeTabTitle,
+                activeTabUrl = activeTabUrl,
+                isSidePanel = false,
+                onDismiss = onDismiss,
+                onDownloadSelected = onDownloadSelected,
+                onClearMedia = onClearMedia,
+                onRefreshMedia = onRefreshMedia
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SnifferPanelContent(
+    detectedMedia: List<SniffedMedia>,
+    rebindTarget: DownloadEntity?,
+    activeTabTitle: String?,
+    activeTabUrl: String?,
+    isSidePanel: Boolean,
+    onDismiss: () -> Unit,
+    onDownloadSelected: (List<SelectedMediaRequest>) -> Unit,
+    onClearMedia: () -> Unit,
+    onRefreshMedia: () -> Unit
+) {
     var useTabTitleAsFilename by remember { mutableStateOf(true) }
     var activeFilter by remember { mutableStateOf(SnifferFilter.ALL) }
     var activeSort by remember { mutableStateOf(SnifferSort.RECENCY) }
@@ -218,312 +296,343 @@ fun SnifferSheet(
 
     val selectedMediaList = detectedMedia.filter { selectedIds[it.id] == true }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState
+    Column(
+        modifier = Modifier
+            .then(
+                if (isSidePanel) {
+                    Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                } else {
+                    Modifier.fillMaxWidth()
+                }
+            )
+            .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            Text(
+                text = "Detected Media (${detectedMedia.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Detected Media (${detectedMedia.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (filteredAndSortedMedia.size > 1 && rebindTarget == null) {
-                        val allSelected = selectedMediaList.size == filteredAndSortedMedia.size
-                        TextButton(
-                            onClick = {
-                                if (allSelected) {
-                                    selectedIds.clear()
-                                } else {
-                                    filteredAndSortedMedia.forEach { selectedIds[it.id] = true }
-                                }
-                            },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (allSelected) Icons.Rounded.Deselect else Icons.Rounded.SelectAll,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(if (allSelected) "Deselect All" else "Select All", fontSize = 12.sp)
-                        }
-                    }
-                    if (detectedMedia.isNotEmpty()) {
-                        TextButton(
-                            onClick = {
-                                selectedIds.clear()
-                                onClearMedia()
-                            },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.ClearAll,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Clear", fontSize = 12.sp)
-                        }
-                    }
+                if (filteredAndSortedMedia.size > 1 && rebindTarget == null) {
+                    val allSelected = selectedMediaList.size == filteredAndSortedMedia.size
                     TextButton(
-                        onClick = onRefreshMedia,
+                        onClick = {
+                            if (allSelected) {
+                                selectedIds.clear()
+                            } else {
+                                filteredAndSortedMedia.forEach { selectedIds[it.id] = true }
+                            }
+                        },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Refresh,
+                            imageVector = if (allSelected) Icons.Rounded.Deselect else Icons.Rounded.SelectAll,
                             contentDescription = null,
                             modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Refresh", fontSize = 12.sp)
-                    }
-                    if (rebindTarget != null) {
-                        SuggestionChip(
-                            onClick = { },
-                            label = { Text("Rebind", fontSize = 11.sp) }
-                        )
+                        Text(if (allSelected) "Deselect All" else "Select All", fontSize = 12.sp)
                     }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { useTabTitleAsFilename = !useTabTitleAsFilename }
-                    .padding(vertical = 2.dp)
-            ) {
-                Text(
-                    text = "Tab title as filename",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium
-                )
-                Switch(
-                    checked = useTabTitleAsFilename,
-                    onCheckedChange = { useTabTitleAsFilename = it },
-                    modifier = Modifier.scale(0.8f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier.weight(1f, fill = false)
+                if (detectedMedia.isNotEmpty()) {
+                    TextButton(
+                        onClick = {
+                            selectedIds.clear()
+                            onClearMedia()
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ClearAll,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Clear", fontSize = 12.sp)
+                    }
+                }
+                TextButton(
+                    onClick = onRefreshMedia,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                 ) {
-                    SnifferFilter.values().forEachIndexed { index, filter ->
-                        SegmentedButton(
-                            selected = activeFilter == filter,
-                            onClick = { activeFilter = filter },
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = SnifferFilter.values().size),
-                            label = { Text(filter.label, fontSize = 11.sp) }
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Refresh", fontSize = 12.sp)
+                }
+                if (rebindTarget != null) {
+                    SuggestionChip(
+                        onClick = { },
+                        label = { Text("Rebind", fontSize = 11.sp) }
+                    )
+                }
+                if (isSidePanel) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Close",
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
+            }
+        }
 
-                Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-                Box {
-                    OutlinedButton(
-                        onClick = { sortDropdownExpanded = true },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(30.dp)
-                    ) {
-                        Text("Sort: ${activeSort.label}", fontSize = 11.sp)
-                    }
-                    DropdownMenu(
-                        expanded = sortDropdownExpanded,
-                        onDismissRequest = { sortDropdownExpanded = false }
-                    ) {
-                        SnifferSort.values().forEach { sort ->
-                            DropdownMenuItem(
-                                text = { Text(sort.label, fontSize = 12.sp) },
-                                onClick = {
-                                    activeSort = sort
-                                    sortDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { useTabTitleAsFilename = !useTabTitleAsFilename }
+                .padding(vertical = 2.dp)
+        ) {
+            Text(
+                text = "Tab title as filename",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium
+            )
+            Switch(
+                checked = useTabTitleAsFilename,
+                onCheckedChange = { useTabTitleAsFilename = it },
+                modifier = Modifier.scale(0.8f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier.weight(1f, fill = false)
+            ) {
+                SnifferFilter.values().forEachIndexed { index, filter ->
+                    SegmentedButton(
+                        selected = activeFilter == filter,
+                        onClick = { activeFilter = filter },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = SnifferFilter.values().size),
+                        label = { Text(filter.label, fontSize = 11.sp) }
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.width(8.dp))
 
-            if (filteredAndSortedMedia.isEmpty()) {
-                Box(
-                    modifier = Modifier
+            Box {
+                OutlinedButton(
+                    onClick = { sortDropdownExpanded = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.height(30.dp)
+                ) {
+                    Text("Sort: ${activeSort.label}", fontSize = 11.sp)
+                }
+                DropdownMenu(
+                    expanded = sortDropdownExpanded,
+                    onDismissRequest = { sortDropdownExpanded = false }
+                ) {
+                    SnifferSort.values().forEach { sort ->
+                        DropdownMenuItem(
+                            text = { Text(sort.label, fontSize = 12.sp) },
+                            onClick = {
+                                activeSort = sort
+                                sortDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        if (filteredAndSortedMedia.isEmpty()) {
+            Box(
+                modifier = if (isSidePanel) {
+                    Modifier
                         .fillMaxWidth()
-                        .height(140.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (detectedMedia.isEmpty()) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            ContainedLoadingIndicator(modifier = Modifier.size(42.dp))
-                            Text(
-                                text = "Listening for media streams…\nPlay media in the browser or tap Refresh to sniff.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
-                        }
-                    } else {
+                        .weight(1f)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                },
+                contentAlignment = Alignment.Center
+            ) {
+                if (detectedMedia.isEmpty()) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        ContainedLoadingIndicator(modifier = Modifier.size(42.dp))
                         Text(
-                            text = "No media tracks match the selected filter.",
+                            text = "Listening for media streams…\nPlay media in the browser or tap Refresh to sniff.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                     }
+                } else {
+                    Text(
+                        text = "No media tracks match the selected filter.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
+            }
+        } else {
+            LazyColumn(
+                modifier = if (isSidePanel) {
+                    Modifier
+                        .weight(1f)
                         .fillMaxWidth()
-                        .height(340.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(filteredAndSortedMedia, key = { it.id }) { media ->
-                        val isSelected = selectedIds[media.id] == true
-                        val currentVariant = selectedVariants[media.id] ?: media.variants.firstOrNull()
-                        val currentFileName = customNames[media.id] ?: media.displayName
-                        val isCurrentTab = hasMultipleSources && isCurrentTabMedia(media.sourcePageUrl, activeTabUrl)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .height(340.dp)
+                },
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(filteredAndSortedMedia, key = { it.id }) { media ->
+                    val isSelected = selectedIds[media.id] == true
+                    val currentVariant = selectedVariants[media.id] ?: media.variants.firstOrNull()
+                    val currentFileName = customNames[media.id] ?: media.displayName
+                    val isCurrentTab = hasMultipleSources && isCurrentTabMedia(media.sourcePageUrl, activeTabUrl)
 
-                        SniffedMediaItemCard(
-                            media = media,
-                            isSelected = isSelected,
-                            isCurrentTab = isCurrentTab,
-                            selectedVariant = currentVariant,
-                            fileName = currentFileName,
-                            onToggleSelect = {
-                                if (rebindTarget != null) {
-                                    val next = !isSelected
-                                    selectedIds.clear()
-                                    if (next) selectedIds[media.id] = true
-                                } else {
-                                    selectedIds[media.id] = !isSelected
+                    SniffedMediaItemCard(
+                        media = media,
+                        isSelected = isSelected,
+                        isCurrentTab = isCurrentTab,
+                        selectedVariant = currentVariant,
+                        fileName = currentFileName,
+                        onToggleSelect = {
+                            if (rebindTarget != null) {
+                                val next = !isSelected
+                                selectedIds.clear()
+                                if (next) selectedIds[media.id] = true
+                            } else {
+                                selectedIds[media.id] = !isSelected
+                            }
+                        },
+                        onSelectVariant = { selectedVariants[media.id] = it },
+                        onFileNameChange = { customNames[media.id] = it }
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = selectedMediaList.isNotEmpty()) {
+                Column {
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val primaryLabel = if (rebindTarget != null) {
+                        "Rebind to Paused Task"
+                    } else if (selectedMediaList.size == 1) {
+                        "Download Selected (1)"
+                    } else {
+                        "Download Selected (${selectedMediaList.size})"
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SplitButtonLayout(
+                            leadingButton = {
+                                SplitButtonDefaults.LeadingButton(
+                                    onClick = {
+                                        val requests = selectedMediaList.map { media ->
+                                            SelectedMediaRequest(
+                                                media = media,
+                                                selectedVariantUrl = selectedVariants[media.id]?.url,
+                                                customFileName = customNames[media.id]?.ifBlank { media.displayName } ?: media.displayName
+                                            )
+                                        }
+                                        onDownloadSelected(requests)
+                                    }
+                                ) {
+                                    Text(
+                                        text = primaryLabel,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 12.dp)
+                                    )
                                 }
                             },
-                            onSelectVariant = { selectedVariants[media.id] = it },
-                            onFileNameChange = { customNames[media.id] = it }
-                        )
-                    }
-                }
-
-                AnimatedVisibility(visible = selectedMediaList.isNotEmpty()) {
-                    Column {
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        val primaryLabel = if (rebindTarget != null) {
-                            "Rebind to Paused Task"
-                        } else if (selectedMediaList.size == 1) {
-                            "Download Selected (1)"
-                        } else {
-                            "Download Selected (${selectedMediaList.size})"
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            SplitButtonLayout(
-                                leadingButton = {
-                                    SplitButtonDefaults.LeadingButton(
-                                        onClick = {
-                                            val requests = selectedMediaList.map { media ->
-                                                SelectedMediaRequest(
-                                                    media = media,
-                                                    selectedVariantUrl = selectedVariants[media.id]?.url,
-                                                    customFileName = customNames[media.id]?.ifBlank { media.displayName } ?: media.displayName
-                                                )
-                                            }
-                                            onDownloadSelected(requests)
-                                        }
+                            trailingButton = {
+                                Box {
+                                    SplitButtonDefaults.TrailingButton(
+                                        checked = batchSplitMenuExpanded,
+                                        onCheckedChange = { batchSplitMenuExpanded = it }
                                     ) {
-                                        Text(
-                                            text = primaryLabel,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 12.dp)
+                                        Icon(
+                                            imageVector = Icons.Rounded.ArrowDropDown,
+                                            contentDescription = "More options",
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
-                                },
-                                trailingButton = {
-                                    Box {
-                                        SplitButtonDefaults.TrailingButton(
-                                            checked = batchSplitMenuExpanded,
-                                            onCheckedChange = { batchSplitMenuExpanded = it }
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.ArrowDropDown,
-                                                contentDescription = "More options",
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
 
-                                        DropdownMenu(
-                                            expanded = batchSplitMenuExpanded,
-                                            onDismissRequest = { batchSplitMenuExpanded = false }
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text("Download All Detected (${filteredAndSortedMedia.size})") },
-                                                onClick = {
-                                                    batchSplitMenuExpanded = false
-                                                    val requests = filteredAndSortedMedia.map { media ->
-                                                        SelectedMediaRequest(
-                                                            media = media,
-                                                            selectedVariantUrl = selectedVariants[media.id]?.url ?: media.variants.firstOrNull()?.url,
-                                                            customFileName = customNames[media.id]?.ifBlank { media.displayName } ?: media.displayName
-                                                        )
-                                                    }
-                                                    onDownloadSelected(requests)
+                                    DropdownMenu(
+                                        expanded = batchSplitMenuExpanded,
+                                        onDismissRequest = { batchSplitMenuExpanded = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Download All Detected (${filteredAndSortedMedia.size})") },
+                                            onClick = {
+                                                batchSplitMenuExpanded = false
+                                                val requests = filteredAndSortedMedia.map { media ->
+                                                    SelectedMediaRequest(
+                                                        media = media,
+                                                        selectedVariantUrl = selectedVariants[media.id]?.url ?: media.variants.firstOrNull()?.url,
+                                                        customFileName = customNames[media.id]?.ifBlank { media.displayName } ?: media.displayName
+                                                    )
                                                 }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text(if (useTabTitleAsFilename) "Disable Tab Title as Filename" else "Toggle Tab Title as Filename") },
-                                                onClick = {
-                                                    batchSplitMenuExpanded = false
-                                                    useTabTitleAsFilename = !useTabTitleAsFilename
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Clear Selection") },
-                                                onClick = {
-                                                    batchSplitMenuExpanded = false
-                                                    selectedIds.clear()
-                                                }
-                                            )
-                                        }
+                                                onDownloadSelected(requests)
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(if (useTabTitleAsFilename) "Disable Tab Title as Filename" else "Toggle Tab Title as Filename") },
+                                            onClick = {
+                                                batchSplitMenuExpanded = false
+                                                useTabTitleAsFilename = !useTabTitleAsFilename
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Clear Selection") },
+                                            onClick = {
+                                                batchSplitMenuExpanded = false
+                                                selectedIds.clear()
+                                            }
+                                        )
                                     }
                                 }
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
+                            }
+                        )
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         }
