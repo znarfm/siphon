@@ -80,6 +80,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import kotlinx.coroutines.launch
@@ -106,6 +107,7 @@ fun TabSwitcherScreen(
     }
     var overflowExpanded by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val isTablet = LocalWindowSizeClass.current.isTablet
 
     val normalCount = remember(tabs) { tabs.count { !it.isIncognito } }
     val incognitoCount = remember(tabs) { tabs.count { it.isIncognito } }
@@ -314,7 +316,7 @@ fun TabSwitcherScreen(
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                    columns = if (isTablet) GridCells.Adaptive(minSize = 200.dp) else GridCells.Fixed(2),
                     contentPadding = PaddingValues(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),

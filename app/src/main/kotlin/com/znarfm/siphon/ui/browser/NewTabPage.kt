@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.znarfm.siphon.data.db.BookmarkEntity
+import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 
@@ -97,6 +98,7 @@ private fun IncognitoNewTabPage(
     modifier: Modifier = Modifier
 ) {
     val incognitoScheme = remember { darkColorScheme() }
+    val isTablet = LocalWindowSizeClass.current.isTablet
 
     MaterialTheme(colorScheme = incognitoScheme) {
         Box(
@@ -109,7 +111,7 @@ private fun IncognitoNewTabPage(
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(max = 480.dp)
+                    .widthIn(max = if (isTablet) 640.dp else 480.dp)
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -226,9 +228,10 @@ private fun StandardNewTabPage(
     onOpenIncognito: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shortcuts = remember(bookmarks) {
+    val isTablet = LocalWindowSizeClass.current.isTablet
+    val shortcuts = remember(bookmarks, isTablet) {
         if (bookmarks.isNotEmpty()) {
-            bookmarks.take(8).map { bookmark ->
+            bookmarks.take(if (isTablet) 12 else 8).map { bookmark ->
                 val displayTitle = bookmark.title.ifBlank {
                     Uri.parse(bookmark.url).host?.removePrefix("www.") ?: bookmark.url
                 }
@@ -249,7 +252,7 @@ private fun StandardNewTabPage(
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 520.dp)
+                .widthIn(max = if (isTablet) 760.dp else 520.dp)
                 .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -388,12 +391,13 @@ private fun StandardNewTabPage(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Quick Shortcuts Grid (4 columns, up to 8 items)
+            // Quick Shortcuts Grid (6 columns up to 12 items on tablet, 4 columns up to 8 items on phone)
+            val shortcutColumns = if (isTablet) 6 else 4
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                val rows = shortcuts.chunked(4)
+                val rows = shortcuts.chunked(shortcutColumns)
                 rows.forEach { rowItems ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -406,7 +410,7 @@ private fun StandardNewTabPage(
                                 modifier = Modifier.weight(1f)
                             )
                         }
-                        repeat(4 - rowItems.size) {
+                        repeat(shortcutColumns - rowItems.size) {
                             Spacer(modifier = Modifier.weight(1f))
                         }
                     }
