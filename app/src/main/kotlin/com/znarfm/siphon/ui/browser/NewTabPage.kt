@@ -1,6 +1,5 @@
 package com.znarfm.siphon.ui.browser
 
-import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,7 +27,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -39,8 +37,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.znarfm.siphon.core.common.FormatUtils
 import com.znarfm.siphon.data.db.BookmarkEntity
 import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
+import com.znarfm.siphon.ui.common.IncognitoThemeOverlay
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import com.znarfm.siphon.ui.theme.SiphonIcons
@@ -92,10 +92,9 @@ private fun IncognitoNewTabPage(
     onSearchClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val incognitoScheme = remember { darkColorScheme() }
     val isTablet = LocalWindowSizeClass.current.isTablet
 
-    MaterialTheme(colorScheme = incognitoScheme) {
+    IncognitoThemeOverlay(isIncognito = true) {
         Box(
             modifier = modifier
                 .fillMaxSize()
@@ -228,7 +227,7 @@ private fun StandardNewTabPage(
         if (bookmarks.isNotEmpty()) {
             bookmarks.take(if (isTablet) 12 else 8).map { bookmark ->
                 val displayTitle = bookmark.title.ifBlank {
-                    Uri.parse(bookmark.url).host?.removePrefix("www.") ?: bookmark.url
+                    FormatUtils.extractHostDisplay(bookmark.url).ifBlank { bookmark.url }
                 }
                 QuickShortcut(title = displayTitle, url = bookmark.url)
             }

@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.znarfm.siphon.core.common.FormatUtils
 import com.znarfm.siphon.core.sniffer.HlsVariantInfo
 import com.znarfm.siphon.core.sniffer.SniffedMedia
 import com.znarfm.siphon.data.db.DownloadEntity
@@ -244,7 +245,8 @@ private fun SnifferPanelContent(
     // Primary video base name for syncing subtitle defaults
     val primaryVideoBaseName = remember(detectedMedia, selectedIds.toMap(), useTabTitleAsFilename, activeTabTitle) {
         val cleanTab = activeTabTitle?.trim()?.takeIf { it.isNotBlank() && it != "New Tab" && it != "Tab" }
-            ?.replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001F]"), "_")?.trim()
+            ?.let { FormatUtils.sanitizeFileName(it, fallback = "") }
+            ?.takeIf { it.isNotEmpty() }
         if (useTabTitleAsFilename && cleanTab != null) {
             cleanTab
         } else {
@@ -647,7 +649,8 @@ private fun buildDefaultFileName(
         else -> media.displayName.substringAfterLast('.', "mp4")
     }
     val cleanTab = activeTabTitle?.trim()?.takeIf { it.isNotBlank() && it != "New Tab" && it != "Tab" }
-        ?.replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001F]"), "_")?.trim()
+        ?.let { FormatUtils.sanitizeFileName(it, fallback = "") }
+        ?.takeIf { it.isNotEmpty() }
 
     if (media.isSubtitle) {
         val base = cleanTab?.takeIf { useTabTitle } ?: videoBaseName
@@ -765,13 +768,15 @@ private fun SniffedMediaItemCard(
                     val langLabel = if (!media.language.isNullOrBlank()) " • [${media.language}]" else ""
 
                     val isStream = media.mediaType == DownloadType.HLS || media.mediaType == DownloadType.DASH
+                    val formattedSize = if (currentEstimatedBytes <= 0L) {
+                        if (media.isSubtitle) "Subtitle" else "Stream (Adaptive)"
+                    } else {
+                        val prefix = if (isStream) "~" else ""
+                        prefix + FormatUtils.formatBytes(currentEstimatedBytes)
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = formatFileSize(
-                                currentEstimatedBytes,
-                                isEstimate = isStream,
-                                isSubtitle = media.isSubtitle
-                            ),
+                            text = formattedSize,
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -845,7 +850,7 @@ private fun SniffedMediaItemCard(
                                 shape = RoundedCornerShape(14.dp)
                             ) {
                                 val variantSize = selectedVariant?.estimatedBytes?.takeIf { it > 0 }
-                                val sizeSuffix = if (variantSize != null) " (${formatFileSize(variantSize, true)})" else ""
+                                val sizeSuffix = if (variantSize != null) " (~${FormatUtils.formatBytes(variantSize)})" else ""
                                 Text(
                                     text = "Quality: " + (selectedVariant?.resolution ?: "${(selectedVariant?.bandwidth ?: 0) / 1000} kbps") + sizeSuffix,
                                     fontSize = 12.sp,
@@ -859,7 +864,7 @@ private fun SniffedMediaItemCard(
                                 media.variants.forEach { variant ->
                                     val vSize = variant.estimatedBytes.takeIf { it > 0 }
                                     val label = (variant.resolution ?: "${variant.bandwidth / 1000} kbps") +
-                                        (if (vSize != null) " (${formatFileSize(vSize, true)})" else "")
+                                        (if (vSize != null) " (~${FormatUtils.formatBytes(vSize)})" else "")
                                     DropdownMenuItem(
                                         text = { Text(label) },
                                         onClick = {
@@ -884,19 +889,5 @@ private fun SniffedMediaItemCard(
                 }
             }
         }
-    }
-}
-
-private fun formatFileSize(bytes: Long, isEstimate: Boolean = false, isSubtitle: Boolean = false): String {
-    if (bytes <= 0L) return if (isSubtitle) "Subtitle" else "Stream (Adaptive)"
-    val prefix = if (isEstimate) "~" else ""
-    val mb = bytes.toDouble() / (1024 * 1024)
-    return if (mb >= 1000) {
-        String.format(Locale.US, "%s%.2f GB", prefix, mb / 1024)
-    } else if (mb < 0.1) {
-        val kb = (bytes.toDouble() / 1024).coerceAtLeast(1.0)
-        String.format(Locale.US, "%s%.0f KB", prefix, kb)
-    } else {
-        String.format(Locale.US, "%s%.1f MB", prefix, mb)
     }
 }

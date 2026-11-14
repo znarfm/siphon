@@ -1,6 +1,5 @@
 package com.znarfm.siphon.ui.settings
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -37,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.znarfm.siphon.data.prefs.AppPreferences
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import kotlin.math.roundToInt
@@ -61,7 +61,7 @@ fun DownloadSettingsScreen(
     showBackButton: Boolean = true
 ) {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("siphon_prefs", Context.MODE_PRIVATE) }
+    val prefs = remember { AppPreferences.prefs(context) }
 
     var maxD by remember(currentMaxDownloads) { mutableIntStateOf(currentMaxDownloads) }
     var workers by remember(currentWorkers) { mutableIntStateOf(currentWorkers) }
@@ -70,7 +70,9 @@ fun DownloadSettingsScreen(
     }
     var wifiOnly by remember(currentWifiOnly) { mutableStateOf(currentWifiOnly) }
     var customUri by remember(currentCustomDownloadUri) {
-        mutableStateOf(currentCustomDownloadUri ?: prefs.getString("pref_custom_download_uri", null))
+        mutableStateOf(
+            currentCustomDownloadUri ?: prefs.getString(AppPreferences.PREF_CUSTOM_DOWNLOAD_URI, null)
+        )
     }
 
     fun applyChanges(

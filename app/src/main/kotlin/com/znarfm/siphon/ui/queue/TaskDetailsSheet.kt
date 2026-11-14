@@ -1,11 +1,10 @@
 package com.znarfm.siphon.ui.queue
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import com.znarfm.siphon.core.common.FormatUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -205,7 +204,7 @@ fun TaskInspectorContent(
         val completedChunks = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
         val metaText = when {
             isTorrent -> {
-                val sizeLabel = if (download.totalBytes > 0L) formatFileSize(download.totalBytes) else "Fetching metadata…"
+                val sizeLabel = if (download.totalBytes > 0L) FormatUtils.formatBytes(download.totalBytes) else "Fetching metadata…"
                 val activeMetrics = if (download.state == DownloadState.ACTIVE) {
                     val peerLabel = if (download.peers == 1) "1 peer" else "${download.peers} peers"
                     " • ${formatSpeed(download.speedBytesPerSec)} • $peerLabel"
@@ -224,7 +223,8 @@ fun TaskInspectorContent(
                 } else {
                     "\nMIME: ${download.mimeType.ifBlank { "binary/octet-stream" }}"
                 }
-                "Size: ${formatFileSize(download.totalBytes)} • Resumable: ${if (download.isResumable) "Yes (HTTP 206)" else "No"}$chunkLine"
+                val sizeText = if (download.totalBytes > 0L) FormatUtils.formatBytes(download.totalBytes) else "Adaptive / Unknown"
+                "Size: $sizeText • Resumable: ${if (download.isResumable) "Yes (HTTP 206)" else "No"}$chunkLine"
             }
         }
         Text(
@@ -343,7 +343,7 @@ fun TorrentFilesContent(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${files.size} files • ${formatFileSize(download.totalBytes)}",
+                    text = "${files.size} files • ${if (download.totalBytes > 0L) FormatUtils.formatBytes(download.totalBytes) else "Adaptive / Unknown"}",
                     style = MaterialTheme.typography.bodySmall.merge(TabularNumberStyle),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -393,7 +393,7 @@ fun TorrentFilesContent(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "${formatFileSize(file.sizeBytes)} • ${file.mimeType}",
+                            text = "${FormatUtils.formatBytes(file.sizeBytes)} • ${file.mimeType}",
                             style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -470,10 +470,4 @@ fun shareDownloadFile(context: Context, download: DownloadEntity) {
     } else {
         Toast.makeText(context, "File location is not yet ready", Toast.LENGTH_SHORT).show()
     }
-}
-
-fun copyToClipboard(context: Context, text: String, label: String) {
-    (context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
-        ?.setPrimaryClip(ClipData.newPlainText(label, text))
-    Toast.makeText(context, "$label copied", Toast.LENGTH_SHORT).show()
 }

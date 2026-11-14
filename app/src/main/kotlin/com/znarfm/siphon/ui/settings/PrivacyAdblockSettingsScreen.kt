@@ -22,9 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
@@ -58,6 +56,7 @@ import com.znarfm.siphon.core.adblock.AdblockSettings
 import com.znarfm.siphon.core.adblock.FilterListCategory
 import com.znarfm.siphon.core.adblock.FilterListSource
 import com.znarfm.siphon.core.adblock.NativeAdblockJni
+import com.znarfm.siphon.ui.common.ClearHistoryDialog
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import com.znarfm.siphon.ui.theme.SiphonIcons
@@ -135,37 +134,12 @@ fun PrivacyAdblockSettingsScreen(
     }
 
     if (showClearHistoryDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearHistoryDialog = false },
-            icon = {
-                Icon(
-                    imageVector = SiphonIcons.DeleteSweep,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
+        ClearHistoryDialog(
+            onConfirm = {
+                showClearHistoryDialog = false
+                onClearHistory()
             },
-            title = { Text("Clear browsing history?") },
-            text = {
-                Text("This will permanently delete all visited pages from your browsing history.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showClearHistoryDialog = false
-                        onClearHistory()
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Clear", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearHistoryDialog = false }) {
-                    Text("Cancel")
-                }
-            }
+            onDismiss = { showClearHistoryDialog = false }
         )
     }
 

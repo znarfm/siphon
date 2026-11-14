@@ -1,6 +1,5 @@
 package com.znarfm.siphon.ui.settings
 
-import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +14,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.znarfm.siphon.data.repository.BrowserPreferences
 import com.znarfm.siphon.ui.AppScreen
+import com.znarfm.siphon.ui.common.effectiveForDevice
 import com.znarfm.siphon.ui.theme.AppColorSeed
 import com.znarfm.siphon.ui.theme.AppThemeMode
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
@@ -49,14 +49,7 @@ fun SettingsHubScreen(
         if (browserPreferences.desktopMode) add("Desktop")
     }.joinToString(" • ")
 
-    val effectiveSeedTitle = if (
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
-        colorSeed == AppColorSeed.DYNAMIC
-    ) {
-        AppColorSeed.SAPPHIRE.title
-    } else {
-        colorSeed.title
-    }
+    val effectiveSeedTitle = colorSeed.effectiveForDevice().title
     val appearanceSummary = "${themeMode.title} • $effectiveSeedTitle"
 
     val privacySummary = if (isAdBlockEnabled) {

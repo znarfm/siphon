@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.znarfm.siphon.core.common.FormatUtils
 import com.znarfm.siphon.data.db.ChunkEntity
 import com.znarfm.siphon.data.db.ChunkState
 import com.znarfm.siphon.data.db.DownloadEntity
@@ -220,16 +221,18 @@ fun DownloadItemCard(
                     } else {
                         val progressDetail = when {
                             download.state == DownloadState.COMPLETED -> {
-                                " • ${formatFileSize(if (download.totalBytes > 0) download.totalBytes else downloadedBytes)} (100%)"
+                                val finalBytes = if (download.totalBytes > 0) download.totalBytes else downloadedBytes
+                                val sizeText = if (finalBytes > 0L) FormatUtils.formatBytes(finalBytes) else "Adaptive / Unknown"
+                                " • $sizeText (100%)"
                             }
                             isTorrent -> {
                                 when {
                                     download.totalBytes > 0L && download.state == DownloadState.ACTIVE -> {
                                         val peerLabel = if (download.peers == 1) "1 peer" else "${download.peers} peers"
-                                        " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%) • ${formatSpeed(download.speedBytesPerSec)} • $peerLabel"
+                                        " • ${FormatUtils.formatBytes(downloadedBytes)} / ${FormatUtils.formatBytes(download.totalBytes)} ($progressPercent%) • ${formatSpeed(download.speedBytesPerSec)} • $peerLabel"
                                     }
                                     download.totalBytes > 0L -> {
-                                        " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%)"
+                                        " • ${FormatUtils.formatBytes(downloadedBytes)} / ${FormatUtils.formatBytes(download.totalBytes)} ($progressPercent%)"
                                     }
                                     download.state == DownloadState.ACTIVE || download.state == DownloadState.QUEUED -> {
                                         val peerSuffix = if (download.peers > 0) " (${download.peers} peers)" else ""
@@ -239,18 +242,18 @@ fun DownloadItemCard(
                                 }
                             }
                             isHls -> {
-                                val totalStr = if (estTotal > 0L) " of ~${formatFileSize(estTotal)}" else ""
+                                val totalStr = if (estTotal > 0L) " of ~${FormatUtils.formatBytes(estTotal)}" else ""
                                 if (totalSegments > 0) {
-                                    " • ${formatFileSize(downloadedBytes)}$totalStr · $completedSegments/$totalSegments segs ($progressPercent%)"
+                                    " • ${FormatUtils.formatBytes(downloadedBytes)}$totalStr · $completedSegments/$totalSegments segs ($progressPercent%)"
                                 } else {
-                                    " • ${formatFileSize(downloadedBytes)}$totalStr ($progressPercent%)"
+                                    " • ${FormatUtils.formatBytes(downloadedBytes)}$totalStr ($progressPercent%)"
                                 }
                             }
                             download.totalBytes > 0L -> {
-                                " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%)"
+                                " • ${FormatUtils.formatBytes(downloadedBytes)} / ${FormatUtils.formatBytes(download.totalBytes)} ($progressPercent%)"
                             }
                             else -> {
-                                " • " + formatFileSize(download.totalBytes)
+                                " • Adaptive / Unknown"
                             }
                         }
 
@@ -630,18 +633,6 @@ fun computeDownloadedBytes(download: DownloadEntity, chunks: List<ChunkEntity>):
         else -> {
             chunks.sumOf { (it.currentOffset - it.startOffset).coerceAtLeast(0L) }
         }
-    }
-}
-
-fun formatFileSize(bytes: Long): String {
-    if (bytes <= 0L) return "Adaptive / Unknown"
-    val kb = bytes.toDouble() / 1024
-    if (kb < 1000) return String.format(Locale.US, "%.1f KB", kb)
-    val mb = kb / 1024
-    return if (mb >= 1000) {
-        String.format(Locale.US, "%.2f GB", mb / 1024)
-    } else {
-        String.format(Locale.US, "%.1f MB", mb)
     }
 }
 

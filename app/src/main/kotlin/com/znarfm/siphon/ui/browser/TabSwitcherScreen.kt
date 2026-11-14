@@ -45,7 +45,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
+import com.znarfm.siphon.ui.common.IncognitoThemeOverlay
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import kotlinx.coroutines.launch
@@ -123,17 +123,7 @@ fun TabSwitcherScreen(
         }
     }
 
-    val activeColorScheme = if (isIncognitoTabSelected) {
-        darkColorScheme()
-    } else {
-        MaterialTheme.colorScheme
-    }
-
-    MaterialTheme(
-        colorScheme = activeColorScheme,
-        typography = MaterialTheme.typography,
-        shapes = MaterialTheme.shapes
-    ) {
+    IncognitoThemeOverlay(isIncognitoTabSelected) {
         Scaffold(
             modifier = modifier.fillMaxSize(),
             containerColor = MaterialTheme.colorScheme.background,

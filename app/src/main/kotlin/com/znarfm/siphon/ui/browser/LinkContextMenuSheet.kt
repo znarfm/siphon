@@ -1,10 +1,5 @@
 package com.znarfm.siphon.ui.browser
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.znarfm.siphon.ui.common.copyToClipboard
+import com.znarfm.siphon.ui.common.shareText
 
 @Immutable
 data class ContextMenuTarget(
@@ -79,18 +76,12 @@ fun LinkContextMenuSheet(
                 }
 
                 ContextMenuItem(title = "Copy link address") {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Link", link))
-                    Toast.makeText(context, "Link copied to clipboard", Toast.LENGTH_SHORT).show()
+                    copyToClipboard(context, label = "Link", text = link, toastMessage = "Link copied to clipboard")
                     onDismiss()
                 }
 
                 ContextMenuItem(title = "Share link") {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, link)
-                    }
-                    context.startActivity(Intent.createChooser(shareIntent, "Share link"))
+                    shareText(context, link, "Share link")
                     onDismiss()
                 }
             }
@@ -114,9 +105,7 @@ fun LinkContextMenuSheet(
                 }
 
                 ContextMenuItem(title = "Copy image address") {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Image URL", img))
-                    Toast.makeText(context, "Image URL copied to clipboard", Toast.LENGTH_SHORT).show()
+                    copyToClipboard(context, label = "Image URL", text = img, toastMessage = "Image URL copied to clipboard")
                     onDismiss()
                 }
             }

@@ -1,11 +1,9 @@
 package com.znarfm.siphon.ui.browser
 
-import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -22,19 +20,13 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -45,20 +37,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.znarfm.siphon.core.common.FormatUtils
+import com.znarfm.siphon.ui.common.IncognitoThemeOverlay
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
-import com.znarfm.siphon.ui.theme.TabularNumberStyle
+import com.znarfm.siphon.ui.theme.SiphonIcons
 import kotlinx.coroutines.launch
 import kotlin.math.abs
-import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -86,8 +76,6 @@ fun BrowserBottomOmnibox(
     onSwitchNextTab: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val incognitoScheme = remember { darkColorScheme() }
-    val activeScheme = if (isIncognito) incognitoScheme else MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
@@ -97,7 +85,7 @@ fun BrowserBottomOmnibox(
     val currentOnSwitchNextTab by rememberUpdatedState(onSwitchNextTab)
     val currentOnOpenTabSwitcher by rememberUpdatedState(onOpenTabSwitcher)
 
-    MaterialTheme(colorScheme = activeScheme) {
+    IncognitoThemeOverlay(isIncognito) {
         val dockContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         val pillContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest
         val primaryContentColor = MaterialTheme.colorScheme.onSurface
@@ -107,21 +95,15 @@ fun BrowserBottomOmnibox(
         val displayUrl = if (isNewTab) {
             "Search or type URL"
         } else {
-            runCatching { Uri.parse(url).host }.getOrNull()?.takeIf { it.isNotBlank() } ?: url
+            FormatUtils.extractHostDisplay(url).ifBlank { url }
         }
 
-        val siteIcon = when {
-            isNewTab && isAdBlockEnabled -> SiphonIcons.Shield
-            isNewTab -> SiphonIcons.Public
-            url.startsWith("https://", ignoreCase = true) -> SiphonIcons.Lock
-            isAdBlockEnabled -> SiphonIcons.Shield
-            else -> SiphonIcons.Public
-        }
-        val siteIconTint = when {
-            isAdBlockEnabled && !isIncognito -> MaterialTheme.colorScheme.primary
-            isIncognito -> MaterialTheme.colorScheme.onSurface
-            else -> secondaryContentColor
-        }
+        val siteSecurity = resolveSiteSecurityVisuals(
+            url = url,
+            isNewTab = isNewTab,
+            isIncognito = isIncognito,
+            isAdBlockEnabled = isAdBlockEnabled
+        )
 
         Column(
             modifier = modifier
@@ -281,9 +263,9 @@ fun BrowserBottomOmnibox(
                                 modifier = Modifier.size(34.dp)
                             ) {
                                 Icon(
-                                    imageVector = siteIcon,
+                                    imageVector = siteSecurity.icon,
                                     contentDescription = "Site info",
-                                    tint = siteIconTint,
+                                    tint = siteSecurity.tint,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -333,101 +315,22 @@ fun BrowserBottomOmnibox(
                     }
 
                     // Expressive Tab Counter [N] Button
-                    FilledTonalIconButton(
-                        onClick = onOpenTabSwitcher,
-                        shape = ExpressiveShapeTokens.ActiveCardShape,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            contentColor = primaryContentColor
-                        ),
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(22.dp)
-                                .border(
-                                    width = 1.6.dp,
-                                    color = primaryContentColor,
-                                    shape = RoundedCornerShape(7.dp)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (tabCount > 99) "99+" else tabCount.toString(),
-                                style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle),
-                                fontWeight = FontWeight.Bold,
-                                color = primaryContentColor
-                            )
-                        }
-                    }
+                    OmniboxTabCounterButton(
+                        tabCount = tabCount,
+                        onClick = onOpenTabSwitcher
+                    )
 
                     // Downloads Quick Button with active badge
-                    BadgedBox(
-                        badge = {
-                            if (activeDownloadCount > 0) {
-                                Badge(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                ) {
-                                    Text(
-                                        text = activeDownloadCount.toString(),
-                                        style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle),
-                                        fontSize = 9.sp
-                                    )
-                                }
-                            }
-                        }
-                    ) {
-                        FilledTonalIconButton(
-                            onClick = onOpenDownloads,
-                            shape = ExpressiveShapeTokens.PillShape,
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = primaryContentColor
-                            ),
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(
-                                imageVector = SiphonIcons.Download,
-                                contentDescription = "Downloads",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
+                    OmniboxDownloadsButton(
+                        activeDownloadCount = activeDownloadCount,
+                        onClick = onOpenDownloads
+                    )
 
                     // Expressive Sniffer Button
-                    BadgedBox(
-                        badge = {
-                            if (detectedMediaCount > 0) {
-                                Badge(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                ) {
-                                    Text(
-                                        text = detectedMediaCount.toString(),
-                                        style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle),
-                                        fontSize = 9.sp
-                                    )
-                                }
-                            }
-                        }
-                    ) {
-                        FilledTonalIconButton(
-                            onClick = onOpenSniffer,
-                            shape = ExpressiveShapeTokens.ActiveCardShape,
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            ),
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(
-                                imageVector = SiphonIcons.Bolt,
-                                contentDescription = "Media Sniffer",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
+                    OmniboxSnifferButton(
+                        detectedMediaCount = detectedMediaCount,
+                        onClick = onOpenSniffer
+                    )
 
                     // Overflow Menu Button
                     IconButton(

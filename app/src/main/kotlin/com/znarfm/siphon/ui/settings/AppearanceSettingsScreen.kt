@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.znarfm.siphon.ui.common.effectiveForDevice
 import com.znarfm.siphon.ui.theme.AppColorSeed
 import com.znarfm.siphon.ui.theme.AppThemeMode
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
@@ -126,6 +127,7 @@ fun AppearanceSettingsScreen(
                                     AppColorSeed.entries.filter { it != AppColorSeed.DYNAMIC }
                                 }
                             }
+                            val effectiveColorSeed = colorSeed.effectiveForDevice()
                             FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -133,14 +135,7 @@ fun AppearanceSettingsScreen(
                                 itemVerticalAlignment = Alignment.CenterVertically
                             ) {
                                 availableSeeds.forEach { seed ->
-                                    val isSelected = if (
-                                        Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
-                                        colorSeed == AppColorSeed.DYNAMIC
-                                    ) {
-                                        seed == AppColorSeed.SAPPHIRE
-                                    } else {
-                                        seed == colorSeed
-                                    }
+                                    val isSelected = seed == effectiveColorSeed
 
                                     if (seed == AppColorSeed.DYNAMIC) {
                                         FilterChip(
