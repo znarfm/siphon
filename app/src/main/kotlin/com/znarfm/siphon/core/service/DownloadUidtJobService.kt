@@ -14,6 +14,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
+import com.znarfm.siphon.core.dash.DashQueueEngine
 import com.znarfm.siphon.core.engine.ChunkQueueEngine
 import com.znarfm.siphon.core.hls.HlsQueueEngine
 import com.znarfm.siphon.core.storage.DownloadStorageProvider
@@ -48,6 +49,7 @@ class DownloadUidtJobService : JobService() {
     private lateinit var storage: DownloadStorageProvider
     private lateinit var engine: ChunkQueueEngine
     private lateinit var hlsEngine: HlsQueueEngine
+    private lateinit var dashEngine: DashQueueEngine
     private lateinit var notificationManager: NotificationManager
 
     private var executionJob: Job? = null
@@ -67,6 +69,11 @@ class DownloadUidtJobService : JobService() {
             rateBytesPerSec = bandwidthLimit
         )
         hlsEngine = HlsQueueEngine(
+            context = this,
+            dao = dao,
+            rateBytesPerSec = bandwidthLimit
+        )
+        dashEngine = DashQueueEngine(
             context = this,
             dao = dao,
             rateBytesPerSec = bandwidthLimit
@@ -154,6 +161,19 @@ class DownloadUidtJobService : JobService() {
                 if (entity.type == DownloadType.HLS) {
                     engine.withDownloadPermit {
                         hlsEngine.executeWithStorage(
+                            downloadId = downloadId,
+                            storage = storage,
+                            onProgress = { downloaded, total ->
+                                progressState.update { map ->
+                                    val current = map[downloadId] ?: return@update map
+                                    map + (downloadId to current.copy(downloadedBytes = downloaded, totalBytes = total))
+                                }
+                            }
+                        )
+                    }
+                } else if (entity.type == DownloadType.DASH) {
+                    engine.withDownloadPermit {
+                        dashEngine.executeWithStorage(
                             downloadId = downloadId,
                             storage = storage,
                             onProgress = { downloaded, total ->

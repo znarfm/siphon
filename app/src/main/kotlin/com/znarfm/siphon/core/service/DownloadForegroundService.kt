@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import com.znarfm.siphon.core.dash.DashQueueEngine
 import com.znarfm.siphon.core.engine.ChunkQueueEngine
 import com.znarfm.siphon.core.hls.HlsQueueEngine
 import com.znarfm.siphon.core.storage.DownloadStorageProvider
@@ -60,6 +61,7 @@ class DownloadForegroundService : Service() {
     private lateinit var storage: DownloadStorageProvider
     private lateinit var engine: ChunkQueueEngine
     private lateinit var hlsEngine: HlsQueueEngine
+    private lateinit var dashEngine: DashQueueEngine
     private lateinit var torrentEngine: TorrentQueueEngine
     private lateinit var notificationManager: NotificationManager
     private lateinit var connectivityManager: ConnectivityManager
@@ -117,6 +119,11 @@ class DownloadForegroundService : Service() {
             rateBytesPerSec = initialBandwidthLimit
         )
         hlsEngine = HlsQueueEngine(
+            context = this,
+            dao = dao,
+            rateBytesPerSec = initialBandwidthLimit
+        )
+        dashEngine = DashQueueEngine(
             context = this,
             dao = dao,
             rateBytesPerSec = initialBandwidthLimit
@@ -276,6 +283,19 @@ class DownloadForegroundService : Service() {
                             }
                         )
                     }
+                } else if (entity.type == DownloadType.DASH) {
+                    engine.withDownloadPermit {
+                        dashEngine.executeWithStorage(
+                            downloadId = downloadId,
+                            storage = storage,
+                            onProgress = { downloaded, total ->
+                                progressState.update { map ->
+                                    val current = map[downloadId] ?: return@update map
+                                    map + (downloadId to current.copy(downloadedBytes = downloaded, totalBytes = total))
+                                }
+                            }
+                        )
+                    }
                 } else if (entity.type == DownloadType.TORRENT) {
                     engine.withDownloadPermit {
                         val url = entity.url
@@ -353,6 +373,8 @@ class DownloadForegroundService : Service() {
                 val entity = dao.getDownload(downloadId)
                 if (entity?.type == DownloadType.HLS) {
                     hlsEngine.cancelAndDelete(downloadId, storage)
+                } else if (entity?.type == DownloadType.DASH) {
+                    dashEngine.cancelAndDelete(downloadId, storage)
                 } else if (entity?.type == DownloadType.TORRENT) {
                     if (entity.destinationUri != null) {
                         storage.delete(entity.destinationUri)

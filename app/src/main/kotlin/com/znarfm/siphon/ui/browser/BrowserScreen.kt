@@ -234,6 +234,7 @@ fun BrowserScreen(
     onRegisterDomScan: (((() -> Unit) -> Unit))? = null,
     onRegisterPageReload: (((() -> Unit) -> Unit))? = null,
     onDownloadDirectMedia: ((url: String) -> Unit)? = null,
+    onStandardDownload: ((url: String, userAgent: String, contentDisposition: String, mimetype: String, contentLength: Long, refererUrl: String?) -> Unit)? = null,
     onMagnetLinkClicked: (String) -> Unit = {},
     onOpenTabSwitcher: () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
@@ -332,6 +333,8 @@ fun BrowserScreen(
 
     val activeWebView = webViewMap[activeTabId]
 
+    val currentOnStandardDownload = rememberUpdatedState(onStandardDownload)
+
     val domScanAction: (WebView, MediaSnifferClient) -> Unit = { webView, tabSnifferClient ->
         val js = """
             (function() {
@@ -345,21 +348,24 @@ fun BrowserScreen(
                 });
                 if (window.performance && window.performance.getEntriesByType) {
                     window.performance.getEntriesByType('resource').forEach(function(r) {
-                        if (r.name && (r.name.includes('.m3u8') || r.name.includes('.mp4') || r.name.includes('.vtt') || r.name.includes('.srt') || r.name.includes('.ass') || r.name.includes('.ttml') || r.initiatorType === 'video' || r.initiatorType === 'audio' || r.initiatorType === 'track')) {
+                        if (r.name && (r.name.includes('.m3u8') || r.name.includes('.mpd') || r.name.includes('.mp4') || r.name.includes('.zip') || r.name.includes('.vtt') || r.name.includes('.srt') || r.name.includes('.ass') || r.name.includes('.ttml') || r.initiatorType === 'video' || r.initiatorType === 'audio' || r.initiatorType === 'track')) {
                             items.push({url: r.name});
                         }
                     });
                 }
-                return JSON.stringify(items);
+                return JSON.stringify({title: document.title || '', items: items});
             })()
         """.trimIndent()
+        val fallbackTitle = webView.title
         webView.evaluateJavascript(js) { json ->
-            if (!json.isNullOrBlank() && json != "null" && json != "[]") {
+            if (!json.isNullOrBlank() && json != "null") {
                 val cleanJson = if (json.startsWith("\"") && json.endsWith("\"")) {
                     org.json.JSONTokener(json).nextValue().toString()
                 } else json
                 runCatching {
-                    val array = org.json.JSONArray(cleanJson)
+                    val root = org.json.JSONObject(cleanJson)
+                    val docTitle = root.optString("title").takeIf { it.isNotBlank() } ?: fallbackTitle
+                    val array = root.optJSONArray("items") ?: return@runCatching
                     for (i in 0 until array.length()) {
                         val obj = array.optJSONObject(i)
                         if (obj != null) {
@@ -367,7 +373,7 @@ fun BrowserScreen(
                             val lang = obj.optString("lang").takeIf { it.isNotBlank() }
                             val label = obj.optString("label").takeIf { it.isNotBlank() }
                             if (mediaUrl.isNotBlank()) {
-                                tabSnifferClient.inspectCandidate(mediaUrl, emptyMap(), lang, label)
+                                tabSnifferClient.inspectCandidate(mediaUrl, emptyMap(), lang, label, pageTitle = docTitle)
                             }
                         }
                     }
@@ -935,6 +941,18 @@ fun BrowserScreen(
                                                 com.znarfm.siphon.core.sniffer.SiphonSnifferBridge(tabSnifferClient),
                                                 "__siphon_sniffer__"
                                             )
+                                            setDownloadListener { downloadUrl, userAgent, contentDisposition, mimetype, contentLength ->
+                                                if (!downloadUrl.isNullOrBlank()) {
+                                                    currentOnStandardDownload.value?.invoke(
+                                                        downloadUrl,
+                                                        userAgent.orEmpty(),
+                                                        contentDisposition.orEmpty(),
+                                                        mimetype.orEmpty(),
+                                                        contentLength,
+                                                        this.url ?: tabSnifferClient.currentPageUrl
+                                                    )
+                                                }
+                                            }
                                             webViewClient = tabSnifferClient
                                             webChromeClient = object : WebChromeClient() {
                                                 override fun onProgressChanged(view: WebView?, newProgress: Int) {

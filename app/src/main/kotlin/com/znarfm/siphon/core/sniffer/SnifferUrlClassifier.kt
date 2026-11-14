@@ -9,7 +9,7 @@ object SnifferUrlClassifier {
     val MEDIA_EXTENSIONS = setOf(
         "mp4", "mkv", "webm", "flv", "avi", "mov", "m4v",
         "m4a", "mp3", "aac", "opus", "flac", "wav", "ogg",
-        "m3u8", "mpd"
+        "m3u8", "mpd", "zip"
     )
 
     val AUDIO_EXTENSIONS = setOf(
@@ -20,17 +20,27 @@ object SnifferUrlClassifier {
         "vtt", "srt", "ass", "ssa", "ttml", "dfxp", "sub"
     )
 
-    val SEGMENT_EXTENSIONS = setOf("ts", "m4s")
+    val SEGMENT_EXTENSIONS = setOf("ts", "m4s", "cmfv", "cmfa")
 
     val BYTE_RANGE_PARAMS = setOf(
         "range", "bytes", "bytestart", "byteend", "start", "end", "offset", "part"
     )
 
+    private val GENERIC_STREAM_BASENAMES = setOf(
+        "master", "index", "playlist", "manifest", "stream", "media", "video", "audio", "chunklist", "prog_index"
+    )
+
     fun isCandidateMediaUrl(url: String, requestHeaders: Map<String, String>): Boolean {
-        val secFetchDest = requestHeaders["Sec-Fetch-Dest"]?.lowercase(Locale.ROOT)
+        val secFetchDest = requestHeaders.entries
+            .firstOrNull { it.key.equals("Sec-Fetch-Dest", ignoreCase = true) }
+            ?.value
+            ?.lowercase(Locale.ROOT)
         if (secFetchDest == "video" || secFetchDest == "audio" || secFetchDest == "track") return true
 
-        val accept = requestHeaders["Accept"]?.lowercase(Locale.ROOT)
+        val accept = requestHeaders.entries
+            .firstOrNull { it.key.equals("Accept", ignoreCase = true) }
+            ?.value
+            ?.lowercase(Locale.ROOT)
         if (accept?.contains("video/") == true || accept?.contains("audio/") == true || accept?.contains("text/vtt") == true) return true
 
         val path = runCatching<String?> {
@@ -119,14 +129,21 @@ object SnifferUrlClassifier {
         if (ext in SUBTITLE_EXTENSIONS && (path.contains("/seg") || path.contains("segment") || path.contains("chunk") || path.contains("part"))) {
             return true
         }
-        return path.contains("/segment") || path.contains("/seg-")
+        return path.contains("/segment") || path.contains("/seg-") || path.contains("/chunk-") || path.contains("/init-")
     }
 
     fun isHlsUrl(url: String): Boolean {
         val path = runCatching<String?> {
             url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
         }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
-        return path.endsWith(".m3u8") || path.contains(".m3u8") || url.contains(".m3u8")
+        return path.endsWith(".m3u8") || path.contains(".m3u8")
+    }
+
+    fun isDashUrl(url: String): Boolean {
+        val path = runCatching<String?> {
+            url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
+        }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+        return path.endsWith(".mpd") || path.contains(".mpd")
     }
 
     fun normalizeByteRangeUrl(url: String): String {
@@ -163,16 +180,45 @@ object SnifferUrlClassifier {
         return false
     }
 
-    fun extractDisplayNameFromUrl(url: String, fallback: String, isAudio: Boolean = false): String {
+    fun isGenericStreamFilename(name: String): Boolean {
+        val base = name.substringBeforeLast('.').lowercase(Locale.ROOT).trim()
+        return base.isBlank() || base in GENERIC_STREAM_BASENAMES
+    }
+
+    fun extractDisplayNameFromUrl(
+        url: String,
+        fallback: String,
+        isAudio: Boolean = false,
+        pageTitle: String? = null
+    ): String {
         val path = runCatching { Uri.parse(url).path }.getOrNull()
             ?: url.substringBefore('?').substringBefore('#')
         val rawName = path.substringAfterLast('/', "").trim()
-        val name = if (rawName.isNotBlank()) rawName else fallback
-        return if (name.endsWith(".m3u8", ignoreCase = true)) {
-            val base = name.substringBeforeLast('.')
+        val sanitizedTitle = pageTitle?.trim()
+            ?.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            ?.take(80)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        val candidateName = if (rawName.isNotBlank() && (!isGenericStreamFilename(rawName) || sanitizedTitle == null)) {
+            rawName
+        } else if (sanitizedTitle != null) {
+            val origExt = rawName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+            val ext = when {
+                origExt == "m3u8" || origExt == "mpd" -> if (isAudio) "m4a" else "mp4"
+                origExt.isNotBlank() && origExt.length <= 5 -> origExt
+                else -> fallback.substringAfterLast('.', if (isAudio) "m4a" else "mp4")
+            }
+            "$sanitizedTitle.$ext"
+        } else {
+            fallback
+        }
+
+        return if (candidateName.endsWith(".m3u8", ignoreCase = true) || candidateName.endsWith(".mpd", ignoreCase = true)) {
+            val base = candidateName.substringBeforeLast('.')
             if (isAudio) "$base.m4a" else "$base.mp4"
         } else {
-            name
+            candidateName
         }
     }
 }

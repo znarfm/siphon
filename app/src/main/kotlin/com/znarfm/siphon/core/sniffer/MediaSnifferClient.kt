@@ -31,6 +31,7 @@ import org.json.JSONObject
 import java.util.Collections
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 class MediaSnifferClient(
     val adblockEngine: AdblockEngine,
@@ -56,6 +57,17 @@ class MediaSnifferClient(
         private set
 
     @Volatile
+    var currentPageTitle: String? = null
+
+    @Volatile
+    var defaultUserAgent: String? = null
+
+    @Volatile
+    var isIncognito: Boolean = false
+
+    private val pageGeneration = AtomicLong(0L)
+
+    @Volatile
     private var lastPageStartedUrl: String? = null
 
     @Volatile
@@ -77,7 +89,7 @@ class MediaSnifferClient(
         }
     )
 
-    // Manifests captured per page URL to suppress .ts/.m4s segment probing
+    // Manifests captured per page URL to suppress .ts/.m4s/.aac segment probing
     private val pageManifests = ConcurrentHashMap<String, MutableSet<String>>()
 
     fun setRebindTarget(download: DownloadEntity?) {
@@ -85,6 +97,7 @@ class MediaSnifferClient(
     }
 
     fun clearDetectedMedia() {
+        pageGeneration.incrementAndGet()
         _detectedMedia.value = emptyList()
         lruDedup.clear()
         pageManifests.clear()
@@ -106,9 +119,10 @@ class MediaSnifferClient(
         requestHeaders: Map<String, String> = emptyMap(),
         hintLang: String? = null,
         hintLabel: String? = null,
-        forceInspect: Boolean = false
+        forceInspect: Boolean = false,
+        pageTitle: String? = null
     ) {
-        inspectCandidateAsync(url, requestHeaders, hintLang, hintLabel, forceInspect)
+        inspectCandidateAsync(url, requestHeaders, hintLang, hintLabel, forceInspect, pageTitle)
     }
 
     fun notifyAdBlocked(pageUrl: String, blockedUrl: String) {
@@ -148,6 +162,8 @@ class MediaSnifferClient(
             }
             lastPageStartedUrl = url
             currentPageUrl = url
+            view?.settings?.userAgentString?.takeIf { it.isNotBlank() }?.let { defaultUserAgent = it }
+            view?.title?.takeIf { it.isNotBlank() }?.let { currentPageTitle = it }
             pageManifests.putIfAbsent(url, Collections.newSetFromMap(ConcurrentHashMap()))
             onUrlChanged?.invoke(url)
             onNavigationStateChanged?.invoke(view?.canGoBack() == true, view?.canGoForward() == true)
@@ -159,6 +175,8 @@ class MediaSnifferClient(
         super.onPageFinished(view, url)
         if (!url.isNullOrBlank()) {
             currentPageUrl = url
+            view?.settings?.userAgentString?.takeIf { it.isNotBlank() }?.let { defaultUserAgent = it }
+            view?.title?.takeIf { it.isNotBlank() }?.let { currentPageTitle = it }
             onUrlChanged?.invoke(url)
             onNavigationStateChanged?.invoke(view?.canGoBack() == true, view?.canGoForward() == true)
             if (adblockEngine.isEnabled && !adblockEngine.isUrlAllowed(url)) {
@@ -270,22 +288,64 @@ class MediaSnifferClient(
         }
     }
 
+    private fun httpClientForTab() =
+        if (isIncognito) NetworkClients.incognitoDefaultClient else NetworkClients.defaultClient
+
+    private fun findHeaderIgnoreCase(headersMap: Map<String, String>, name: String): String? {
+        return headersMap[name]
+            ?: headersMap.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+    }
+
+    private fun registerManifestAndPruneSegments(manifestUrl: String, sourcePage: String) {
+        if (currentPageUrl.isNotBlank()) {
+            pageManifests.getOrPut(currentPageUrl) {
+                Collections.newSetFromMap(ConcurrentHashMap())
+            }.add(manifestUrl)
+        }
+        if (sourcePage.isNotBlank() && sourcePage != currentPageUrl) {
+            pageManifests.getOrPut(sourcePage) {
+                Collections.newSetFromMap(ConcurrentHashMap())
+            }.add(manifestUrl)
+        }
+        // Retroactively prune any raw .ts/.m4s/.aac segments that raced ahead of this manifest
+        _detectedMedia.update { list ->
+            list.filterNot { it.mediaType == DownloadType.HTTP && isSegmentUrl(it.url) }
+        }
+    }
+
     private fun inspectCandidateAsync(
         url: String,
         requestHeaders: Map<String, String>,
         hintLang: String? = null,
         hintLabel: String? = null,
-        forceInspect: Boolean = false
+        forceInspect: Boolean = false,
+        pageTitle: String? = null
     ) {
-        if (url.startsWith("magnet:", ignoreCase = true)) return
+        if (url.startsWith("magnet:", ignoreCase = true) ||
+            url.startsWith("blob:", ignoreCase = true) ||
+            url.startsWith("data:", ignoreCase = true) ||
+            url.startsWith("javascript:", ignoreCase = true)
+        ) return
+
         if (!forceInspect && !isCandidateMediaUrl(url, requestHeaders)) return
 
-        // 3. Skip segment probing (.ts / .m4s) if a parent manifest is already captured for this page
-        if (!forceInspect && isSegmentUrl(url)) {
-            val manifests = pageManifests[currentPageUrl]
-            if (!manifests.isNullOrEmpty()) {
+        val refererHeader = findHeaderIgnoreCase(requestHeaders, "Referer")
+        val sourcePage = refererHeader ?: currentPageUrl
+
+        // 3. Skip segment probing (.ts / .m4s / .aac) if a parent manifest is already captured
+        val isAacPath = url.substringBefore('?').substringBefore('#').endsWith(".aac", ignoreCase = true)
+        if (!forceInspect && (isSegmentUrl(url) || isAacPath)) {
+            val hasMainManifest = !pageManifests[currentPageUrl].isNullOrEmpty()
+            val hasRefererManifest = !refererHeader.isNullOrBlank() && !pageManifests[refererHeader].isNullOrEmpty()
+            if (hasMainManifest || hasRefererManifest) {
                 return
             }
+        }
+
+        // Synchronously register manifest URLs before dispatching async work to prevent segment races
+        val isManifestUrl = SnifferUrlClassifier.isHlsUrl(url) || SnifferUrlClassifier.isDashUrl(url)
+        if (isManifestUrl) {
+            registerManifestAndPruneSegments(url, sourcePage)
         }
 
         // 4. Dedup candidate URLs normalized by stripping byte-range query params
@@ -298,44 +358,65 @@ class MediaSnifferClient(
                 false
             }
         }
-        if (alreadySeen) return
+        if (alreadySeen && !forceInspect) return
 
-        // 5. Capture cookies, Referer, and User-Agent
-        val cookies = runCatching { CookieManager.getInstance().getCookie(url) }.getOrNull()
+        // 5. Capture cookies (non-incognito), Referer, Origin, User-Agent, and Authorization
         val headersBuilder = mutableMapOf<String, String>()
-        if (!cookies.isNullOrBlank()) {
-            headersBuilder["Cookie"] = cookies
+        if (!isIncognito) {
+            val cookies = runCatching { CookieManager.getInstance().getCookie(url) }.getOrNull()
+            if (!cookies.isNullOrBlank()) {
+                headersBuilder["Cookie"] = cookies
+            }
         }
-        requestHeaders["Referer"]?.let { headersBuilder["Referer"] = it }
-        requestHeaders["User-Agent"]?.let { headersBuilder["User-Agent"] = it }
-        requestHeaders["Origin"]?.let { headersBuilder["Origin"] = it }
+        val effectiveReferer = refererHeader ?: currentPageUrl.takeIf { isHttpUrl(it) }
+        effectiveReferer?.let { headersBuilder["Referer"] = it }
+
+        val effectiveUa = findHeaderIgnoreCase(requestHeaders, "User-Agent") ?: defaultUserAgent
+        effectiveUa?.takeIf { it.isNotBlank() }?.let { headersBuilder["User-Agent"] = it }
+
+        val effectiveOrigin = findHeaderIgnoreCase(requestHeaders, "Origin")
+            ?: effectiveReferer?.let { ref ->
+                runCatching {
+                    val u = Uri.parse(ref)
+                    if (!u.scheme.isNullOrBlank() && !u.authority.isNullOrBlank()) "${u.scheme}://${u.authority}" else null
+                }.getOrNull()
+            }
+        effectiveOrigin?.let { headersBuilder["Origin"] = it }
+
+        findHeaderIgnoreCase(requestHeaders, "Authorization")?.let {
+            headersBuilder["Authorization"] = it
+        }
+
+        val effectiveTitle = pageTitle?.takeIf { it.isNotBlank() } ?: currentPageTitle
+        val gen = pageGeneration.get()
 
         scope.launch(Dispatchers.IO) {
-            if (isHlsUrl(url)) {
-                processHlsCandidate(url, headersBuilder, hintLang, hintLabel)
-            } else {
-                processProgressiveCandidate(url, headersBuilder, hintLang, hintLabel, forceInspect)
+            if (pageGeneration.get() != gen) return@launch
+            val succeeded = when {
+                isHlsUrl(url) -> processHlsCandidate(url, headersBuilder, hintLang, hintLabel, effectiveTitle, gen)
+                SnifferUrlClassifier.isDashUrl(url) -> processDashCandidate(url, headersBuilder, effectiveTitle, gen)
+                else -> processProgressiveCandidate(url, headersBuilder, hintLang, hintLabel, forceInspect, effectiveTitle, gen)
+            }
+            if (!succeeded) {
+                synchronized(lruDedup) { lruDedup.remove(dedupKey) }
             }
         }
     }
 
     private fun findReferer(headersMap: Map<String, String>): String? {
-        return headersMap["Referer"]
-            ?: headersMap["referer"]
-            ?: headersMap.entries.firstOrNull { it.key.equals("referer", ignoreCase = true) }?.value
+        return findHeaderIgnoreCase(headersMap, "Referer")
     }
 
     private suspend fun processHlsCandidate(
         url: String,
         headersMap: Map<String, String>,
         hintLang: String? = null,
-        hintLabel: String? = null
-    ) {
+        hintLabel: String? = null,
+        pageTitle: String? = null,
+        gen: Long = pageGeneration.get()
+    ): Boolean {
         val sourcePage = findReferer(headersMap) ?: currentPageUrl
-        val manifests = pageManifests.getOrPut(sourcePage) {
-            Collections.newSetFromMap(ConcurrentHashMap())
-        }
-        manifests.add(url)
+        registerManifestAndPruneSegments(url, sourcePage)
 
         val okHeadersBuilder = Headers.Builder()
         headersMap.forEach { (k, v) -> okHeadersBuilder.add(k, v) }
@@ -348,10 +429,12 @@ class MediaSnifferClient(
             .build()
 
         val bodyText = runCatching {
-            NetworkClients.defaultClient.newCall(req).execute().use { resp ->
+            httpClientForTab().newCall(req).execute().use { resp ->
                 if (resp.isSuccessful) resp.body?.string() else null
             }
-        }.getOrNull() ?: return
+        }.getOrNull() ?: return false
+
+        if (pageGeneration.get() != gen) return true
 
         val parsedMaster = if (HlsPlaylistParser.isMasterPlaylist(bodyText)) {
             HlsPlaylistParser.parseMasterPlaylist(url, bodyText)
@@ -373,14 +456,26 @@ class MediaSnifferClient(
                     isSubtitle = true,
                     language = lang
                 )
-                _detectedMedia.update { list ->
-                    if (list.none { it.url == subMedia.url }) list + subMedia else list
+                if (pageGeneration.get() == gen) {
+                    _detectedMedia.update { list ->
+                        if (list.none { it.url == subMedia.url }) list + subMedia else list
+                    }
                 }
             }
         }
 
-        val rawVariants = parsedMaster?.variants?.map {
-            HlsVariantInfo(it.url, it.bandwidth, it.resolution, it.codecs)
+        val rawVariants = parsedMaster?.variants?.map { v ->
+            val matchedAudio = if (!v.audioGroupId.isNullOrBlank()) {
+                parsedMaster.audioTracks.firstOrNull { it.groupId == v.audioGroupId && it.isDefault }
+                    ?: parsedMaster.audioTracks.firstOrNull { it.groupId == v.audioGroupId }
+            } else null
+            HlsVariantInfo(
+                url = v.url,
+                bandwidth = v.bandwidth,
+                resolution = v.resolution,
+                codecs = v.codecs,
+                audioUrl = matchedAudio?.url?.takeIf { it.isNotBlank() && it != v.url }
+            )
         } ?: emptyList()
 
         if (parsedMaster == null) {
@@ -404,16 +499,23 @@ class MediaSnifferClient(
                     isSubtitle = true,
                     language = lang
                 )
-                _detectedMedia.update { list ->
-                    if (list.none { it.url == subMedia.url }) list + subMedia else list
+                if (pageGeneration.get() == gen) {
+                    _detectedMedia.update { list ->
+                        if (list.none { it.url == subMedia.url }) list + subMedia else list
+                    }
                 }
-                return
+                return true
             }
         }
 
         val isAudioStream = isAudioHls(bodyText, url) ||
             (rawVariants.isNotEmpty() && rawVariants.all { it.resolution == null && it.codecs?.startsWith("mp4a") == true })
-        val displayName = extractDisplayNameFromUrl(url, if (isAudioStream) "audio.m4a" else "stream.m3u8", isAudio = isAudioStream)
+        val displayName = SnifferUrlClassifier.extractDisplayNameFromUrl(
+            url = url,
+            fallback = if (isAudioStream) "audio.m4a" else "stream.m3u8",
+            isAudio = isAudioStream,
+            pageTitle = pageTitle
+        )
 
         var durationSec = 0.0
         val isMaster = rawVariants.isNotEmpty()
@@ -424,7 +526,7 @@ class MediaSnifferClient(
             if (!probeVariantUrl.isNullOrBlank()) {
                 val variantReq = Request.Builder().url(probeVariantUrl).headers(okHeaders).get().build()
                 runCatching {
-                    NetworkClients.defaultClient.newCall(variantReq).execute().use { resp ->
+                    httpClientForTab().newCall(variantReq).execute().use { resp ->
                         if (resp.isSuccessful) Pair(probeVariantUrl, resp.body?.string().orEmpty()) else null
                     }
                 }.getOrNull()
@@ -445,7 +547,7 @@ class MediaSnifferClient(
                     .get()
                     .build()
                 val sampledBytes = runCatching {
-                    NetworkClients.defaultClient.newCall(segReq).execute().use { resp ->
+                    httpClientForTab().newCall(segReq).execute().use { resp ->
                         val contentRange = resp.header("Content-Range")
                         val rangeTotal = contentRange?.substringAfterLast('/')?.trim()?.toLongOrNull()
                         rangeTotal ?: resp.header("Content-Length")?.toLongOrNull()
@@ -459,6 +561,8 @@ class MediaSnifferClient(
                 }
             }
         }
+
+        if (pageGeneration.get() != gen) return true
 
         val enrichedVariants = rawVariants.mapIndexed { idx, variant ->
             val estBytes = if (durationSec > 0.0) {
@@ -502,9 +606,101 @@ class MediaSnifferClient(
             isAudio = isAudioStream
         )
 
-        _detectedMedia.update { list ->
-            if (list.none { it.url == media.url }) list + media else list
+        if (pageGeneration.get() == gen) {
+            _detectedMedia.update { list ->
+                if (list.none { it.url == media.url }) list + media else list
+            }
         }
+        return true
+    }
+
+    private suspend fun processDashCandidate(
+        url: String,
+        headersMap: Map<String, String>,
+        pageTitle: String? = null,
+        gen: Long = pageGeneration.get()
+    ): Boolean {
+        val sourcePage = findReferer(headersMap) ?: currentPageUrl
+        registerManifestAndPruneSegments(url, sourcePage)
+
+        val okHeadersBuilder = Headers.Builder()
+        headersMap.forEach { (k, v) -> okHeadersBuilder.add(k, v) }
+        val okHeaders = okHeadersBuilder.build()
+
+        val req = Request.Builder()
+            .url(url)
+            .headers(okHeaders)
+            .get()
+            .build()
+
+        val bodyText = runCatching {
+            httpClientForTab().newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) resp.body?.string() else null
+            }
+        }.getOrNull() ?: return false
+
+        if (pageGeneration.get() != gen) return true
+        if (!com.znarfm.siphon.core.dash.DashManifestParser.isDashManifest(bodyText)) return false
+
+        val parsed = runCatching {
+            com.znarfm.siphon.core.dash.DashManifestParser.parse(url, bodyText)
+        }.getOrNull() ?: return false
+
+        val nonDrmVideos = parsed.videoTracks.filter { !it.isDrmProtected }
+        val nonDrmAudios = parsed.audioTracks.filter { !it.isDrmProtected }
+        if (nonDrmVideos.isEmpty() && nonDrmAudios.isEmpty()) {
+            return true // DRM-only manifest; suppress segments but don't surface broken download
+        }
+
+        val isAudioOnly = nonDrmVideos.isEmpty() && nonDrmAudios.isNotEmpty()
+        val durationSec = parsed.durationSec
+        val variants = nonDrmVideos.map { track ->
+            val estBytes = if (durationSec > 0.0 && track.bandwidth > 0L) {
+                (track.bandwidth * durationSec / 8.0).toLong()
+            } else -1L
+            HlsVariantInfo(
+                url = track.singleFileUrl ?: "$url#rep=${track.id}",
+                bandwidth = track.bandwidth,
+                resolution = track.resolution,
+                codecs = track.codecs,
+                estimatedBytes = estBytes,
+                representationId = track.id
+            )
+        }
+
+        val estimatedTotalBytes = variants.firstOrNull()?.estimatedBytes ?: -1L
+        val displayName = SnifferUrlClassifier.extractDisplayNameFromUrl(
+            url = url,
+            fallback = if (isAudioOnly) "audio.m4a" else "stream.mp4",
+            isAudio = isAudioOnly,
+            pageTitle = pageTitle
+        )
+
+        val isSingleHttpFile = nonDrmVideos.size == 1 &&
+            nonDrmVideos.first().isSingleFile &&
+            nonDrmAudios.isEmpty() &&
+            !nonDrmVideos.first().singleFileUrl.isNullOrBlank()
+
+        val media = SniffedMedia(
+            tabId = this.tabId,
+            url = if (isSingleHttpFile) nonDrmVideos.first().singleFileUrl!! else url,
+            sourcePageUrl = sourcePage,
+            mediaType = if (isSingleHttpFile) DownloadType.HTTP else DownloadType.DASH,
+            mimeType = if (isAudioOnly) "audio/mp4" else "video/mp4",
+            displayName = displayName,
+            totalBytes = estimatedTotalBytes,
+            headers = headersMap,
+            variants = if (isSingleHttpFile) emptyList() else variants,
+            durationSec = durationSec,
+            isAudio = isAudioOnly
+        )
+
+        if (pageGeneration.get() == gen) {
+            _detectedMedia.update { list ->
+                if (list.none { it.url == media.url }) list + media else list
+            }
+        }
+        return true
     }
 
     private suspend fun processProgressiveCandidate(
@@ -512,8 +708,10 @@ class MediaSnifferClient(
         headersMap: Map<String, String>,
         hintLang: String? = null,
         hintLabel: String? = null,
-        forceInspect: Boolean = false
-    ) {
+        forceInspect: Boolean = false,
+        pageTitle: String? = null,
+        gen: Long = pageGeneration.get()
+    ): Boolean {
         val sourcePage = findReferer(headersMap) ?: currentPageUrl
         val okHeadersBuilder = Headers.Builder()
         headersMap.forEach { (k, v) -> okHeadersBuilder.add(k, v) }
@@ -521,21 +719,26 @@ class MediaSnifferClient(
 
         val probeResult = runCatching {
             metadataProber.probe(url, okHeaders)
-        }.getOrNull() ?: return
+        }.getOrNull() ?: return false
+
+        if (pageGeneration.get() != gen) return true
 
         val mime = probeResult.mimeType.lowercase(Locale.ROOT)
         if (mime.contains("mpegurl")) {
-            processHlsCandidate(url, headersMap, hintLang, hintLabel)
-            return
+            return processHlsCandidate(url, headersMap, hintLang, hintLabel, pageTitle, gen)
+        }
+        if (mime.contains("dash+xml")) {
+            return processDashCandidate(url, headersMap, pageTitle, gen)
         }
 
         val isSub = isSubtitleUrl(probeResult.finalUrl) || isSubtitleUrl(url) || isSubtitleMime(mime)
         val isAudio = isAudioUrl(probeResult.finalUrl) || isAudioUrl(url) || isAudioMime(mime)
         val isMediaMime = mime.startsWith("video/") || mime.startsWith("audio/") ||
-            mime == "application/octet-stream" || isSub || isAudio || forceInspect
+            mime == "application/octet-stream" || mime == "application/zip" ||
+            mime == "application/x-zip-compressed" || isSub || isAudio || forceInspect
 
         if (probeResult.totalBytes <= 0 && !isMediaMime) {
-            return
+            return false
         }
 
         val ext = subtitleExtFromUrlOrMime(probeResult.finalUrl, mime)
@@ -543,7 +746,12 @@ class MediaSnifferClient(
         val displayName = if (isSub) {
             probeResult.suggestedFilename ?: buildSubtitleDisplayName(probeResult.finalUrl, hintLabel, lang, ext)
         } else {
-            probeResult.suggestedFilename ?: extractDisplayNameFromUrl(url, if (isAudio) "audio.mp3" else "media", isAudio = isAudio)
+            probeResult.suggestedFilename ?: SnifferUrlClassifier.extractDisplayNameFromUrl(
+                url = url,
+                fallback = if (isAudio) "audio.mp3" else "media",
+                isAudio = isAudio,
+                pageTitle = pageTitle
+            )
         }
 
         val resolvedMime = if (isSub && (mime == "application/octet-stream" || mime.startsWith("text/plain"))) {
@@ -563,7 +771,10 @@ class MediaSnifferClient(
             headers = headersMap,
             isSubtitle = isSub,
             isAudio = isAudio,
-            language = lang
+            language = lang,
+            strongEtag = probeResult.strongEtag,
+            lastModified = probeResult.lastModified,
+            isResumable = probeResult.isResumable
         )
 
         // Check explicit "Update Link" rebind flow if active
@@ -572,9 +783,12 @@ class MediaSnifferClient(
             attemptRebind(media, target, probeResult.strongEtag)
         }
 
-        _detectedMedia.update { list ->
-            if (list.none { it.url == media.url }) list + media else list
+        if (pageGeneration.get() == gen) {
+            _detectedMedia.update { list ->
+                if (list.none { it.url == media.url }) list + media else list
+            }
         }
+        return true
     }
 
     private suspend fun attemptRebind(
@@ -674,6 +888,17 @@ class SiphonSnifferBridge(
 ) {
     @android.webkit.JavascriptInterface
     fun postCandidate(url: String?, headersJson: String?, lang: String?, label: String?) {
+        postCandidateWithTitle(url, headersJson, lang, label, null)
+    }
+
+    @android.webkit.JavascriptInterface
+    fun postCandidateWithTitle(
+        url: String?,
+        headersJson: String?,
+        lang: String?,
+        label: String?,
+        pageTitle: String?
+    ) {
         if (url.isNullOrBlank()) return
         val headers = if (!headersJson.isNullOrBlank()) {
             runCatching {
@@ -687,7 +912,10 @@ class SiphonSnifferBridge(
                 map
             }.getOrDefault(emptyMap())
         } else emptyMap()
-        client.inspectCandidate(url, headers, lang, label)
+        if (!pageTitle.isNullOrBlank()) {
+            client.currentPageTitle = pageTitle
+        }
+        client.inspectCandidate(url, headers, lang, label, pageTitle = pageTitle)
     }
 }
 
@@ -731,8 +959,8 @@ object SnifferJsInjector {
 
         return """
             (function() {
-                if (window.__siphon_injected__) return;
-                window.__siphon_injected__ = true;
+                if (!document || document.__siphon_injected__) return;
+                document.__siphon_injected__ = true;
 
                 try {
                     window.canRunAds = true;
@@ -741,10 +969,11 @@ object SnifferJsInjector {
                     if (!window.adsbygoogle) {
                         window.adsbygoogle = { loaded: true, push: function() {} };
                     }
+                    var AD_TOKEN_REGEX = /(^|[-_\s])ads?([-_\s]|$)/i;
                     var origGetComputedStyle = window.getComputedStyle;
                     window.getComputedStyle = function(el, pseudo) {
                         var style = origGetComputedStyle.apply(this, arguments);
-                        if (el && ((el.id && el.id.indexOf('ad') !== -1) || (el.className && typeof el.className === 'string' && el.className.indexOf('ad') !== -1))) {
+                        if (el && ((el.id && AD_TOKEN_REGEX.test(el.id)) || (el.className && typeof el.className === 'string' && AD_TOKEN_REGEX.test(el.className)))) {
                             return new Proxy(style, {
                                 get: function(target, prop) {
                                     if (prop === 'display') return 'block';
@@ -762,24 +991,38 @@ object SnifferJsInjector {
                     if (!url || typeof url !== 'string') return;
                     if (url.indexOf('blob:') === 0 || url.indexOf('javascript:') === 0 || url.indexOf('data:') === 0) return;
                     try {
-                        if (window.__siphon_sniffer__ && window.__siphon_sniffer__.postCandidate) {
-                            window.__siphon_sniffer__.postCandidate(url, headers ? JSON.stringify(headers) : null, lang || null, label || null);
+                        var absUrl = new URL(url, document.baseURI || window.location.href).href;
+                        var title = (document && document.title) ? document.title : null;
+                        if (window.__siphon_sniffer__) {
+                            if (window.__siphon_sniffer__.postCandidateWithTitle) {
+                                window.__siphon_sniffer__.postCandidateWithTitle(absUrl, headers ? JSON.stringify(headers) : null, lang || null, label || null, title);
+                            } else if (window.__siphon_sniffer__.postCandidate) {
+                                window.__siphon_sniffer__.postCandidate(absUrl, headers ? JSON.stringify(headers) : null, lang || null, label || null);
+                            }
                         }
                     } catch(e) {}
                 }
 
-                var MEDIA_REGEX = /\.(m3u8|mpd|mp4|webm|mkv|m4v|mp3|m4a|aac|ogg|opus|wav|flac|vtt|srt)(\?[^"'\s]*)?$/i;
-                var RPC_STREAM_REGEX = /https?:\/\/[^\s"'<>]+\.(?:m3u8|mpd|mp4|webm|m4v|mp3|m4a|aac|ogg|opus|flac|wav)[\w\-.~:/?#\[\]@!$&'()*+,;=]*/gi;
+                var MEDIA_REGEX = /\.(m3u8|mpd|mp4|webm|mkv|m4v|mp3|m4a|aac|ogg|opus|wav|flac|vtt|srt|zip)(\?[^"'\s]*)?$/i;
+                var RPC_STREAM_REGEX = /https?:\/\/[^\s"'<>]+\.(?:m3u8|mpd|mp4|webm|m4v|mp3|m4a|aac|ogg|opus|flac|wav|zip)[\w\-.~:/?#\[\]@!$&'()*+,;=]*/gi;
 
-                function checkUrl(url) {
+                function checkUrl(url, headers) {
                     if (typeof url === 'string' && MEDIA_REGEX.test(url)) {
-                        notify(url);
+                        notify(url, headers);
                     }
                 }
 
-                if (window.WebSocket) {
+                function isMediaContentType(ct) {
+                    if (!ct) return false;
+                    var l = ct.toLowerCase();
+                    return l.indexOf('video/') !== -1 || l.indexOf('audio/') !== -1 ||
+                        l.indexOf('mpegurl') !== -1 || l.indexOf('dash+xml') !== -1 ||
+                        l.indexOf('application/zip') !== -1;
+                }
+
+                if (window.WebSocket && !window.WebSocket.__siphon_wrapped__) {
                     var OrigWebSocket = window.WebSocket;
-                    window.WebSocket = function(url, protocols) {
+                    var WrappedWS = function(url, protocols) {
                         var ws = protocols ? new OrigWebSocket(url, protocols) : new OrigWebSocket(url);
                         try {
                             ws.addEventListener('message', function(event) {
@@ -795,42 +1038,111 @@ object SnifferJsInjector {
                         } catch(e) {}
                         return ws;
                     };
-                    window.WebSocket.prototype = OrigWebSocket.prototype;
+                    WrappedWS.prototype = OrigWebSocket.prototype;
+                    WrappedWS.CONNECTING = OrigWebSocket.CONNECTING;
+                    WrappedWS.OPEN = OrigWebSocket.OPEN;
+                    WrappedWS.CLOSING = OrigWebSocket.CLOSING;
+                    WrappedWS.CLOSED = OrigWebSocket.CLOSED;
+                    WrappedWS.__siphon_wrapped__ = true;
+                    window.WebSocket = WrappedWS;
                 }
 
-                if (window.fetch) {
+                if (window.fetch && !window.fetch.__siphon_wrapped__) {
                     var origFetch = window.fetch;
-                    window.fetch = function(resource, init) {
+                    var wrappedFetch = function(resource, init) {
                         var url = typeof resource === 'string' ? resource : (resource && resource.url ? resource.url : '');
-                        if (url) checkUrl(url);
+                        var reqHeaders = null;
+                        try {
+                            if (init && init.headers) {
+                                reqHeaders = {};
+                                if (typeof init.headers.forEach === 'function') {
+                                    init.headers.forEach(function(v, k) { reqHeaders[k] = v; });
+                                } else {
+                                    Object.keys(init.headers).forEach(function(k) { reqHeaders[k] = init.headers[k]; });
+                                }
+                            }
+                        } catch(e) {}
+                        if (url) checkUrl(url, reqHeaders);
                         return origFetch.apply(this, arguments).then(function(response) {
                             try {
                                 var ct = response.headers.get('content-type') || '';
-                                if (ct.indexOf('video/') !== -1 || ct.indexOf('audio/') !== -1 || ct.indexOf('mpegurl') !== -1 || ct.indexOf('dash+xml') !== -1) {
-                                    notify(response.url || url);
+                                if (isMediaContentType(ct)) {
+                                    notify(response.url || url, reqHeaders);
                                 }
                             } catch(e) {}
                             return response;
                         });
                     };
+                    wrappedFetch.__siphon_wrapped__ = true;
+                    window.fetch = wrappedFetch;
                 }
 
-                function sweepMediaElements() {
-                    document.querySelectorAll('video, audio').forEach(function(el) {
-                        if (el.style.display === 'none') el.style.display = 'block';
-                        if (el.style.visibility === 'hidden') el.style.visibility = 'visible';
+                if (window.XMLHttpRequest && !window.XMLHttpRequest.prototype.__siphon_wrapped__) {
+                    var origXhrOpen = window.XMLHttpRequest.prototype.open;
+                    var origXhrSetHeader = window.XMLHttpRequest.prototype.setRequestHeader;
+                    var origXhrSend = window.XMLHttpRequest.prototype.send;
+                    window.XMLHttpRequest.prototype.__siphon_wrapped__ = true;
+
+                    window.XMLHttpRequest.prototype.open = function(method, url) {
+                        this.__siphon_url__ = url;
+                        this.__siphon_headers__ = {};
+                        return origXhrOpen.apply(this, arguments);
+                    };
+
+                    window.XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+                        try {
+                            if (this.__siphon_headers__ && header) {
+                                this.__siphon_headers__[header] = value;
+                            }
+                        } catch(e) {}
+                        return origXhrSetHeader.apply(this, arguments);
+                    };
+
+                    window.XMLHttpRequest.prototype.send = function() {
+                        var xhr = this;
+                        try {
+                            if (xhr.__siphon_url__) {
+                                checkUrl(xhr.__siphon_url__, xhr.__siphon_headers__);
+                            }
+                            xhr.addEventListener('load', function() {
+                                try {
+                                    var ct = xhr.getResponseHeader('content-type') || '';
+                                    if (isMediaContentType(ct)) {
+                                        notify(xhr.responseURL || xhr.__siphon_url__, xhr.__siphon_headers__);
+                                    }
+                                } catch(e) {}
+                            });
+                        } catch(e) {}
+                        return origXhrSend.apply(this, arguments);
+                    };
+                }
+
+                function inspectMediaElement(el) {
+                    if (!el || !el.tagName) return;
+                    var tag = el.tagName.toLowerCase();
+                    if (tag === 'video' || tag === 'audio') {
+                        if (el.style && el.style.display === 'none') el.style.display = 'block';
+                        if (el.style && el.style.visibility === 'hidden') el.style.visibility = 'visible';
                         if (el.hidden) el.hidden = false;
 
                         var src = el.src || el.currentSrc;
-                        if (src) checkUrl(src);
+                        if (src) notify(src);
 
                         el.querySelectorAll('source').forEach(function(s) {
-                            if (s.src) checkUrl(s.src);
+                            if (s.src) notify(s.src);
                         });
                         el.querySelectorAll('track').forEach(function(t) {
                             if (t.src) notify(t.src, null, t.srclang, t.label);
                         });
-                    });
+                    } else if (tag === 'source' && el.src) {
+                        notify(el.src);
+                    } else if (tag === 'track' && el.src) {
+                        notify(el.src, null, el.srclang, el.label);
+                    }
+                }
+
+                function sweepMediaElements() {
+                    document.querySelectorAll('video, audio').forEach(inspectMediaElement);
                     $domainHook
                 }
 
@@ -839,7 +1151,37 @@ object SnifferJsInjector {
                     window.addEventListener('DOMContentLoaded', sweepMediaElements);
                     window.addEventListener('load', sweepMediaElements);
                 }
-                setInterval(sweepMediaElements, 2500);
+
+                if (window.MutationObserver && !document.__siphon_observer__) {
+                    var targetNode = document.documentElement || document;
+                    if (targetNode) {
+                        var observer = new MutationObserver(function(mutations) {
+                            for (var i = 0; i < mutations.length; i++) {
+                                var m = mutations[i];
+                                if (m.type === 'attributes' && m.target) {
+                                    inspectMediaElement(m.target);
+                                } else if (m.type === 'childList' && m.addedNodes) {
+                                    for (var j = 0; j < m.addedNodes.length; j++) {
+                                        var node = m.addedNodes[j];
+                                        if (node && node.nodeType === 1) {
+                                            inspectMediaElement(node);
+                                            if (node.querySelectorAll) {
+                                                node.querySelectorAll('video, audio, source, track').forEach(inspectMediaElement);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                        observer.observe(targetNode, {
+                            childList: true,
+                            subtree: true,
+                            attributes: true,
+                            attributeFilter: ['src', 'currentSrc']
+                        });
+                        document.__siphon_observer__ = observer;
+                    }
+                }
             })();
         """.trimIndent()
     }

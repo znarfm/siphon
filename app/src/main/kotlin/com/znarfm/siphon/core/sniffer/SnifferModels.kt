@@ -10,7 +10,9 @@ data class HlsVariantInfo(
     val bandwidth: Long = 0,
     val resolution: String? = null,
     val codecs: String? = null,
-    val estimatedBytes: Long = -1L
+    val estimatedBytes: Long = -1L,
+    val audioUrl: String? = null,
+    val representationId: String? = null
 )
 
 @Immutable
@@ -29,5 +31,8 @@ data class SniffedMedia(
     val isSubtitle: Boolean = false,
     val isAudio: Boolean = false,
     val language: String? = null,
+    val strongEtag: String? = null,
+    val lastModified: String? = null,
+    val isResumable: Boolean = true,
     val detectedAt: Long = System.currentTimeMillis()
 )

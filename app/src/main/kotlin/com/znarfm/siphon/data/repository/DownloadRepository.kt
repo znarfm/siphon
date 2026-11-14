@@ -92,9 +92,27 @@ class DownloadRepository(
         variantUrl: String? = null,
         customFilename: String? = null
     ): Long = withContext(Dispatchers.IO) {
-        val downloadUrl = variantUrl ?: media.url
+        val selectedVariant = if (variantUrl != null) {
+            media.variants.firstOrNull { it.url == variantUrl }
+        } else null
+
+        val downloadUrl = when {
+            media.mediaType == DownloadType.DASH -> media.url
+            variantUrl != null -> variantUrl
+            else -> media.url
+        }
         val name = customFilename ?: media.displayName
-        val headersJson = HeadersCodec.encode(media.headers)
+        val mergedHeaders = media.headers.toMutableMap()
+        if (media.mediaType == DownloadType.HLS && !selectedVariant?.audioUrl.isNullOrBlank()) {
+            mergedHeaders[HeadersCodec.META_HLS_AUDIO_URL] = selectedVariant!!.audioUrl!!
+        }
+        if (media.mediaType == DownloadType.DASH) {
+            mergedHeaders[HeadersCodec.META_DASH_MPD_URL] = media.url
+            if (!selectedVariant?.representationId.isNullOrBlank()) {
+                mergedHeaders[HeadersCodec.META_DASH_REP_ID] = selectedVariant!!.representationId!!
+            }
+        }
+        val headersJson = HeadersCodec.encode(mergedHeaders)
 
         val entity = DownloadEntity(
             url = downloadUrl,
@@ -102,9 +120,9 @@ class DownloadRepository(
             destinationUri = null,
             mimeType = media.mimeType,
             totalBytes = media.totalBytes,
-            etag = null,
-            lastModified = null,
-            isResumable = true,
+            etag = media.strongEtag,
+            lastModified = media.lastModified,
+            isResumable = media.isResumable,
             type = media.mediaType,
             state = DownloadState.QUEUED,
             sourcePageUrl = media.sourcePageUrl,
@@ -232,6 +250,9 @@ class DownloadRepository(
         if (download.type == DownloadType.HLS) {
             val workDir = File(application.cacheDir, "hls_$id")
             workDir.deleteRecursively()
+        } else if (download.type == DownloadType.DASH) {
+            val workDir = File(application.cacheDir, "dash_$id")
+            workDir.deleteRecursively()
         } else if (download.type == DownloadType.TORRENT) {
             val stagingDir = File(application.filesDir, "torrent_staging/$id")
             stagingDir.deleteRecursively()
@@ -269,6 +290,9 @@ class DownloadRepository(
         }
         if (entity?.type == DownloadType.HLS) {
             val workDir = File(application.cacheDir, "hls_$id")
+            workDir.deleteRecursively()
+        } else if (entity?.type == DownloadType.DASH) {
+            val workDir = File(application.cacheDir, "dash_$id")
             workDir.deleteRecursively()
         } else if (entity?.type == DownloadType.TORRENT) {
             val stagingDir = File(application.filesDir, "torrent_staging/$id")
