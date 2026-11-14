@@ -20,7 +20,7 @@ object SnifferUrlClassifier {
         "vtt", "srt", "ass", "ssa", "ttml", "dfxp", "sub"
     )
 
-    val SEGMENT_EXTENSIONS = setOf("ts", "m4s", "aac", "cmfv", "cmfa")
+    val SEGMENT_EXTENSIONS = setOf("ts", "m4s", "cmfv", "cmfa")
 
     val BYTE_RANGE_PARAMS = setOf(
         "range", "bytes", "bytestart", "byteend", "start", "end", "offset", "part"

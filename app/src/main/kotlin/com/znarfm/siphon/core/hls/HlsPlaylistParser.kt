@@ -169,9 +169,9 @@ object HlsPlaylistParser {
                                 sequenceNumber = currentSeqNum,
                                 url = initUrl,
                                 durationSec = 0.0,
-                                keyMethod = null,
-                                keyUrl = null,
-                                ivHex = null,
+                                keyMethod = currentKeyMethod,
+                                keyUrl = currentKeyUrl,
+                                ivHex = currentIvHex,
                                 byteRangeOffset = mapOffset,
                                 byteRangeLength = mapLength
                             )

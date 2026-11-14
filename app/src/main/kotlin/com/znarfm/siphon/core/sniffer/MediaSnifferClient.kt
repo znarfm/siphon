@@ -333,7 +333,8 @@ class MediaSnifferClient(
         val sourcePage = refererHeader ?: currentPageUrl
 
         // 3. Skip segment probing (.ts / .m4s / .aac) if a parent manifest is already captured
-        if (!forceInspect && isSegmentUrl(url)) {
+        val isAacPath = url.substringBefore('?').substringBefore('#').endsWith(".aac", ignoreCase = true)
+        if (!forceInspect && (isSegmentUrl(url) || isAacPath)) {
             val hasMainManifest = !pageManifests[currentPageUrl].isNullOrEmpty()
             val hasRefererManifest = !refererHeader.isNullOrBlank() && !pageManifests[refererHeader].isNullOrEmpty()
             if (hasMainManifest || hasRefererManifest) {
