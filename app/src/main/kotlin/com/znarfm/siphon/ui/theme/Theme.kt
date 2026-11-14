@@ -1,5 +1,6 @@
 package com.znarfm.siphon.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -49,7 +50,7 @@ fun SiphonTheme(
 
     val context = LocalContext.current
     val effectiveSeed = colorSeed.effectiveForDevice()
-    val useDynamic = effectiveSeed == AppColorSeed.DYNAMIC
+    val useDynamic = effectiveSeed == AppColorSeed.DYNAMIC && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     val baseScheme = if (useDynamic) {
         if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
