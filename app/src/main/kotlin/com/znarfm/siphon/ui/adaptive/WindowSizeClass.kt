@@ -1,9 +1,11 @@
 package com.znarfm.siphon.ui.adaptive
 
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.window.core.layout.WindowHeightSizeClass as CoreWindowHeightSizeClass
+import androidx.window.core.layout.WindowWidthSizeClass as CoreWindowWidthSizeClass
 
 enum class WindowWidthSizeClass {
     COMPACT,
@@ -37,19 +39,19 @@ val LocalWindowSizeClass = staticCompositionLocalOf {
 
 @Composable
 fun rememberWindowSizeClass(): SiphonWindowSizeClass {
-    val configuration = LocalConfiguration.current
-    val screenWidthDp = configuration.screenWidthDp
-    val screenHeightDp = configuration.screenHeightDp
+    val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
 
-    return remember(screenWidthDp, screenHeightDp) {
-        val width = when {
-            screenWidthDp < 600 -> WindowWidthSizeClass.COMPACT
-            screenWidthDp < 840 -> WindowWidthSizeClass.MEDIUM
+    return remember(windowSizeClass) {
+        val width = when (windowSizeClass.windowWidthSizeClass) {
+            CoreWindowWidthSizeClass.COMPACT -> WindowWidthSizeClass.COMPACT
+            CoreWindowWidthSizeClass.MEDIUM -> WindowWidthSizeClass.MEDIUM
+            CoreWindowWidthSizeClass.EXPANDED -> WindowWidthSizeClass.EXPANDED
             else -> WindowWidthSizeClass.EXPANDED
         }
-        val height = when {
-            screenHeightDp < 480 -> WindowHeightSizeClass.COMPACT
-            screenHeightDp < 900 -> WindowHeightSizeClass.MEDIUM
+        val height = when (windowSizeClass.windowHeightSizeClass) {
+            CoreWindowHeightSizeClass.COMPACT -> WindowHeightSizeClass.COMPACT
+            CoreWindowHeightSizeClass.MEDIUM -> WindowHeightSizeClass.MEDIUM
+            CoreWindowHeightSizeClass.EXPANDED -> WindowHeightSizeClass.EXPANDED
             else -> WindowHeightSizeClass.EXPANDED
         }
         SiphonWindowSizeClass(width = width, height = height)
