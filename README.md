@@ -27,6 +27,7 @@
 - **Torrent Support**: Integrated `libtorrent4j` engine for `.torrent` files and magnet links.
 - **Background Service & Controls**: Android 14/15 `dataSync` foreground service with Pause/Resume/Cancel notifications and automatic network-recovery resume.
 - **Material You UI**: Jetpack Compose Material 3 Expressive interface with segmented chunk progress bars, browser tabs, bookmarks/history, and queue settings.
+- **Adaptive Tablet UI**: `NavigationRail`, top tab strip + omnibox, two-pane Queue & Settings, and docked Sniffer panel on large screens.
 
 ## Installation
 
