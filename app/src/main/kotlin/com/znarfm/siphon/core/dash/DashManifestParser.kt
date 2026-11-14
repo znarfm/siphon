@@ -343,12 +343,12 @@ object DashManifestParser {
             .replace("\$Number\$", number.toString())
             .replace("\$Time\$", time.toString())
 
-        val formattedNumberRegex = Regex("""\$Number%0(\d+)d\$""")
+        val formattedNumberRegex = Regex("\\\$Number%0(\\d+)d\\\$")
         out = formattedNumberRegex.replace(out) { m ->
             val width = m.groupValues[1].toIntOrNull() ?: 1
             number.toString().padStart(width, '0')
         }
-        val formattedTimeRegex = Regex("""\$Time%0(\d+)d\$""")
+        val formattedTimeRegex = Regex("\\\$Time%0(\\d+)d\\\$")
         out = formattedTimeRegex.replace(out) { m ->
             val width = m.groupValues[1].toIntOrNull() ?: 1
             time.toString().padStart(width, '0')

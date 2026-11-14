@@ -261,7 +261,7 @@ class DashQueueEngine(
                 while (true) {
                     val read = stream.read(buf)
                     if (read == -1) break
-                    rateLimiter.acquire(read)
+                    rateLimiter.consume(read)
                     out.write(buf, 0, read)
                 }
             }
@@ -282,11 +282,12 @@ class DashQueueEngine(
     suspend fun cancelAndDelete(downloadId: Long, storage: DownloadStorageProvider) {
         withContext(Dispatchers.IO + NonCancellable) {
             val entity = dao.getDownload(downloadId)
+            File(context.cacheDir, "dash_$downloadId").deleteRecursively()
             if (entity?.destinationUri != null) {
                 storage.delete(entity.destinationUri)
             }
-            File(context.cacheDir, "dash_$downloadId").deleteRecursively()
-            dao.deleteDownloadById(downloadId)
+            dao.deleteChunksForDownload(downloadId)
+            dao.markTerminalAndPurgeCredentials(downloadId, DownloadState.CANCELLED)
         }
     }
 
