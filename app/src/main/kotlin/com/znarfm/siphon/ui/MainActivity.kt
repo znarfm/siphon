@@ -26,10 +26,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -52,6 +54,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -80,6 +83,9 @@ import com.znarfm.siphon.core.updater.AppUpdater
 import com.znarfm.siphon.core.updater.UpdateState
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.repository.UpdateRepository
+import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
+import com.znarfm.siphon.ui.adaptive.TabletNavigationRail
+import com.znarfm.siphon.ui.adaptive.rememberWindowSizeClass
 import com.znarfm.siphon.ui.browser.BookmarksScreen
 import com.znarfm.siphon.ui.browser.BrowserScreen
 import com.znarfm.siphon.ui.browser.BrowserViewModel
@@ -486,14 +492,12 @@ fun MainContent(
         }
     }
 
-    Scaffold { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding)
-        ) {
-            val isBrowserVisible = currentScreen == AppScreen.BROWSER
+    val windowSizeClass = rememberWindowSizeClass()
+
+    CompositionLocalProvider(LocalWindowSizeClass provides windowSizeClass) {
+        Scaffold { innerPadding ->
+            val screenLayers: @Composable BoxScope.() -> Unit = {
+                val isBrowserVisible = currentScreen == AppScreen.BROWSER
             val isSettingsSubPage = currentScreen == AppScreen.SETTINGS_BROWSER ||
                 currentScreen == AppScreen.SETTINGS_APPEARANCE ||
                 currentScreen == AppScreen.SETTINGS_ADBLOCK ||
@@ -1129,6 +1133,49 @@ fun MainContent(
                         onAccept = { onAcceptClipboardLink(link) },
                         onDismiss = onDismissClipboardLink
                     )
+                }
+            }
+            }
+
+            if (windowSizeClass.isTablet) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .consumeWindowInsets(innerPadding)
+                ) {
+                    if (currentScreen != AppScreen.BROWSER || isBarsVisible) {
+                        TabletNavigationRail(
+                            currentScreen = currentScreen,
+                            activeDownloadsCount = activeDownloadsCount,
+                            tabCount = browserTabs.size,
+                            onNavigate = { onSelectScreen(it) },
+                            onNewTab = {
+                                browserViewModel.openNewBrowserTab(
+                                    url = NEW_TAB_URL,
+                                    isIncognito = false,
+                                    switchImmediately = true
+                                )
+                                onSelectScreen(AppScreen.BROWSER)
+                            }
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        screenLayers()
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .consumeWindowInsets(innerPadding)
+                ) {
+                    screenLayers()
                 }
             }
         }
