@@ -3,11 +3,14 @@ package com.znarfm.siphon
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.pm.ApplicationInfo
 import android.os.Build
+import android.os.StrictMode
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.znarfm.siphon.core.adblock.AdblockEngine
 import com.znarfm.siphon.core.storage.DownloadStorageProvider
+import com.znarfm.siphon.data.db.DownloadDao
 import com.znarfm.siphon.data.db.SiphonDatabase
 import com.znarfm.siphon.data.repository.BrowserRepository
 import com.znarfm.siphon.data.repository.DownloadRepository
@@ -20,7 +23,11 @@ class AppContainer(val application: Application) {
         SiphonDatabase.get(application)
     }
 
-    val downloadStorageProvider: DownloadStorageProvider by lazy {
+    val downloadDao: DownloadDao by lazy {
+        database.downloadDao()
+    }
+
+    val storageProvider: DownloadStorageProvider by lazy {
         DownloadStorageProvider(application)
     }
 
@@ -31,8 +38,8 @@ class AppContainer(val application: Application) {
     val downloadRepository: DownloadRepository by lazy {
         DownloadRepository(
             application = application,
-            dao = database.downloadDao(),
-            storage = downloadStorageProvider
+            dao = downloadDao,
+            storage = storageProvider
         )
     }
 
@@ -77,6 +84,20 @@ class SiphonApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            StrictMode.setThreadPolicy(
+                StrictMode.ThreadPolicy.Builder()
+                    .detectAll()
+                    .penaltyLog()
+                    .build()
+            )
+            StrictMode.setVmPolicy(
+                StrictMode.VmPolicy.Builder()
+                    .detectAll()
+                    .penaltyLog()
+                    .build()
+            )
+        }
         instance = this
         container = AppContainer(this)
         createNotificationChannels()

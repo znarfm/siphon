@@ -1,9 +1,9 @@
 package com.znarfm.siphon.core.dash
 
+import com.znarfm.siphon.core.common.FormatUtils
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
-import java.net.URI
 import java.util.Locale
 
 data class DashSegment(
@@ -155,10 +155,10 @@ object DashManifestParser {
                             val text = parser.nextText().trim()
                             if (text.isNotEmpty()) {
                                 when {
-                                    inRepresentation -> repBaseUrl = resolveUri(repBaseUrl ?: adaptBaseUrl, text)
-                                    inAdaptationSet -> adaptBaseUrl = resolveUri(adaptBaseUrl, text)
-                                    inPeriod -> periodBaseUrl = resolveUri(periodBaseUrl, text)
-                                    else -> mpdBaseUrl = resolveUri(mpdBaseUrl, text)
+                                    inRepresentation -> repBaseUrl = FormatUtils.resolveUri(repBaseUrl ?: adaptBaseUrl, text)
+                                    inAdaptationSet -> adaptBaseUrl = FormatUtils.resolveUri(adaptBaseUrl, text)
+                                    inPeriod -> periodBaseUrl = FormatUtils.resolveUri(periodBaseUrl, text)
+                                    else -> mpdBaseUrl = FormatUtils.resolveUri(mpdBaseUrl, text)
                                 }
                             }
                         }
@@ -289,7 +289,7 @@ object DashManifestParser {
         val result = mutableListOf<DashSegment>()
         spec.initialization?.let { initTmpl ->
             val resolved = substituteVars(initTmpl, repId, spec.startNumber, 0L, bandwidth)
-            result.add(DashSegment(url = resolveUri(baseUrl, resolved), isInit = true))
+            result.add(DashSegment(url = FormatUtils.resolveUri(baseUrl, resolved), isInit = true))
         }
         val mediaTmpl = spec.media ?: return result
 
@@ -301,7 +301,7 @@ object DashManifestParser {
                 val repeatCount = if (entry.r >= 0) entry.r else 0
                 for (i in 0..repeatCount) {
                     val resolved = substituteVars(mediaTmpl, repId, currentNumber, currentTime, bandwidth)
-                    result.add(DashSegment(url = resolveUri(baseUrl, resolved)))
+                    result.add(DashSegment(url = FormatUtils.resolveUri(baseUrl, resolved)))
                     currentTime += entry.d
                     currentNumber++
                 }
@@ -313,7 +313,7 @@ object DashManifestParser {
                 val num = spec.startNumber + i
                 val time = i * spec.duration
                 val resolved = substituteVars(mediaTmpl, repId, num, time, bandwidth)
-                result.add(DashSegment(url = resolveUri(baseUrl, resolved)))
+                result.add(DashSegment(url = FormatUtils.resolveUri(baseUrl, resolved)))
             }
         }
         return result
@@ -322,10 +322,10 @@ object DashManifestParser {
     private fun expandSegmentList(baseUrl: String, spec: SegmentListSpec): List<DashSegment> {
         val result = mutableListOf<DashSegment>()
         spec.initializationUrl?.let {
-            result.add(DashSegment(url = resolveUri(baseUrl, it), isInit = true))
+            result.add(DashSegment(url = FormatUtils.resolveUri(baseUrl, it), isInit = true))
         }
         for (seg in spec.segmentUrls) {
-            result.add(DashSegment(url = resolveUri(baseUrl, seg)))
+            result.add(DashSegment(url = FormatUtils.resolveUri(baseUrl, seg)))
         }
         return result
     }
@@ -365,13 +365,5 @@ object DashManifestParser {
         val mins = m.groupValues[3].toDoubleOrNull() ?: 0.0
         val secs = m.groupValues[4].toDoubleOrNull() ?: 0.0
         return days * 86400.0 + hours * 3600.0 + mins * 60.0 + secs
-    }
-
-    private fun resolveUri(baseUri: String, relativeOrAbsolute: String): String {
-        return try {
-            URI.create(baseUri).resolve(relativeOrAbsolute).toString()
-        } catch (e: Exception) {
-            relativeOrAbsolute
-        }
     }
 }

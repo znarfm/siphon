@@ -1,6 +1,6 @@
 package com.znarfm.siphon.core.hls
 
-import java.net.URI
+import com.znarfm.siphon.core.common.FormatUtils
 
 object HlsPlaylistParser {
 
@@ -37,7 +37,7 @@ object HlsPlaylistParser {
                             ParsedHlsAudioTrack(
                                 groupId = groupId,
                                 name = name,
-                                url = resolveUri(baseUrl, uri),
+                                url = FormatUtils.resolveUri(baseUrl, uri),
                                 isDefault = isDefault
                             )
                         )
@@ -52,7 +52,7 @@ object HlsPlaylistParser {
                             ParsedHlsSubtitleTrack(
                                 name = name,
                                 language = language,
-                                url = resolveUri(baseUrl, uri)
+                                url = FormatUtils.resolveUri(baseUrl, uri)
                             )
                         )
                     }
@@ -68,7 +68,7 @@ object HlsPlaylistParser {
                 if (currentBandwidth > 0L || currentResolution != null || currentCodecs != null) {
                     variants.add(
                         ParsedHlsVariant(
-                            url = resolveUri(baseUrl, line),
+                            url = FormatUtils.resolveUri(baseUrl, line),
                             bandwidth = currentBandwidth,
                             resolution = currentResolution,
                             codecs = currentCodecs,
@@ -146,14 +146,14 @@ object HlsPlaylistParser {
                     } else {
                         currentKeyMethod = method
                         val rawUri = extractAttribute(line, "URI")
-                        currentKeyUrl = if (!rawUri.isNullOrBlank()) resolveUri(playlistUrl, rawUri) else null
+                        currentKeyUrl = if (!rawUri.isNullOrBlank()) FormatUtils.resolveUri(playlistUrl, rawUri) else null
                         currentIvHex = extractAttribute(line, "IV")
                     }
                 }
                 line.startsWith("#EXT-X-MAP:") -> {
                     val rawUri = extractAttribute(line, "URI")
                     if (!rawUri.isNullOrBlank()) {
-                        val initUrl = resolveUri(playlistUrl, rawUri)
+                        val initUrl = FormatUtils.resolveUri(playlistUrl, rawUri)
                         val byteRangeAttr = extractAttribute(line, "BYTERANGE")
                         var mapOffset: Long? = null
                         var mapLength: Long? = null
@@ -192,7 +192,7 @@ object HlsPlaylistParser {
                     nextDuration = durStr.toDoubleOrNull() ?: 0.0
                 }
                 !line.startsWith("#") -> {
-                    val segmentUrl = resolveUri(playlistUrl, line)
+                    val segmentUrl = FormatUtils.resolveUri(playlistUrl, line)
                     val segOffset = nextByteRangeOffset
                     val segLength = nextByteRangeLength
                     segments.add(
@@ -235,11 +235,10 @@ object HlsPlaylistParser {
         return match.groups[1]?.value ?: match.groups[2]?.value?.trim()
     }
 
-    fun resolveUri(baseUri: String, relativeOrAbsolute: String): String {
-        return try {
-            URI.create(baseUri).resolve(relativeOrAbsolute).toString()
-        } catch (e: Exception) {
-            relativeOrAbsolute
-        }
-    }
+    @Deprecated(
+        "Use FormatUtils.resolveUri",
+        ReplaceWith("FormatUtils.resolveUri(baseUri, relativeOrAbsolute)", "com.znarfm.siphon.core.common.FormatUtils")
+    )
+    fun resolveUri(baseUri: String, relativeOrAbsolute: String): String =
+        FormatUtils.resolveUri(baseUri, relativeOrAbsolute)
 }

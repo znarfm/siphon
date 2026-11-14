@@ -1,17 +1,16 @@
 package com.znarfm.siphon.data.repository
 
 import android.app.Application
-import android.content.Context
-import android.net.Uri
 import com.znarfm.siphon.core.adblock.AdblockEngine
 import com.znarfm.siphon.core.adblock.AdblockSettings
 import com.znarfm.siphon.core.adblock.BuiltinFilterLists
 import com.znarfm.siphon.core.adblock.FilterListCategory
 import com.znarfm.siphon.core.adblock.FilterListSource
-import com.znarfm.siphon.core.service.DownloadForegroundService
+import com.znarfm.siphon.core.common.FormatUtils
 import com.znarfm.siphon.data.db.BookmarkEntity
 import com.znarfm.siphon.data.db.BrowserDao
 import com.znarfm.siphon.data.db.HistoryEntity
+import com.znarfm.siphon.data.prefs.AppPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -41,10 +40,7 @@ class BrowserRepository(
     val browserDao: BrowserDao,
     val adblockEngine: AdblockEngine
 ) {
-    private val prefs = application.getSharedPreferences(
-        DownloadForegroundService.PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    private val prefs = AppPreferences.prefs(application)
 
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var adblockRebuildJob: Job? = null
@@ -347,12 +343,8 @@ class BrowserRepository(
         prefs.edit().putString("pref_search_engine", engine).apply()
     }
 
-    private fun deriveTitleFromUrl(url: String): String {
-        return runCatching {
-            val uri = Uri.parse(url)
-            uri.host?.removePrefix("www.")?.ifBlank { null }
-        }.getOrNull() ?: "Tab"
-    }
+    private fun deriveTitleFromUrl(url: String): String =
+        FormatUtils.extractHostDisplay(url).ifBlank { "Tab" }
 
     companion object {
         private const val PREF_ADBLOCK_SETTINGS_JSON = "pref_adblock_settings_json"

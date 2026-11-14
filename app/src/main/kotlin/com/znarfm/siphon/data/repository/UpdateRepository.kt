@@ -6,10 +6,10 @@ import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
-import com.znarfm.siphon.core.service.DownloadForegroundService
 import com.znarfm.siphon.core.updater.AppUpdater
 import com.znarfm.siphon.core.updater.ReleaseInfo
 import com.znarfm.siphon.core.updater.UpdateState
+import com.znarfm.siphon.data.prefs.AppPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,10 +24,7 @@ class UpdateRepository(
 ) {
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val prefs = application.getSharedPreferences(
-        DownloadForegroundService.PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    private val prefs = AppPreferences.prefs(application)
 
     private val packageInfo: PackageInfo by lazy {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

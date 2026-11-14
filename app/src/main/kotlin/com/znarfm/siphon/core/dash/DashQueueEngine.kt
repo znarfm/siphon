@@ -2,6 +2,8 @@ package com.znarfm.siphon.core.dash
 
 import android.content.Context
 import android.net.Uri
+import com.znarfm.siphon.core.engine.DownloadEngine
+import com.znarfm.siphon.core.engine.SegmentedStreamSupport
 import com.znarfm.siphon.core.hls.HlsRemuxer
 import com.znarfm.siphon.core.network.HeadersCodec
 import com.znarfm.siphon.core.network.HttpStatusException
@@ -27,7 +29,6 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
-import java.nio.ByteBuffer
 
 class DashQueueEngine(
     private val context: Context,
@@ -35,44 +36,30 @@ class DashQueueEngine(
     private val client: OkHttpClient = NetworkClients.defaultClient,
     private val maxParallelSegments: Int = 4,
     rateBytesPerSec: Long = 0L
-) {
+) : DownloadEngine {
     val rateLimiter = TokenBucket(rateBytesPerSec)
 
-    fun updateRateLimit(bytesPerSecond: Long) {
+    override fun updateRateLimit(bytesPerSecond: Long) {
         rateLimiter.updateRate(bytesPerSecond)
     }
 
-    suspend fun executeWithStorage(
+    override suspend fun executeWithStorage(
         downloadId: Long,
         storage: DownloadStorageProvider,
-        customTreeUri: Uri? = null,
-        onProgress: ((downloadedBytes: Long, totalBytes: Long) -> Unit)? = null
+        customTreeUri: Uri?,
+        onProgress: ((downloadedBytes: Long, totalBytes: Long) -> Unit)?
     ): DownloadState = withContext(Dispatchers.IO) {
         val download = dao.getDownload(downloadId)
             ?: return@withContext DownloadState.FAILED
 
-        val isAudioOnly = download.mimeType.startsWith("audio/") ||
-            download.displayName.endsWith(".m4a", ignoreCase = true)
-        val targetMime = if (isAudioOnly) "audio/mp4" else "video/mp4"
-        val targetName = when {
-            isAudioOnly && !download.displayName.endsWith(".m4a", ignoreCase = true) ->
-                "${download.displayName.substringBeforeLast('.')}.m4a"
-            !isAudioOnly && !download.displayName.endsWith(".mp4", ignoreCase = true) ->
-                "${download.displayName.substringBeforeLast('.')}.mp4"
-            else -> download.displayName
-        }
-
-        val destUri = if (!download.destinationUri.isNullOrBlank()) {
-            Uri.parse(download.destinationUri).also { storage.refreshPendingExpiry(it) }
-        } else {
-            storage.createDestination(
-                displayName = targetName,
-                mimeType = targetMime,
-                customTreeUri = customTreeUri
-            ).also { created ->
-                dao.updateDestinationUri(downloadId, created.toString())
-            }
-        }
+        val target = SegmentedStreamSupport.resolveTarget(download)
+        val destUri = SegmentedStreamSupport.resolveOrCreateDestination(
+            download = download,
+            target = target,
+            dao = dao,
+            storage = storage,
+            customTreeUri = customTreeUri
+        )
 
         dao.updateDownloadState(downloadId, DownloadState.ACTIVE)
 
@@ -155,28 +142,15 @@ class DashQueueEngine(
                 trackFiles.firstOrNull() ?: throw IOException("No DASH track output produced")
             }
 
-            val totalBytes = finalSource.length()
-            storage.openWriteSession(destUri, totalBytes = totalBytes).use { session ->
-                val destChannel = session.channel
-                destChannel.truncate(0)
-                destChannel.position(0)
-                var copiedBytes = 0L
-                FileInputStream(finalSource).channel.use { srcChannel ->
-                    val buffer = ByteBuffer.allocateDirect(128 * 1024)
-                    while (srcChannel.read(buffer) > 0) {
-                        buffer.flip()
-                        copiedBytes += destChannel.write(buffer)
-                        buffer.clear()
-                        onProgress?.invoke(copiedBytes, totalBytes)
-                    }
-                }
-                destChannel.force(true)
-            }
-
-            storage.finalizePending(destUri)
-            dao.updateTotalBytes(downloadId, totalBytes)
-            dao.markTerminalAndPurgeCredentials(downloadId, DownloadState.COMPLETED)
-            workDir.deleteRecursively()
+            SegmentedStreamSupport.writeAndFinalizeOutput(
+                downloadId = downloadId,
+                sourceFile = finalSource,
+                destUri = destUri,
+                workDir = workDir,
+                dao = dao,
+                storage = storage,
+                onProgress = onProgress
+            )
             DownloadState.COMPLETED
         } catch (e: CancellationException) {
             withContext(NonCancellable) {
@@ -185,12 +159,7 @@ class DashQueueEngine(
             DownloadState.PAUSED
         } catch (e: Exception) {
             android.util.Log.e("DashQueueEngine", "DASH download failed for id $downloadId: ${e.message}", e)
-            val httpEx = findHttpStatusException(e)
-            val targetState = if (httpEx?.code == 403 || httpEx?.code == 410) {
-                DownloadState.AUTH_EXPIRED
-            } else {
-                DownloadState.FAILED
-            }
+            val targetState = SegmentedStreamSupport.mapFailureState(e)
             withContext(NonCancellable) {
                 dao.updateDownloadState(downloadId, targetState)
             }
@@ -268,35 +237,16 @@ class DashQueueEngine(
         }
     }
 
-    private fun fetchText(url: String, headers: Headers): String {
-        val req = Request.Builder().url(url).headers(headers).get().build()
-        return client.newCall(req).execute().use { resp ->
-            if (resp.code == 403 || resp.code == 410) {
-                throw HttpStatusException(resp.code, "Manifest HTTP ${resp.code}")
-            }
-            if (!resp.isSuccessful) throw IOException("Manifest HTTP ${resp.code}")
-            resp.body?.string() ?: throw IOException("Empty manifest body")
-        }
-    }
+    private fun fetchText(url: String, headers: Headers): String =
+        SegmentedStreamSupport.fetchText(client, url, headers, "manifest")
 
-    suspend fun cancelAndDelete(downloadId: Long, storage: DownloadStorageProvider) {
-        withContext(Dispatchers.IO + NonCancellable) {
-            val entity = dao.getDownload(downloadId)
-            File(context.cacheDir, "dash_$downloadId").deleteRecursively()
-            if (entity?.destinationUri != null) {
-                storage.delete(entity.destinationUri)
-            }
-            dao.deleteChunksForDownload(downloadId)
-            dao.markTerminalAndPurgeCredentials(downloadId, DownloadState.CANCELLED)
-        }
-    }
-
-    private fun findHttpStatusException(e: Throwable?): HttpStatusException? {
-        var cur = e
-        while (cur != null) {
-            if (cur is HttpStatusException) return cur
-            cur = cur.cause
-        }
-        return null
+    override suspend fun cancelAndDelete(downloadId: Long, storage: DownloadStorageProvider) {
+        SegmentedStreamSupport.cancelAndDelete(
+            context = context,
+            workDirPrefix = "dash",
+            downloadId = downloadId,
+            dao = dao,
+            storage = storage
+        )
     }
 }

@@ -1,8 +1,8 @@
 package com.znarfm.siphon.data.repository
 
 import android.app.Application
-import android.content.Context
 import android.net.Uri
+import com.znarfm.siphon.core.common.FormatUtils.toOkHttpHeaders
 import com.znarfm.siphon.core.network.HeadersCodec
 import com.znarfm.siphon.core.network.MetadataProber
 import com.znarfm.siphon.core.service.DownloadForegroundService
@@ -14,6 +14,7 @@ import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.DownloadFileEntity
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.db.DownloadType
+import com.znarfm.siphon.data.prefs.AppPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -22,13 +23,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.Headers
 import java.io.File
 
 @Immutable
@@ -48,18 +49,15 @@ class DownloadRepository(
 ) {
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val prefs = application.getSharedPreferences(
-        DownloadForegroundService.PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    private val prefs = AppPreferences.prefs(application)
 
     private val _concurrencySettings = MutableStateFlow(
         ConcurrencySettings(
-            maxDownloads = prefs.getInt(DownloadForegroundService.PREF_MAX_CONCURRENT_DOWNLOADS, 2).coerceIn(1, 4),
-            workers = prefs.getInt(DownloadForegroundService.PREF_WORKERS_PER_DOWNLOAD, 6).coerceIn(1, 8),
-            bandwidthLimit = prefs.getLong(DownloadForegroundService.PREF_BANDWIDTH_LIMIT_BYTES, 0L).coerceAtLeast(0L),
-            wifiOnly = prefs.getBoolean(DownloadForegroundService.PREF_WIFI_ONLY, false),
-            customDownloadUri = prefs.getString(DownloadForegroundService.PREF_CUSTOM_DOWNLOAD_URI, null)
+            maxDownloads = prefs.getInt(AppPreferences.PREF_MAX_CONCURRENT_DOWNLOADS, 2).coerceIn(1, 4),
+            workers = prefs.getInt(AppPreferences.PREF_WORKERS_PER_DOWNLOAD, 6).coerceIn(1, 8),
+            bandwidthLimit = prefs.getLong(AppPreferences.PREF_BANDWIDTH_LIMIT_BYTES, 0L).coerceAtLeast(0L),
+            wifiOnly = prefs.getBoolean(AppPreferences.PREF_WIFI_ONLY, false),
+            customDownloadUri = prefs.getString(AppPreferences.PREF_CUSTOM_DOWNLOAD_URI, null)
         )
     )
     val concurrencySettings: Flow<ConcurrencySettings> = _concurrencySettings.asStateFlow()
@@ -73,19 +71,23 @@ class DownloadRepository(
         dao.observeDownloadFiles(downloadId)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val chunksMap: Flow<Map<Long, List<ChunkEntity>>> = downloads.flatMapLatest { list ->
-        val activeIds = list.filter {
-            it.state != DownloadState.COMPLETED && it.state != DownloadState.CANCELLED
-        }.map { it.id }
-        if (activeIds.isEmpty()) {
-            flowOf(emptyMap())
-        } else {
-            val flows = activeIds.map { id ->
-                dao.observeChunks(id).map { chunks -> id to chunks }
-            }
-            combine(flows) { pairs -> pairs.toMap() }
+    val chunksMap: Flow<Map<Long, List<ChunkEntity>>> = downloads
+        .map { list ->
+            list.filter {
+                it.state != DownloadState.COMPLETED && it.state != DownloadState.CANCELLED
+            }.map { it.id }
         }
-    }
+        .distinctUntilChanged()
+        .flatMapLatest { activeIds ->
+            if (activeIds.isEmpty()) {
+                flowOf(emptyMap())
+            } else {
+                val flows = activeIds.map { id ->
+                    dao.observeChunks(id).map { chunks -> id to chunks }
+                }
+                combine(flows) { pairs -> pairs.toMap() }
+            }
+        }
 
     suspend fun startDownload(
         media: SniffedMedia,
@@ -335,9 +337,7 @@ class DownloadRepository(
             )
             true
         } else {
-            val okHeadersBuilder = Headers.Builder()
-            media.headers.forEach { (k, v) -> okHeadersBuilder.add(k, v) }
-            val okHeaders = okHeadersBuilder.build()
+            val okHeaders = media.headers.toOkHttpHeaders()
 
             var strongEtag: String? = null
             val targetUriStr = target.destinationUri
@@ -391,15 +391,15 @@ class DownloadRepository(
         val limit = bandwidthLimit.coerceAtLeast(0L)
         _concurrencySettings.value = ConcurrencySettings(maxD, w, limit, wifiOnly, customDownloadUri)
         prefs.edit()
-            .putInt(DownloadForegroundService.PREF_MAX_CONCURRENT_DOWNLOADS, maxD)
-            .putInt(DownloadForegroundService.PREF_WORKERS_PER_DOWNLOAD, w)
-            .putLong(DownloadForegroundService.PREF_BANDWIDTH_LIMIT_BYTES, limit)
-            .putBoolean(DownloadForegroundService.PREF_WIFI_ONLY, wifiOnly)
+            .putInt(AppPreferences.PREF_MAX_CONCURRENT_DOWNLOADS, maxD)
+            .putInt(AppPreferences.PREF_WORKERS_PER_DOWNLOAD, w)
+            .putLong(AppPreferences.PREF_BANDWIDTH_LIMIT_BYTES, limit)
+            .putBoolean(AppPreferences.PREF_WIFI_ONLY, wifiOnly)
             .apply {
                 if (customDownloadUri != null) {
-                    putString(DownloadForegroundService.PREF_CUSTOM_DOWNLOAD_URI, customDownloadUri)
+                    putString(AppPreferences.PREF_CUSTOM_DOWNLOAD_URI, customDownloadUri)
                 } else {
-                    remove(DownloadForegroundService.PREF_CUSTOM_DOWNLOAD_URI)
+                    remove(AppPreferences.PREF_CUSTOM_DOWNLOAD_URI)
                 }
             }
             .apply()

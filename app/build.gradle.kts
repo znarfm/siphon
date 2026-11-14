@@ -173,6 +173,7 @@ dependencies {
     debugImplementation(libs.libtorrent4j.android.x64)
 
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
 

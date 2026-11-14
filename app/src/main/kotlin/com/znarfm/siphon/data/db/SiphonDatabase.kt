@@ -4,10 +4,12 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [DownloadEntity::class, ChunkEntity::class, DownloadFileEntity::class, BookmarkEntity::class, HistoryEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class SiphonDatabase : RoomDatabase() {
@@ -16,6 +18,14 @@ abstract class SiphonDatabase : RoomDatabase() {
     abstract fun browserDao(): BrowserDao
 
     companion object {
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_url` ON `bookmarks` (`url`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_history_url` ON `history` (`url`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_history_visitedAt` ON `history` (`visitedAt`)")
+            }
+        }
+
         @Volatile
         private var instance: SiphonDatabase? = null
 
@@ -26,8 +36,9 @@ abstract class SiphonDatabase : RoomDatabase() {
                     SiphonDatabase::class.java,
                     "siphon.db"
                 )
-                .fallbackToDestructiveMigration()
-                .build().also { instance = it }
+                    .addMigrations(MIGRATION_4_5)
+                    .fallbackToDestructiveMigration()
+                    .build().also { instance = it }
             }
     }
 }

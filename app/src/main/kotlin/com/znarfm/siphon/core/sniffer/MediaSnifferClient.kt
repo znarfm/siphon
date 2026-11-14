@@ -8,6 +8,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.znarfm.siphon.core.adblock.AdblockEngine
+import com.znarfm.siphon.core.common.toOkHttpHeaders
 import com.znarfm.siphon.core.hls.HlsPlaylistParser
 import com.znarfm.siphon.core.network.HeadersCodec
 import com.znarfm.siphon.core.network.MetadataProber
@@ -19,13 +20,14 @@ import com.znarfm.siphon.data.db.DownloadType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import okhttp3.Headers
+import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
 import java.util.Collections
@@ -94,6 +96,10 @@ class MediaSnifferClient(
 
     fun setRebindTarget(download: DownloadEntity?) {
         _rebindTarget.value = download
+    }
+
+    fun destroy() {
+        scope.cancel()
     }
 
     fun clearDetectedMedia() {
@@ -179,30 +185,40 @@ class MediaSnifferClient(
             view?.title?.takeIf { it.isNotBlank() }?.let { currentPageTitle = it }
             onUrlChanged?.invoke(url)
             onNavigationStateChanged?.invoke(view?.canGoBack() == true, view?.canGoForward() == true)
-            if (adblockEngine.isEnabled && !adblockEngine.isUrlAllowed(url)) {
-                val cosmetic = adblockEngine.getCosmeticResources(url)
-                val selectorRules = cosmetic.hideSelectors
-                    .asSequence()
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-                    .chunked(200)
-                    .joinToString("\n") { chunk ->
-                        chunk.joinToString(", ") + " { display: none !important; }"
+            if (view != null && adblockEngine.isEnabled && !adblockEngine.isUrlAllowed(url)) {
+                val gen = pageGeneration.get()
+                scope.launch(Dispatchers.Default) {
+                    val cosmetic = adblockEngine.getCosmeticResources(url)
+                    val selectorRules = cosmetic.hideSelectors
+                        .asSequence()
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .chunked(200)
+                        .joinToString("\n") { chunk ->
+                            chunk.joinToString(", ") + " { display: none !important; }"
+                        }
+                    val css = when {
+                        selectorRules.isNotBlank() -> selectorRules
+                        !cosmetic.generichide ->
+                            ".adbox, .banner_ads, .adsbox, .textads, [class*='ad-banner'], [id*='ad-container'] { display: none !important; }"
+                        else -> ""
                     }
-                val css = when {
-                    selectorRules.isNotBlank() -> selectorRules
-                    !cosmetic.generichide ->
-                        ".adbox, .banner_ads, .adsbox, .textads, [class*='ad-banner'], [id*='ad-container'] { display: none !important; }"
-                    else -> ""
-                }
-                if (css.isNotBlank()) {
-                    val quotedCss = JSONObject.quote(css)
-                    val js = "(function() { var el = document.getElementById('__siphon_adblock_style__'); if (!el) { el = document.createElement('style'); el.id = '__siphon_adblock_style__'; (document.head || document.documentElement).appendChild(el); } el.textContent = $quotedCss; })();"
-                    view?.evaluateJavascript(js, null)
-                }
-                if (cosmetic.injectedScript.isNotBlank()) {
-                    val wrappedScript = "(function() { try { ${cosmetic.injectedScript}\n} catch(e) {} })();"
-                    view?.evaluateJavascript(wrappedScript, null)
+                    val styleJs = if (css.isNotBlank()) {
+                        val quotedCss = JSONObject.quote(css)
+                        "(function() { var el = document.getElementById('__siphon_adblock_style__'); if (!el) { el = document.createElement('style'); el.id = '__siphon_adblock_style__'; (document.head || document.documentElement).appendChild(el); } el.textContent = $quotedCss; })();"
+                    } else null
+                    val scriptJs = if (cosmetic.injectedScript.isNotBlank()) {
+                        "(function() { try { ${cosmetic.injectedScript}\n} catch(e) {} })();"
+                    } else null
+
+                    if (styleJs != null || scriptJs != null) {
+                        withContext(Dispatchers.Main) {
+                            if (pageGeneration.get() == gen) {
+                                styleJs?.let { view.evaluateJavascript(it, null) }
+                                scriptJs?.let { view.evaluateJavascript(it, null) }
+                            }
+                        }
+                    }
                 }
             }
             if (view != null) onWebViewPageFinished?.invoke(view, url)
@@ -260,9 +276,8 @@ class MediaSnifferClient(
     private fun inferRequestType(request: WebResourceRequest): String {
         if (request.isForMainFrame) return "main_frame"
 
-        val accept = request.requestHeaders?.entries
-            ?.firstOrNull { it.key.equals("accept", ignoreCase = true) }
-            ?.value
+        val accept = request.requestHeaders
+            ?.let { findHeaderIgnoreCase(it, "Accept") }
             ?.lowercase(Locale.ROOT)
             .orEmpty()
 
@@ -418,9 +433,7 @@ class MediaSnifferClient(
         val sourcePage = findReferer(headersMap) ?: currentPageUrl
         registerManifestAndPruneSegments(url, sourcePage)
 
-        val okHeadersBuilder = Headers.Builder()
-        headersMap.forEach { (k, v) -> okHeadersBuilder.add(k, v) }
-        val okHeaders = okHeadersBuilder.build()
+        val okHeaders = headersMap.toOkHttpHeaders()
 
         val req = Request.Builder()
             .url(url)
@@ -623,9 +636,7 @@ class MediaSnifferClient(
         val sourcePage = findReferer(headersMap) ?: currentPageUrl
         registerManifestAndPruneSegments(url, sourcePage)
 
-        val okHeadersBuilder = Headers.Builder()
-        headersMap.forEach { (k, v) -> okHeadersBuilder.add(k, v) }
-        val okHeaders = okHeadersBuilder.build()
+        val okHeaders = headersMap.toOkHttpHeaders()
 
         val req = Request.Builder()
             .url(url)
@@ -713,9 +724,7 @@ class MediaSnifferClient(
         gen: Long = pageGeneration.get()
     ): Boolean {
         val sourcePage = findReferer(headersMap) ?: currentPageUrl
-        val okHeadersBuilder = Headers.Builder()
-        headersMap.forEach { (k, v) -> okHeadersBuilder.add(k, v) }
-        val okHeaders = okHeadersBuilder.build()
+        val okHeaders = headersMap.toOkHttpHeaders()
 
         val probeResult = runCatching {
             metadataProber.probe(url, okHeaders)
@@ -807,12 +816,9 @@ class MediaSnifferClient(
         runCatching {
             storage?.openReadSession(targetUri)?.use { session ->
                 val localChannel = session.channel
-                val okHeadersBuilder = Headers.Builder()
-                candidate.headers.forEach { (k, v) -> okHeadersBuilder.add(k, v) }
-
                 metadataProber.verifyRefreshedUrl(
                     newUrl = candidate.url,
-                    headers = okHeadersBuilder.build(),
+                    headers = candidate.headers.toOkHttpHeaders(),
                     expectedTotalBytes = target.totalBytes,
                     localChannel = localChannel,
                     sampleSize = 4096

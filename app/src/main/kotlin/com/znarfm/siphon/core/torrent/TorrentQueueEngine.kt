@@ -156,61 +156,41 @@ class TorrentQueueEngine(
         var lastKnownTotal = 0L
 
         try {
-            if (torrentBytes != null) {
-                val ti = TorrentInfo.bdecode(torrentBytes)
-                val hash = ti.infoHash()
-                infoHash = hash
-                activeHashes[downloadId] = hash
-                hexToDownloadId[hash.toHex()] = downloadId
-
-                val sanitizedName = DownloadStorageProvider.sanitizeDisplayName(ti.name())
-                torrentName = sanitizedName
-                dao.updateDisplayName(downloadId, sanitizedName)
-                if (ti.totalSize() > 0L) {
-                    lastKnownTotal = ti.totalSize()
-                    dao.updateTotalBytes(downloadId, ti.totalSize())
-                }
-                metadataApplied = true
-
-                val existing = sm.find(hash)
-                if (existing != null && existing.isValid) {
-                    existing.resume()
-                } else {
-                    sm.download(ti, stagingDir)
-                }
-            } else if (magnetOrUrl.startsWith("magnet:", ignoreCase = true)) {
-                val magnetBytes = sm.fetchMagnet(magnetOrUrl, 60, stagingDir)
-                    ?: run {
+            val rawTorrentBytes = when {
+                torrentBytes != null -> torrentBytes
+                magnetOrUrl.startsWith("magnet:", ignoreCase = true) -> {
+                    sm.fetchMagnet(magnetOrUrl, 60, stagingDir) ?: run {
                         dao.updateDownloadState(downloadId, DownloadState.FAILED)
                         return@withContext DownloadState.FAILED
                     }
-                val ti = TorrentInfo.bdecode(magnetBytes)
-                val hash = ti.infoHash()
-                infoHash = hash
-                activeHashes[downloadId] = hash
-                hexToDownloadId[hash.toHex()] = downloadId
-
-                val sanitizedName = DownloadStorageProvider.sanitizeDisplayName(ti.name())
-                torrentName = sanitizedName
-                dao.updateDisplayName(downloadId, sanitizedName)
-                if (ti.totalSize() > 0L) {
-                    lastKnownTotal = ti.totalSize()
-                    dao.updateTotalBytes(downloadId, ti.totalSize())
                 }
-                metadataApplied = true
-
-                val existing = sm.find(hash)
-                if (existing != null && existing.isValid) {
-                    existing.resume()
-                } else {
-                    sm.download(ti, stagingDir)
+                else -> {
+                    dao.updateDownloadState(downloadId, DownloadState.FAILED)
+                    return@withContext DownloadState.FAILED
                 }
-            } else {
-                dao.updateDownloadState(downloadId, DownloadState.FAILED)
-                return@withContext DownloadState.FAILED
             }
 
-            val trackedHash = infoHash!!
+            val ti = TorrentInfo.bdecode(rawTorrentBytes)
+            val trackedHash = ti.infoHash()
+            infoHash = trackedHash
+            activeHashes[downloadId] = trackedHash
+            hexToDownloadId[trackedHash.toHex()] = downloadId
+
+            val sanitizedName = DownloadStorageProvider.sanitizeDisplayName(ti.name())
+            torrentName = sanitizedName
+            dao.updateDisplayName(downloadId, sanitizedName)
+            if (ti.totalSize() > 0L) {
+                lastKnownTotal = ti.totalSize()
+                dao.updateTotalBytes(downloadId, ti.totalSize())
+            }
+            metadataApplied = true
+
+            val existing = sm.find(trackedHash)
+            if (existing != null && existing.isValid) {
+                existing.resume()
+            } else {
+                sm.download(ti, stagingDir)
+            }
 
             while (currentCoroutineContext().isActive) {
                 if (cancelledIds.contains(downloadId)) {
@@ -396,69 +376,66 @@ class TorrentQueueEngine(
 
         val isMultiFile = files.size > 1
         val safeTorrentName = DownloadStorageProvider.sanitizeDisplayName(torrentName)
-        val exported = ArrayList<DownloadFileEntity>(files.size)
-
-        for (file in files) {
-            val ext = file.extension.lowercase()
-            val mimeType = if (ext.isNotEmpty()) {
-                MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
-            } else {
-                "application/octet-stream"
-            }
+        return files.map { file ->
+            val mimeType = resolveMimeType(file)
             val relFile = file.relativeTo(stagingDir)
-            val relPath = relFile.invariantSeparatorsPath
-            val subfolder = if (!isMultiFile) {
-                null
-            } else {
-                val relParent = relFile.parent
-                    ?.replace('\\', '/')
-                    ?.trim('/')
-                    ?.takeIf { it.isNotBlank() }
-                when {
-                    relParent == null -> safeTorrentName
-                    relParent == safeTorrentName || relParent.startsWith("$safeTorrentName/") -> relParent
-                    else -> "$safeTorrentName/$relParent"
-                }
-            }
-
+            val subfolder = if (isMultiFile) resolveSubfolder(relFile, safeTorrentName) else null
             val displayName = DownloadStorageProvider.sanitizeDisplayName(file.name)
             val destUri = storageProvider.createDestination(
                 displayName = displayName,
                 mimeType = mimeType,
                 subfolder = subfolder
             )
+            copyFileToStorage(file, destUri)
 
-            storageProvider.openWriteSession(
-                uri = destUri,
-                totalBytes = file.length(),
-                alreadyDownloadedBytes = 0L,
-                requestedWorkers = 1
-            ).use { session ->
-                FileInputStream(file).channel.use { src ->
-                    var pos = 0L
-                    val size = src.size()
-                    while (pos < size) {
-                        val transferred = src.transferTo(pos, size - pos, session.channel)
-                        if (transferred <= 0L) break
-                        pos += transferred
-                    }
-                }
-                session.channel.force(false)
-            }
-            storageProvider.finalizePending(destUri)
-
-            exported.add(
-                DownloadFileEntity(
-                    downloadId = downloadId,
-                    name = displayName,
-                    relativePath = relPath,
-                    sizeBytes = file.length(),
-                    mimeType = mimeType,
-                    uri = destUri.toString()
-                )
+            DownloadFileEntity(
+                downloadId = downloadId,
+                name = displayName,
+                relativePath = relFile.invariantSeparatorsPath,
+                sizeBytes = file.length(),
+                mimeType = mimeType,
+                uri = destUri.toString()
             )
         }
-        return exported
+    }
+
+    private fun resolveMimeType(file: File): String {
+        val ext = file.extension.lowercase()
+        if (ext.isEmpty()) return "application/octet-stream"
+        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+    }
+
+    private fun resolveSubfolder(relFile: File, safeTorrentName: String): String {
+        val relParent = relFile.parent
+            ?.replace('\\', '/')
+            ?.trim('/')
+            ?.takeIf { it.isNotBlank() }
+        return when {
+            relParent == null -> safeTorrentName
+            relParent == safeTorrentName || relParent.startsWith("$safeTorrentName/") -> relParent
+            else -> "$safeTorrentName/$relParent"
+        }
+    }
+
+    private fun copyFileToStorage(file: File, destUri: Uri) {
+        storageProvider.openWriteSession(
+            uri = destUri,
+            totalBytes = file.length(),
+            alreadyDownloadedBytes = 0L,
+            requestedWorkers = 1
+        ).use { session ->
+            FileInputStream(file).channel.use { src ->
+                var pos = 0L
+                val size = src.size()
+                while (pos < size) {
+                    val transferred = src.transferTo(pos, size - pos, session.channel)
+                    if (transferred <= 0L) break
+                    pos += transferred
+                }
+            }
+            session.channel.force(false)
+        }
+        storageProvider.finalizePending(destUri)
     }
 
     fun pauseTorrent(downloadId: Long) {
