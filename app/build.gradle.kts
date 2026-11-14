@@ -159,3 +159,7 @@ dependencies {
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
+
+tasks.withType<Test>().configureEach {
+    reports.html.required.set(false)
+}
