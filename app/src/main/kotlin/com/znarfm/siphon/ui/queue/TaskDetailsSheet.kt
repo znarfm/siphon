@@ -20,8 +20,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -70,180 +74,219 @@ fun TaskInspectorBottomSheet(
     onViewFiles: (() -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val headers = remember(download.headersJson) { HeadersCodec.decode(download.headersJson) }
-    val isHls = download.type == DownloadType.HLS
-    val isTorrent = download.type == DownloadType.TORRENT
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
+        TaskInspectorContent(
+            download = download,
+            chunks = chunks,
+            onShare = onShare,
+            onCopyStreamUrl = onCopyStreamUrl,
+            onCopyPageUrl = onCopyPageUrl,
+            onOpenFile = onOpenFile,
+            onRename = onRename,
+            files = files,
+            onViewFiles = onViewFiles
+        )
+    }
+}
+
+@Composable
+fun TaskInspectorContent(
+    download: DownloadEntity,
+    chunks: List<ChunkEntity>,
+    onShare: () -> Unit,
+    onCopyStreamUrl: () -> Unit,
+    onCopyPageUrl: () -> Unit,
+    onOpenFile: () -> Unit,
+    onRename: () -> Unit,
+    files: List<DownloadFileEntity> = emptyList(),
+    onViewFiles: (() -> Unit)? = null,
+    showCloseButton: Boolean = false,
+    onClose: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val headers = remember(download.headersJson) { HeadersCodec.decode(download.headersJson) }
+    val isHls = download.type == DownloadType.HLS
+    val isTorrent = download.type == DownloadType.TORRENT
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = download.displayName,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = when {
-                            isTorrent -> "BitTorrent / Magnet Download"
-                            isHls -> "HLS .m3u8 Stream"
-                            else -> "Progressive HTTP Download"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = download.displayName,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = when {
+                        isTorrent -> "BitTorrent / Magnet Download"
+                        isHls -> "HLS .m3u8 Stream"
+                        else -> "Progressive HTTP Download"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            StateBadge(download.state)
+            if (showCloseButton) {
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Close inspector"
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                StateBadge(download.state)
             }
+        }
 
-            Spacer(modifier = Modifier.height(14.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(10.dp))
 
-            // Output Storage Path
-            Text("Storage Location", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Text(
-                text = download.destinationUri ?: "Not yet allocated",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (!download.destinationUri.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(
-                        onClick = onOpenFile,
+        // Output Storage Path
+        Text("Storage Location", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        Text(
+            text = download.destinationUri ?: "Not yet allocated",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (!download.destinationUri.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(
+                    onClick = onOpenFile,
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = if (files.size > 1) "View Files (${files.size})" else "Show in Files / Open",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                if (files.size > 1 && onViewFiles != null) {
+                    OutlinedButton(
+                        onClick = onViewFiles,
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)
                     ) {
-                        Text(
-                            text = if (files.size > 1) "View Files (${files.size})" else "Show in Files / Open",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text("All Files", fontSize = 11.sp)
                     }
-                    if (files.size > 1 && onViewFiles != null) {
-                        OutlinedButton(
-                            onClick = onViewFiles,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-                        ) {
-                            Text("All Files", fontSize = 11.sp)
-                        }
-                    } else {
-                        OutlinedButton(
-                            onClick = onShare,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-                        ) {
-                            Text("Share", fontSize = 11.sp)
-                        }
+                } else {
+                    OutlinedButton(
+                        onClick = onShare,
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                    ) {
+                        Text("Share", fontSize = 11.sp)
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Technical details
-            Text("Stream & Metadata", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            val completedChunks = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
-            val metaText = when {
-                isTorrent -> {
-                    val sizeLabel = if (download.totalBytes > 0L) formatFileSize(download.totalBytes) else "Fetching metadata…"
-                    val activeMetrics = if (download.state == DownloadState.ACTIVE) {
-                        val peerLabel = if (download.peers == 1) "1 peer" else "${download.peers} peers"
-                        " • ${formatSpeed(download.speedBytesPerSec)} • $peerLabel"
-                    } else ""
-                    val filesSuffix = if (files.size > 1) "\nFiles: ${files.size} files" else ""
-                    val chunkSuffix = if (chunks.isNotEmpty()) "\nPieces: $completedChunks / ${chunks.size}" else ""
-                    "Size: $sizeLabel$activeMetrics • Type: BitTorrent$filesSuffix$chunkSuffix"
-                }
-                isHls -> {
-                    "Segments: $completedChunks / ${chunks.size} • MIME: ${download.mimeType.ifBlank { "video/mp4" }}\n" +
-                        "ETag: ${download.etag ?: "None"} • Last-Modified: ${download.lastModified ?: "None"}"
-                }
-                else -> {
-                    val chunkLine = if (chunks.isNotEmpty()) {
-                        "\nChunks: ${chunks.size} positional workers • MIME: ${download.mimeType.ifBlank { "binary/octet-stream" }}"
-                    } else {
-                        "\nMIME: ${download.mimeType.ifBlank { "binary/octet-stream" }}"
-                    }
-                    "Size: ${formatFileSize(download.totalBytes)} • Resumable: ${if (download.isResumable) "Yes (HTTP 206)" else "No"}$chunkLine"
-                }
-            }
-            Text(
-                text = metaText,
-                fontSize = 12.sp,
-                style = MaterialTheme.typography.bodySmall.merge(TabularNumberStyle),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            // Captured Headers
-            if (headers.size > 0) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text("Captured Headers", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                        .padding(8.dp)
-                ) {
-                    headers.forEach { (k, v) ->
-                        val displayVal = if (k.equals("Cookie", ignoreCase = true)) "${v.take(24)}…" else v
-                        Text("$k: $displayVal", fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Quick actions with Expressive pill buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onRename,
-                    modifier = Modifier.weight(1f),
-                    shape = ExpressiveShapeTokens.PillShape
-                ) {
-                    Text("Rename", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                }
-                OutlinedButton(
-                    onClick = onCopyStreamUrl,
-                    modifier = Modifier.weight(1f),
-                    shape = ExpressiveShapeTokens.PillShape
-                ) {
-                    Text("Stream URL", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                }
-                OutlinedButton(
-                    onClick = onCopyPageUrl,
-                    modifier = Modifier.weight(1f),
-                    shape = ExpressiveShapeTokens.PillShape
-                ) {
-                    Text("Page URL", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Technical details
+        Text("Stream & Metadata", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        val completedChunks = chunks.count { it.state == ChunkState.MERGED || it.state == ChunkState.DONE }
+        val metaText = when {
+            isTorrent -> {
+                val sizeLabel = if (download.totalBytes > 0L) formatFileSize(download.totalBytes) else "Fetching metadata…"
+                val activeMetrics = if (download.state == DownloadState.ACTIVE) {
+                    val peerLabel = if (download.peers == 1) "1 peer" else "${download.peers} peers"
+                    " • ${formatSpeed(download.speedBytesPerSec)} • $peerLabel"
+                } else ""
+                val filesSuffix = if (files.size > 1) "\nFiles: ${files.size} files" else ""
+                val chunkSuffix = if (chunks.isNotEmpty()) "\nPieces: $completedChunks / ${chunks.size}" else ""
+                "Size: $sizeLabel$activeMetrics • Type: BitTorrent$filesSuffix$chunkSuffix"
+            }
+            isHls -> {
+                "Segments: $completedChunks / ${chunks.size} • MIME: ${download.mimeType.ifBlank { "video/mp4" }}\n" +
+                    "ETag: ${download.etag ?: "None"} • Last-Modified: ${download.lastModified ?: "None"}"
+            }
+            else -> {
+                val chunkLine = if (chunks.isNotEmpty()) {
+                    "\nChunks: ${chunks.size} positional workers • MIME: ${download.mimeType.ifBlank { "binary/octet-stream" }}"
+                } else {
+                    "\nMIME: ${download.mimeType.ifBlank { "binary/octet-stream" }}"
+                }
+                "Size: ${formatFileSize(download.totalBytes)} • Resumable: ${if (download.isResumable) "Yes (HTTP 206)" else "No"}$chunkLine"
+            }
+        }
+        Text(
+            text = metaText,
+            fontSize = 12.sp,
+            style = MaterialTheme.typography.bodySmall.merge(TabularNumberStyle),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        // Captured Headers
+        if (headers.size > 0) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text("Captured Headers", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .padding(8.dp)
+            ) {
+                headers.forEach { (k, v) ->
+                    val displayVal = if (k.equals("Cookie", ignoreCase = true)) "${v.take(24)}…" else v
+                    Text("$k: $displayVal", fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Quick actions with Expressive pill buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = onRename,
+                modifier = Modifier.weight(1f),
+                shape = ExpressiveShapeTokens.PillShape
+            ) {
+                Text("Rename", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+            OutlinedButton(
+                onClick = onCopyStreamUrl,
+                modifier = Modifier.weight(1f),
+                shape = ExpressiveShapeTokens.PillShape
+            ) {
+                Text("Stream URL", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+            OutlinedButton(
+                onClick = onCopyPageUrl,
+                modifier = Modifier.weight(1f),
+                shape = ExpressiveShapeTokens.PillShape
+            ) {
+                Text("Page URL", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
@@ -255,92 +298,128 @@ fun TorrentFilesSheet(
     files: List<DownloadFileEntity>,
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
-        Column(
+        TorrentFilesContent(
+            download = download,
+            files = files
+        )
+    }
+}
+
+@Composable
+fun TorrentFilesContent(
+    download: DownloadEntity,
+    files: List<DownloadFileEntity>,
+    onBack: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back to details"
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = download.displayName,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${files.size} files • ${formatFileSize(download.totalBytes)}",
+                    style = MaterialTheme.typography.bodySmall.merge(TabularNumberStyle),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .then(
+                    if (onBack != null) {
+                        Modifier.weight(1f)
+                    } else {
+                        Modifier.heightIn(max = 420.dp)
+                    }
+                ),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(
-                text = download.displayName,
-                fontWeight = FontWeight.Bold,
-                fontSize = 17.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "${files.size} files • ${formatFileSize(download.totalBytes)}",
-                style = MaterialTheme.typography.bodySmall.merge(TabularNumberStyle),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(8.dp))
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                items(files, key = { it.id }) { file ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                openUriWithMime(context, Uri.parse(file.uri), file.mimeType)
-                            }
-                            .padding(horizontal = 8.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            items(files, key = { it.id }) { file ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            openUriWithMime(context, Uri.parse(file.uri), file.mimeType)
+                        }
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.InsertDriveFile,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = file.relativePath,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${formatFileSize(file.sizeBytes)} • ${file.mimeType}",
+                            style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            shareUriWithMime(context, Uri.parse(file.uri), file.mimeType)
+                        }
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.InsertDriveFile,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
+                            imageVector = Icons.Rounded.Share,
+                            contentDescription = "Share ${file.name}",
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = file.relativePath,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "${formatFileSize(file.sizeBytes)} • ${file.mimeType}",
-                                style = MaterialTheme.typography.labelSmall.merge(TabularNumberStyle),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                shareUriWithMime(context, Uri.parse(file.uri), file.mimeType)
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Share,
-                                contentDescription = "Share ${file.name}",
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 

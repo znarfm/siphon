@@ -89,7 +89,8 @@ fun PrivacyAdblockSettingsScreen(
     onRefreshSubscriptions: (onComplete: () -> Unit) -> Unit,
     onClearHistory: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showBackButton: Boolean = true
 ) {
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(FilterManagerTab.BUILT_IN) }
@@ -179,6 +180,7 @@ fun PrivacyAdblockSettingsScreen(
     SettingsSubPageScaffold(
         title = "Privacy & Ad Blocker",
         onBack = onBack,
+        showBackButton = showBackButton,
         modifier = modifier
     ) { innerPadding ->
         val listState = rememberLazyListState()

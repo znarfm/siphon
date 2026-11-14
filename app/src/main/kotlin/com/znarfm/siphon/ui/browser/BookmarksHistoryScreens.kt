@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -71,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.znarfm.siphon.data.db.BookmarkEntity
 import com.znarfm.siphon.data.db.HistoryEntity
+import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import kotlinx.coroutines.CancellationException
@@ -93,6 +97,7 @@ fun BookmarksScreen(
     val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    val isTablet = LocalWindowSizeClass.current.isTablet
 
     PredictiveBackHandler(enabled = isSearching) { progress ->
         try {
@@ -159,6 +164,35 @@ fun BookmarksScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             )
+        } else if (isTablet) {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 320.dp),
+                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                gridItems(
+                    items = filteredBookmarks,
+                    key = { it.id }
+                ) { bookmark ->
+                    BookmarkItemRow(
+                        bookmark = bookmark,
+                        onOpen = { onOpenUrl(bookmark.url, false, false) },
+                        onOpenNewTab = { onOpenUrl(bookmark.url, true, false) },
+                        onOpenIncognito = { onOpenUrl(bookmark.url, true, true) },
+                        onCopyUrl = {
+                            clipboardManager.setText(AnnotatedString(bookmark.url))
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("URL copied to clipboard")
+                            }
+                        },
+                        onDelete = { onDeleteBookmark(bookmark.id) }
+                    )
+                }
+            }
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -341,6 +375,7 @@ fun HistoryScreen(
     var searchQuery by remember { mutableStateOf("") }
     var searchBackProgress by remember { mutableFloatStateOf(0f) }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
+    val isTablet = LocalWindowSizeClass.current.isTablet
 
     PredictiveBackHandler(enabled = isSearching) { progress ->
         try {
@@ -463,6 +498,31 @@ fun HistoryScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             )
+        } else if (isTablet) {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 320.dp),
+                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                gridItems(
+                    items = filteredHistory,
+                    key = { it.id }
+                ) { entry ->
+                    val formattedTime = remember(entry.visitedAt) {
+                        dateFormatter.format(Date(entry.visitedAt))
+                    }
+                    HistoryItemRow(
+                        entry = entry,
+                        formattedTime = formattedTime,
+                        onOpen = { onOpenUrl(entry.url, false, false) },
+                        onDelete = { onDeleteHistory(entry.id) }
+                    )
+                }
+            }
         } else {
             LazyColumn(
                 modifier = Modifier

@@ -51,11 +51,13 @@ fun AppearanceSettingsScreen(
     onSetThemeMode: (AppThemeMode) -> Unit,
     onSetColorSeed: (AppColorSeed) -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showBackButton: Boolean = true
 ) {
     SettingsSubPageScaffold(
         title = "Appearance",
         onBack = onBack,
+        showBackButton = showBackButton,
         modifier = modifier
     ) { innerPadding ->
         LazyColumn(

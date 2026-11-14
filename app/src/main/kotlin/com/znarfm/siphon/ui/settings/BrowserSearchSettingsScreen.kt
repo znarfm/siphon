@@ -54,11 +54,13 @@ fun BrowserSearchSettingsScreen(
     onSetWebDarkMode: (Boolean) -> Unit,
     onSetDesktopMode: (Boolean) -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showBackButton: Boolean = true
 ) {
     SettingsSubPageScaffold(
         title = "Browser & Search",
         onBack = onBack,
+        showBackButton = showBackButton,
         modifier = modifier
     ) { innerPadding ->
         LazyColumn(

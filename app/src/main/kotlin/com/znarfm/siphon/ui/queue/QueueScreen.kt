@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
@@ -48,6 +50,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -60,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,6 +72,7 @@ import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.DownloadFileEntity
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.db.SiphonDatabase
+import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import kotlinx.coroutines.flow.map
@@ -133,11 +138,13 @@ fun QueueScreen(
     }
 
 
+    val isExpanded = LocalWindowSizeClass.current.isExpanded
     var pendingDeleteDownload by remember { mutableStateOf<DownloadEntity?>(null) }
     var pendingRenameDownload by remember { mutableStateOf<DownloadEntity?>(null) }
     var renameInput by remember { mutableStateOf("") }
     var showBulkDeleteDialog by remember { mutableStateOf(false) }
-    var inspectorDownload by remember { mutableStateOf<DownloadEntity?>(null) }
+    var inspectorDownloadId by remember { mutableStateOf<Long?>(null) }
+    var showTorrentFilesInPane by remember { mutableStateOf(false) }
     var torrentFilesDownload by remember { mutableStateOf<DownloadEntity?>(null) }
 
     val activeCount = downloads.count { it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED || it.state == DownloadState.MERGING }
@@ -174,21 +181,10 @@ fun QueueScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        event.changes.forEach { it.consume() }
-                    }
-                }
-            }
-    ) {
-        // Header Surface (Chrome Android Downloads TopAppBar + M3 Expressive styling)
-        Surface(
+    val listPane: @Composable (Modifier) -> Unit = { paneModifier ->
+        Column(modifier = paneModifier) {
+            // Header Surface (Chrome Android Downloads TopAppBar + M3 Expressive styling)
+            Surface(
             tonalElevation = 3.dp,
             shape = ExpressiveShapeTokens.HeaderSheetShape,
             modifier = Modifier.fillMaxWidth()
@@ -485,7 +481,8 @@ fun QueueScreen(
                             if (isSelectionMode) {
                                 onToggleSelectId(item.id)
                             } else {
-                                inspectorDownload = item
+                                inspectorDownloadId = item.id
+                                showTorrentFilesInPane = false
                             }
                         },
                         onCardLongClick = {
@@ -512,7 +509,12 @@ fun QueueScreen(
                         onOpen = {
                             val itemFiles = effectiveFilesMap[item.id].orEmpty()
                             if (itemFiles.size > 1) {
-                                torrentFilesDownload = item
+                                if (isExpanded) {
+                                    inspectorDownloadId = item.id
+                                    showTorrentFilesInPane = true
+                                } else {
+                                    torrentFilesDownload = item
+                                }
                             } else {
                                 openCompletedFile(context, item)
                             }
@@ -521,39 +523,151 @@ fun QueueScreen(
                 }
             }
         }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            }
+    ) {
+        if (isExpanded) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                listPane(
+                    Modifier
+                        .weight(0.52f)
+                        .fillMaxHeight()
+                )
+                VerticalDivider()
+                Box(
+                    modifier = Modifier
+                        .weight(0.48f)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                ) {
+                    val activeInspectorDownload = downloads.find { it.id == inspectorDownloadId } ?: downloads.firstOrNull()
+                    if (activeInspectorDownload == null) {
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Select a download",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Tap a task on the left to inspect its chunks, URLs, and actions.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        val targetFiles = effectiveFilesMap[activeInspectorDownload.id].orEmpty()
+                        if (showTorrentFilesInPane) {
+                            TorrentFilesContent(
+                                download = activeInspectorDownload,
+                                files = targetFiles,
+                                onBack = { showTorrentFilesInPane = false },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            val targetChunks = chunksMap[activeInspectorDownload.id] ?: emptyList()
+                            TaskInspectorContent(
+                                download = activeInspectorDownload,
+                                chunks = targetChunks,
+                                onShare = { shareDownloadFile(context, activeInspectorDownload) },
+                                onCopyStreamUrl = { copyToClipboard(context, activeInspectorDownload.url, "Stream URL") },
+                                onCopyPageUrl = {
+                                    copyToClipboard(
+                                        context,
+                                        activeInspectorDownload.sourcePageUrl?.takeIf { it.isNotBlank() } ?: activeInspectorDownload.url,
+                                        "Page URL"
+                                    )
+                                },
+                                onOpenFile = {
+                                    if (targetFiles.size > 1) {
+                                        showTorrentFilesInPane = true
+                                    } else {
+                                        openCompletedFile(context, activeInspectorDownload)
+                                    }
+                                },
+                                onRename = {
+                                    pendingRenameDownload = activeInspectorDownload
+                                    renameInput = activeInspectorDownload.displayName
+                                },
+                                files = targetFiles,
+                                onViewFiles = if (targetFiles.size > 1) {
+                                    { showTorrentFilesInPane = true }
+                                } else {
+                                    null
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            listPane(Modifier.fillMaxSize())
+        }
     }
 
     // Media & Task Inspector Bottom Sheet (Item 5)
-    if (inspectorDownload != null) {
-        val target = inspectorDownload!!
-        val targetChunks = chunksMap[target.id] ?: emptyList()
-        val targetFiles = effectiveFilesMap[target.id].orEmpty()
+    val sheetInspectorDownload = if (!isExpanded) downloads.find { it.id == inspectorDownloadId } else null
+    if (sheetInspectorDownload != null) {
+        val targetChunks = chunksMap[sheetInspectorDownload.id] ?: emptyList()
+        val targetFiles = effectiveFilesMap[sheetInspectorDownload.id].orEmpty()
 
         TaskInspectorBottomSheet(
-            download = target,
+            download = sheetInspectorDownload,
             chunks = targetChunks,
-            onDismiss = { inspectorDownload = null },
-            onShare = { shareDownloadFile(context, target) },
-            onCopyStreamUrl = { copyToClipboard(context, target.url, "Stream URL") },
-            onCopyPageUrl = { copyToClipboard(context, target.sourcePageUrl?.takeIf { it.isNotBlank() } ?: target.url, "Page URL") },
+            onDismiss = { inspectorDownloadId = null },
+            onShare = { shareDownloadFile(context, sheetInspectorDownload) },
+            onCopyStreamUrl = { copyToClipboard(context, sheetInspectorDownload.url, "Stream URL") },
+            onCopyPageUrl = {
+                copyToClipboard(
+                    context,
+                    sheetInspectorDownload.sourcePageUrl?.takeIf { it.isNotBlank() } ?: sheetInspectorDownload.url,
+                    "Page URL"
+                )
+            },
             onOpenFile = {
                 if (targetFiles.size > 1) {
-                    inspectorDownload = null
-                    torrentFilesDownload = target
+                    inspectorDownloadId = null
+                    torrentFilesDownload = sheetInspectorDownload
                 } else {
-                    openCompletedFile(context, target)
+                    openCompletedFile(context, sheetInspectorDownload)
                 }
             },
             onRename = {
-                inspectorDownload = null
-                pendingRenameDownload = target
-                renameInput = target.displayName
+                inspectorDownloadId = null
+                pendingRenameDownload = sheetInspectorDownload
+                renameInput = sheetInspectorDownload.displayName
             },
             files = targetFiles,
             onViewFiles = if (targetFiles.size > 1) {
                 {
-                    inspectorDownload = null
-                    torrentFilesDownload = target
+                    inspectorDownloadId = null
+                    torrentFilesDownload = sheetInspectorDownload
                 }
             } else {
                 null
@@ -561,7 +675,7 @@ fun QueueScreen(
         )
     }
 
-    if (torrentFilesDownload != null) {
+    if (!isExpanded && torrentFilesDownload != null) {
         val target = torrentFilesDownload!!
         val targetFiles = effectiveFilesMap[target.id].orEmpty()
         TorrentFilesSheet(

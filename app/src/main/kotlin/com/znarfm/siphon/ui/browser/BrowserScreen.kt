@@ -92,6 +92,7 @@ import com.znarfm.siphon.core.sniffer.MediaSnifferClient
 import com.znarfm.siphon.data.db.BookmarkEntity
 import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.HistoryEntity
+import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
 import com.znarfm.siphon.ui.theme.AppColorSeed
 import com.znarfm.siphon.ui.theme.AppThemeMode
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
@@ -525,9 +526,60 @@ fun BrowserScreen(
     val activeTab = tabs.firstOrNull { it.id == activeTabId }
     val activeTabUrl = activeTab?.url ?: currentUrl
     val isNewTab = activeTabUrl == NEW_TAB_URL
+    val isTablet = LocalWindowSizeClass.current.isTablet
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
+            if (isTablet) {
+                AnimatedVisibility(
+                    visible = (isBarsVisible || isNewTab) && !isOmniboxFocused && customVideoView == null,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    val currentDisplayUrl = activeWebView?.url ?: activeTabUrl
+                    val currentDisplayTitle = activeWebView?.title?.takeIf { it.isNotBlank() } ?: activeTab?.title.orEmpty()
+                    TabletBrowserToolbar(
+                        tabs = tabs,
+                        activeTabId = activeTabId,
+                        url = currentDisplayUrl,
+                        title = currentDisplayTitle,
+                        isIncognito = activeTab?.isIncognito ?: false,
+                        isLoading = !isNewTab && pageProgress in 1..99,
+                        pageProgress = if (isNewTab) 100 else pageProgress,
+                        canGoBack = canGoBack,
+                        canGoForward = canGoForward,
+                        isBookmarked = isCurrentBookmarked,
+                        isAdBlockEnabled = isAdBlockEnabled,
+                        detectedMediaCount = detectedMediaCount,
+                        activeDownloadCount = activeDownloadCount,
+                        onSelectTab = onSelectTab,
+                        onCloseTab = onCloseTab,
+                        onNewTab = {
+                            captureActiveThumbnail()
+                            onNewTab(NEW_TAB_URL, activeTab?.isIncognito ?: false, false)
+                        },
+                        onGoBack = { activeWebView?.goBack() },
+                        onGoForward = { activeWebView?.goForward() },
+                        onReload = { activeWebView?.reload() },
+                        onStop = { activeWebView?.stopLoading() },
+                        onOpenOmniboxSearch = {
+                            val cur = if (isNewTab) "" else (activeWebView?.url ?: activeTabUrl)
+                            urlTextFieldValue = TextFieldValue(cur, TextRange(0, cur.length))
+                            isOmniboxFocused = true
+                        },
+                        onOpenSiteInfo = { isSiteInfoOpen = true },
+                        onToggleBookmark = onToggleBookmark,
+                        onOpenTabSwitcher = {
+                            captureActiveThumbnail()
+                            onOpenTabSwitcher()
+                        },
+                        onOpenSniffer = onOpenSniffer,
+                        onOpenDownloads = onOpenDownloads,
+                        onOpenMenu = { isMenuOpen = true }
+                    )
+                }
+            }
+
             // "Update Link" 403 Rebind Banner
             if (rebindTarget != null) {
                 Card(
@@ -1032,9 +1084,9 @@ fun BrowserScreen(
             }
         }
 
-        // Always-Bottom Chrome Omnibox Dock
+        // Always-Bottom Chrome Omnibox Dock (Compact screens only)
         AnimatedVisibility(
-            visible = (isBarsVisible || isNewTab) && !isOmniboxFocused && customVideoView == null,
+            visible = !isTablet && (isBarsVisible || isNewTab) && !isOmniboxFocused && customVideoView == null,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
             modifier = Modifier
