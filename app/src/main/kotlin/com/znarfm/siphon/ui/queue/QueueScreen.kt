@@ -23,15 +23,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -52,7 +43,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -71,11 +61,11 @@ import com.znarfm.siphon.data.db.ChunkEntity
 import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.DownloadFileEntity
 import com.znarfm.siphon.data.db.DownloadState
-import com.znarfm.siphon.data.db.SiphonDatabase
 import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
+import com.znarfm.siphon.ui.common.copyToClipboard
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
-import kotlinx.coroutines.flow.map
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -113,15 +103,10 @@ fun QueueScreen(
     onBulkCancel: (List<Long>) -> Unit,
     onOpenDownloadSettings: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
-    downloadFilesMap: Map<Long, List<DownloadFileEntity>>? = null,
+    downloadFilesMap: Map<Long, List<DownloadFileEntity>> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val observedFilesMap by remember(context) {
-        SiphonDatabase.get(context).downloadDao().observeAllDownloadFiles()
-            .map { list -> list.groupBy { it.downloadId } }
-    }.collectAsState(initial = emptyMap())
-    val effectiveFilesMap = downloadFilesMap ?: observedFilesMap
     var isSearchExpanded by remember { mutableStateOf(searchQuery.isNotBlank()) }
 
     var selectionBackProgress by remember { mutableFloatStateOf(0f) }
@@ -147,14 +132,24 @@ fun QueueScreen(
     var showTorrentFilesInPane by remember { mutableStateOf(false) }
     var torrentFilesDownload by remember { mutableStateOf<DownloadEntity?>(null) }
 
-    val activeCount = downloads.count { it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED || it.state == DownloadState.MERGING }
-    val pausedCount = downloads.count {
-        it.state == DownloadState.PAUSED || it.state == DownloadState.AUTH_EXPIRED || it.state == DownloadState.WAITING_FOR_NETWORK
+    val (activeCount, pausedCount, completedCount) = remember(downloads) {
+        var active = 0
+        var paused = 0
+        var completed = 0
+        for (d in downloads) {
+            when (d.state) {
+                DownloadState.ACTIVE, DownloadState.QUEUED, DownloadState.MERGING -> active++
+                DownloadState.PAUSED, DownloadState.AUTH_EXPIRED, DownloadState.WAITING_FOR_NETWORK -> paused++
+                DownloadState.COMPLETED -> completed++
+                else -> Unit
+            }
+        }
+        Triple(active, paused, completed)
     }
-    val completedCount = downloads.count { it.state == DownloadState.COMPLETED }
 
     // Filter + Search + Sort
-    val filteredList = remember(downloads, selectedFilter, searchQuery, selectedSort, chunksMap) {
+    val progressSortChunks = if (selectedSort == QueueSortOption.PROGRESS_DESC) chunksMap else emptyMap()
+    val filteredList = remember(downloads, selectedFilter, searchQuery, selectedSort, progressSortChunks) {
         val byTab = when (selectedFilter) {
             QueueFilter.ALL -> downloads
             QueueFilter.ACTIVE -> downloads.filter { it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED || it.state == DownloadState.MERGING }
@@ -176,7 +171,7 @@ fun QueueScreen(
             QueueSortOption.DATE_ASC -> bySearch.sortedBy { it.createdAt }
             QueueSortOption.SIZE_DESC -> bySearch.sortedByDescending { it.totalBytes }
             QueueSortOption.SIZE_ASC -> bySearch.sortedBy { it.totalBytes }
-            QueueSortOption.PROGRESS_DESC -> bySearch.sortedByDescending { computeProgress(it, chunksMap[it.id].orEmpty()) }
+            QueueSortOption.PROGRESS_DESC -> bySearch.sortedByDescending { computeProgress(it, progressSortChunks[it.id].orEmpty()) }
             QueueSortOption.NAME_ASC -> bySearch.sortedBy { it.displayName.lowercase() }
         }
     }
@@ -203,7 +198,7 @@ fun QueueScreen(
                                 onClearSelection()
                             }) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Close,
+                                    imageVector = SiphonIcons.Close,
                                     contentDescription = "Exit selection mode"
                                 )
                             }
@@ -260,7 +255,7 @@ fun QueueScreen(
                     ) {
                         IconButton(onClick = onNavigateBack) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                imageVector = SiphonIcons.ArrowBack,
                                 contentDescription = "Back"
                             )
                         }
@@ -290,13 +285,13 @@ fun QueueScreen(
 
                         IconButton(onClick = { isSearchExpanded = !isSearchExpanded }) {
                             Icon(
-                                imageVector = Icons.Rounded.Search,
+                                imageVector = SiphonIcons.Search,
                                 contentDescription = "Search downloads"
                             )
                         }
                         IconButton(onClick = onOpenDownloadSettings) {
                             Icon(
-                                imageVector = Icons.Rounded.Settings,
+                                imageVector = SiphonIcons.Settings,
                                 contentDescription = "Download settings"
                             )
                         }
@@ -317,7 +312,7 @@ fun QueueScreen(
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Pause,
+                                        imageVector = SiphonIcons.Pause,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -331,7 +326,7 @@ fun QueueScreen(
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.PlayArrow,
+                                        imageVector = SiphonIcons.PlayArrow,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -347,7 +342,7 @@ fun QueueScreen(
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.DeleteSweep,
+                                        imageVector = SiphonIcons.DeleteSweep,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -383,7 +378,7 @@ fun QueueScreen(
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { onSearchQueryChange("") }) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Close,
+                                    imageVector = SiphonIcons.Close,
                                     contentDescription = "Clear search",
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -402,7 +397,7 @@ fun QueueScreen(
                     item {
                         Text("Sort:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    items(QueueSortOption.entries) { opt ->
+                    items(QueueSortOption.entries, key = { it.name }) { opt ->
                         FilterChip(
                             selected = selectedSort == opt,
                             onClick = { onSelectSort(opt) },
@@ -504,10 +499,17 @@ fun QueueScreen(
                         },
                         onRebind = { onRebind(item) },
                         onShare = { shareDownloadFile(context, item) },
-                        onCopyStreamUrl = { copyToClipboard(context, item.url, "Stream URL") },
-                        onCopyPageUrl = { copyToClipboard(context, item.sourcePageUrl?.takeIf { it.isNotBlank() } ?: item.url, "Page URL") },
+                        onCopyStreamUrl = { copyToClipboard(context, label = "Stream URL", text = item.url, toastMessage = "Stream URL copied") },
+                        onCopyPageUrl = {
+                            copyToClipboard(
+                                context,
+                                label = "Page URL",
+                                text = item.sourcePageUrl?.takeIf { it.isNotBlank() } ?: item.url,
+                                toastMessage = "Page URL copied"
+                            )
+                        },
                         onOpen = {
-                            val itemFiles = effectiveFilesMap[item.id].orEmpty()
+                            val itemFiles = downloadFilesMap[item.id].orEmpty()
                             if (itemFiles.size > 1) {
                                 if (isExpanded) {
                                     inspectorDownloadId = item.id
@@ -563,7 +565,7 @@ fun QueueScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Download,
+                                imageVector = SiphonIcons.Download,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -581,7 +583,7 @@ fun QueueScreen(
                             )
                         }
                     } else {
-                        val targetFiles = effectiveFilesMap[activeInspectorDownload.id].orEmpty()
+                        val targetFiles = downloadFilesMap[activeInspectorDownload.id].orEmpty()
                         if (showTorrentFilesInPane) {
                             TorrentFilesContent(
                                 download = activeInspectorDownload,
@@ -595,12 +597,13 @@ fun QueueScreen(
                                 download = activeInspectorDownload,
                                 chunks = targetChunks,
                                 onShare = { shareDownloadFile(context, activeInspectorDownload) },
-                                onCopyStreamUrl = { copyToClipboard(context, activeInspectorDownload.url, "Stream URL") },
+                                onCopyStreamUrl = { copyToClipboard(context, label = "Stream URL", text = activeInspectorDownload.url, toastMessage = "Stream URL copied") },
                                 onCopyPageUrl = {
                                     copyToClipboard(
                                         context,
-                                        activeInspectorDownload.sourcePageUrl?.takeIf { it.isNotBlank() } ?: activeInspectorDownload.url,
-                                        "Page URL"
+                                        label = "Page URL",
+                                        text = activeInspectorDownload.sourcePageUrl?.takeIf { it.isNotBlank() } ?: activeInspectorDownload.url,
+                                        toastMessage = "Page URL copied"
                                     )
                                 },
                                 onOpenFile = {
@@ -635,19 +638,20 @@ fun QueueScreen(
     val sheetInspectorDownload = if (!isExpanded) downloads.find { it.id == inspectorDownloadId } else null
     if (sheetInspectorDownload != null) {
         val targetChunks = chunksMap[sheetInspectorDownload.id] ?: emptyList()
-        val targetFiles = effectiveFilesMap[sheetInspectorDownload.id].orEmpty()
+        val targetFiles = downloadFilesMap[sheetInspectorDownload.id].orEmpty()
 
         TaskInspectorBottomSheet(
             download = sheetInspectorDownload,
             chunks = targetChunks,
             onDismiss = { inspectorDownloadId = null },
             onShare = { shareDownloadFile(context, sheetInspectorDownload) },
-            onCopyStreamUrl = { copyToClipboard(context, sheetInspectorDownload.url, "Stream URL") },
+            onCopyStreamUrl = { copyToClipboard(context, label = "Stream URL", text = sheetInspectorDownload.url, toastMessage = "Stream URL copied") },
             onCopyPageUrl = {
                 copyToClipboard(
                     context,
-                    sheetInspectorDownload.sourcePageUrl?.takeIf { it.isNotBlank() } ?: sheetInspectorDownload.url,
-                    "Page URL"
+                    label = "Page URL",
+                    text = sheetInspectorDownload.sourcePageUrl?.takeIf { it.isNotBlank() } ?: sheetInspectorDownload.url,
+                    toastMessage = "Page URL copied"
                 )
             },
             onOpenFile = {
@@ -677,7 +681,7 @@ fun QueueScreen(
 
     if (!isExpanded && torrentFilesDownload != null) {
         val target = torrentFilesDownload!!
-        val targetFiles = effectiveFilesMap[target.id].orEmpty()
+        val targetFiles = downloadFilesMap[target.id].orEmpty()
         TorrentFilesSheet(
             download = target,
             files = targetFiles,

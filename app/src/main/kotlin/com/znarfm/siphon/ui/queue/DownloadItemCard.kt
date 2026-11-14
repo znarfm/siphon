@@ -18,21 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowDropDown
-import androidx.compose.material.icons.rounded.Cancel
-import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material.icons.rounded.HourglassTop
-import androidx.compose.material.icons.rounded.Hub
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Language
-import androidx.compose.material.icons.rounded.Link
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -67,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.znarfm.siphon.core.common.FormatUtils
 import com.znarfm.siphon.data.db.ChunkEntity
 import com.znarfm.siphon.data.db.ChunkState
 import com.znarfm.siphon.data.db.DownloadEntity
@@ -79,6 +65,7 @@ import com.znarfm.siphon.ui.theme.StateFailed
 import com.znarfm.siphon.ui.theme.StatePaused
 import com.znarfm.siphon.ui.theme.StateWaiting
 import java.util.Locale
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -199,7 +186,7 @@ fun DownloadItemCard(
                                 horizontalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Hub,
+                                    imageVector = SiphonIcons.Hub,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.size(12.dp)
@@ -234,16 +221,18 @@ fun DownloadItemCard(
                     } else {
                         val progressDetail = when {
                             download.state == DownloadState.COMPLETED -> {
-                                " • ${formatFileSize(if (download.totalBytes > 0) download.totalBytes else downloadedBytes)} (100%)"
+                                val finalBytes = if (download.totalBytes > 0) download.totalBytes else downloadedBytes
+                                val sizeText = if (finalBytes > 0L) FormatUtils.formatBytes(finalBytes) else "Adaptive / Unknown"
+                                " • $sizeText (100%)"
                             }
                             isTorrent -> {
                                 when {
                                     download.totalBytes > 0L && download.state == DownloadState.ACTIVE -> {
                                         val peerLabel = if (download.peers == 1) "1 peer" else "${download.peers} peers"
-                                        " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%) • ${formatSpeed(download.speedBytesPerSec)} • $peerLabel"
+                                        " • ${FormatUtils.formatBytes(downloadedBytes)} / ${FormatUtils.formatBytes(download.totalBytes)} ($progressPercent%) • ${formatSpeed(download.speedBytesPerSec)} • $peerLabel"
                                     }
                                     download.totalBytes > 0L -> {
-                                        " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%)"
+                                        " • ${FormatUtils.formatBytes(downloadedBytes)} / ${FormatUtils.formatBytes(download.totalBytes)} ($progressPercent%)"
                                     }
                                     download.state == DownloadState.ACTIVE || download.state == DownloadState.QUEUED -> {
                                         val peerSuffix = if (download.peers > 0) " (${download.peers} peers)" else ""
@@ -253,18 +242,18 @@ fun DownloadItemCard(
                                 }
                             }
                             isHls -> {
-                                val totalStr = if (estTotal > 0L) " of ~${formatFileSize(estTotal)}" else ""
+                                val totalStr = if (estTotal > 0L) " of ~${FormatUtils.formatBytes(estTotal)}" else ""
                                 if (totalSegments > 0) {
-                                    " • ${formatFileSize(downloadedBytes)}$totalStr · $completedSegments/$totalSegments segs ($progressPercent%)"
+                                    " • ${FormatUtils.formatBytes(downloadedBytes)}$totalStr · $completedSegments/$totalSegments segs ($progressPercent%)"
                                 } else {
-                                    " • ${formatFileSize(downloadedBytes)}$totalStr ($progressPercent%)"
+                                    " • ${FormatUtils.formatBytes(downloadedBytes)}$totalStr ($progressPercent%)"
                                 }
                             }
                             download.totalBytes > 0L -> {
-                                " • ${formatFileSize(downloadedBytes)} / ${formatFileSize(download.totalBytes)} ($progressPercent%)"
+                                " • ${FormatUtils.formatBytes(downloadedBytes)} / ${FormatUtils.formatBytes(download.totalBytes)} ($progressPercent%)"
                             }
                             else -> {
-                                " • " + formatFileSize(download.totalBytes)
+                                " • Adaptive / Unknown"
                             }
                         }
 
@@ -322,12 +311,12 @@ fun DownloadItemCard(
                     }
 
                     val (primaryIcon, primaryLabel) = when (download.state) {
-                        DownloadState.ACTIVE, DownloadState.QUEUED -> Icons.Rounded.Pause to "Pause"
-                        DownloadState.MERGING -> Icons.Rounded.HourglassTop to "Merging…"
-                        DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK -> Icons.Rounded.PlayArrow to "Resume"
-                        DownloadState.FAILED, DownloadState.CANCELLED -> Icons.Rounded.Refresh to "Retry"
-                        DownloadState.AUTH_EXPIRED -> Icons.Rounded.Link to "Update Link"
-                        DownloadState.COMPLETED -> Icons.Rounded.FolderOpen to "Open"
+                        DownloadState.ACTIVE, DownloadState.QUEUED -> SiphonIcons.Pause to "Pause"
+                        DownloadState.MERGING -> SiphonIcons.HourglassTop to "Merging…"
+                        DownloadState.PAUSED, DownloadState.WAITING_FOR_NETWORK -> SiphonIcons.PlayArrow to "Resume"
+                        DownloadState.FAILED, DownloadState.CANCELLED -> SiphonIcons.Refresh to "Retry"
+                        DownloadState.AUTH_EXPIRED -> SiphonIcons.Link to "Update Link"
+                        DownloadState.COMPLETED -> SiphonIcons.FolderOpen to "Open"
                     }
 
                     val chevronRotation by animateFloatAsState(
@@ -361,7 +350,7 @@ fun DownloadItemCard(
                                     onCheckedChange = { isMenuExpanded = it }
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.ArrowDropDown,
+                                        imageVector = SiphonIcons.ArrowDropDown,
                                         contentDescription = "More actions",
                                         modifier = Modifier
                                             .size(18.dp)
@@ -377,7 +366,7 @@ fun DownloadItemCard(
                                     DropdownMenuItem(
                                         leadingIcon = {
                                             Icon(
-                                                imageVector = if (isTerminal) Icons.Rounded.DeleteOutline else Icons.Rounded.Cancel,
+                                                imageVector = if (isTerminal) SiphonIcons.DeleteOutline else SiphonIcons.Cancel,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(18.dp)
                                             )
@@ -392,7 +381,7 @@ fun DownloadItemCard(
                                         DropdownMenuItem(
                                             leadingIcon = {
                                                 Icon(
-                                                    imageVector = Icons.Rounded.Share,
+                                                    imageVector = SiphonIcons.Share,
                                                     contentDescription = null,
                                                     modifier = Modifier.size(18.dp)
                                                 )
@@ -407,7 +396,7 @@ fun DownloadItemCard(
                                     DropdownMenuItem(
                                         leadingIcon = {
                                             Icon(
-                                                imageVector = Icons.Rounded.Link,
+                                                imageVector = SiphonIcons.Link,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(18.dp)
                                             )
@@ -422,7 +411,7 @@ fun DownloadItemCard(
                                         DropdownMenuItem(
                                             leadingIcon = {
                                                 Icon(
-                                                    imageVector = Icons.Rounded.Language,
+                                                    imageVector = SiphonIcons.Language,
                                                     contentDescription = null,
                                                     modifier = Modifier.size(18.dp)
                                                 )
@@ -437,7 +426,7 @@ fun DownloadItemCard(
                                     DropdownMenuItem(
                                         leadingIcon = {
                                             Icon(
-                                                imageVector = Icons.Rounded.Edit,
+                                                imageVector = SiphonIcons.Edit,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(18.dp)
                                             )
@@ -451,7 +440,7 @@ fun DownloadItemCard(
                                     DropdownMenuItem(
                                         leadingIcon = {
                                             Icon(
-                                                imageVector = Icons.Rounded.Info,
+                                                imageVector = SiphonIcons.Info,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(18.dp)
                                             )
@@ -644,18 +633,6 @@ fun computeDownloadedBytes(download: DownloadEntity, chunks: List<ChunkEntity>):
         else -> {
             chunks.sumOf { (it.currentOffset - it.startOffset).coerceAtLeast(0L) }
         }
-    }
-}
-
-fun formatFileSize(bytes: Long): String {
-    if (bytes <= 0L) return "Adaptive / Unknown"
-    val kb = bytes.toDouble() / 1024
-    if (kb < 1000) return String.format(Locale.US, "%.1f KB", kb)
-    val mb = kb / 1024
-    return if (mb >= 1000) {
-        String.format(Locale.US, "%.2f GB", mb / 1024)
-    } else {
-        String.format(Locale.US, "%.1f MB", mb)
     }
 }
 

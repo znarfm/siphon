@@ -1,6 +1,5 @@
 package com.znarfm.siphon.ui.settings
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -17,11 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,9 +36,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.znarfm.siphon.data.prefs.AppPreferences
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
 import kotlin.math.roundToInt
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @Composable
 fun DownloadSettingsScreen(
@@ -65,7 +61,7 @@ fun DownloadSettingsScreen(
     showBackButton: Boolean = true
 ) {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("siphon_prefs", Context.MODE_PRIVATE) }
+    val prefs = remember { AppPreferences.prefs(context) }
 
     var maxD by remember(currentMaxDownloads) { mutableIntStateOf(currentMaxDownloads) }
     var workers by remember(currentWorkers) { mutableIntStateOf(currentWorkers) }
@@ -74,7 +70,9 @@ fun DownloadSettingsScreen(
     }
     var wifiOnly by remember(currentWifiOnly) { mutableStateOf(currentWifiOnly) }
     var customUri by remember(currentCustomDownloadUri) {
-        mutableStateOf(currentCustomDownloadUri ?: prefs.getString("pref_custom_download_uri", null))
+        mutableStateOf(
+            currentCustomDownloadUri ?: prefs.getString(AppPreferences.PREF_CUSTOM_DOWNLOAD_URI, null)
+        )
     }
 
     fun applyChanges(
@@ -120,7 +118,7 @@ fun DownloadSettingsScreen(
             // Concurrency Card
             item(key = "section_concurrency") {
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.Download,
+                    icon = SiphonIcons.Download,
                     title = "Concurrency"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -186,7 +184,7 @@ fun DownloadSettingsScreen(
             // Network & Speed Card
             item(key = "section_network_speed") {
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.Speed,
+                    icon = SiphonIcons.Speed,
                     title = "Network & Speed"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -232,7 +230,7 @@ fun DownloadSettingsScreen(
                         )
 
                         SettingsSwitchRow(
-                            icon = Icons.Rounded.Wifi,
+                            icon = SiphonIcons.Wifi,
                             title = "Download on Wi-Fi only",
                             subtitle = "Pause or defer downloads on cellular networks",
                             checked = wifiOnly,
@@ -248,7 +246,7 @@ fun DownloadSettingsScreen(
             // Storage Location Card
             item(key = "section_storage_location") {
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.Folder,
+                    icon = SiphonIcons.Folder,
                     title = "Storage Location"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -302,7 +300,7 @@ fun DownloadSettingsScreen(
                                 shape = ExpressiveShapeTokens.PillShape
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Folder,
+                                    imageVector = SiphonIcons.Folder,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )

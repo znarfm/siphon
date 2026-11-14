@@ -1,19 +1,16 @@
 package com.znarfm.siphon.core.service
 
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.job.JobInfo
 import android.app.job.JobParameters
 import android.app.job.JobScheduler
 import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.os.Build
 import androidx.annotation.RequiresApi
-import androidx.core.app.NotificationCompat
+import com.znarfm.siphon.SiphonApp
 import com.znarfm.siphon.core.dash.DashQueueEngine
 import com.znarfm.siphon.core.engine.ChunkQueueEngine
 import com.znarfm.siphon.core.hls.HlsQueueEngine
@@ -23,6 +20,7 @@ import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.db.DownloadType
 import com.znarfm.siphon.data.db.SiphonDatabase
+import com.znarfm.siphon.data.prefs.AppPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -56,12 +54,13 @@ class DownloadUidtJobService : JobService() {
 
     override fun onCreate() {
         super.onCreate()
-        dao = SiphonDatabase.get(this).downloadDao()
-        storage = DownloadStorageProvider(this)
+        val container = (application as? SiphonApp)?.container
+        dao = container?.downloadDao ?: SiphonDatabase.get(this).downloadDao()
+        storage = container?.storageProvider ?: DownloadStorageProvider(this)
 
-        val prefs = getSharedPreferences(DownloadForegroundService.PREFS_NAME, Context.MODE_PRIVATE)
-        val maxConcurrent = prefs.getInt(DownloadForegroundService.PREF_MAX_CONCURRENT_DOWNLOADS, 2).coerceIn(1, 4)
-        val bandwidthLimit = prefs.getLong(DownloadForegroundService.PREF_BANDWIDTH_LIMIT_BYTES, 0L).coerceAtLeast(0L)
+        val prefs = getSharedPreferences(AppPreferences.PREFS_NAME, Context.MODE_PRIVATE)
+        val maxConcurrent = prefs.getInt(AppPreferences.PREF_MAX_CONCURRENT_DOWNLOADS, 2).coerceIn(1, 4)
+        val bandwidthLimit = prefs.getLong(AppPreferences.PREF_BANDWIDTH_LIMIT_BYTES, 0L).coerceAtLeast(0L)
 
         engine = ChunkQueueEngine(
             dao = dao,
@@ -79,7 +78,7 @@ class DownloadUidtJobService : JobService() {
             rateBytesPerSec = bandwidthLimit
         )
         notificationManager = getSystemService(NotificationManager::class.java)
-        ensureNotificationChannel()
+        DownloadNotificationFactory.ensureChannels(notificationManager, includeStatusChannel = false)
     }
 
     override fun onStartJob(params: JobParameters): Boolean {
@@ -88,8 +87,8 @@ class DownloadUidtJobService : JobService() {
             setNotification(params, UIDT_NOTIFICATION_ID, initialNotification, JOB_END_NOTIFICATION_POLICY_REMOVE)
         }
 
-        val prefs = getSharedPreferences(DownloadForegroundService.PREFS_NAME, Context.MODE_PRIVATE)
-        val workers = prefs.getInt(DownloadForegroundService.PREF_WORKERS_PER_DOWNLOAD, 6).coerceIn(1, 8)
+        val prefs = getSharedPreferences(AppPreferences.PREFS_NAME, Context.MODE_PRIVATE)
+        val workers = prefs.getInt(AppPreferences.PREF_WORKERS_PER_DOWNLOAD, 6).coerceIn(1, 8)
 
         // Progress notification updater
         serviceScope.launch {
@@ -210,77 +209,17 @@ class DownloadUidtJobService : JobService() {
     }
 
     private fun buildNotification(items: List<TransferProgress>): Notification {
-        val builder = NotificationCompat.Builder(this, CHANNEL_ACTIVE)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
-
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, com.znarfm.siphon.ui.MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        return DownloadNotificationFactory.buildProgressNotification(
+            context = this,
+            items = items,
+            emptyTitle = "Transferring downloads…",
+            indeterminateFallbackText = "Downloading…"
         )
-        builder.setContentIntent(contentIntent)
-
-        if (items.isEmpty()) {
-            return builder
-                .setContentTitle("Transferring downloads…")
-                .setProgress(0, 0, true)
-                .build()
-        }
-
-        val primary = items.first()
-        val totalDownloaded = items.sumOf { it.downloadedBytes }
-        val totalSize = items.sumOf { it.totalBytes.coerceAtLeast(0L) }
-        val title = if (items.size == 1) {
-            primary.title
-        } else {
-            "${items.size} active downloads"
-        }
-
-        builder.setContentTitle(title)
-        if (totalSize > 0L) {
-            val pct = ((totalDownloaded * 100L) / totalSize).toInt().coerceIn(0, 100)
-            builder.setProgress(100, pct, false)
-            builder.setContentText("$pct% • ${formatBytes(totalDownloaded)} / ${formatBytes(totalSize)}")
-        } else {
-            builder.setProgress(0, 0, true)
-            builder.setContentText(if (totalDownloaded > 0L) formatBytes(totalDownloaded) else "Downloading…")
-        }
-
-        return builder.build()
-    }
-
-    private fun ensureNotificationChannel() {
-        val activeChannel = NotificationChannel(
-            CHANNEL_ACTIVE,
-            "Active Downloads",
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = "Live progress for active downloads"
-            setShowBadge(false)
-        }
-        notificationManager.createNotificationChannel(activeChannel)
-    }
-
-    private fun formatBytes(bytes: Long): String {
-        if (bytes < 1024L) return "${bytes}B"
-        val kb = bytes / 1024.0
-        if (kb < 1024.0) return String.format("%.1fKB", kb)
-        val mb = kb / 1024.0
-        if (mb < 1024.0) return String.format("%.1fMB", mb)
-        val gb = mb / 1024.0
-        return String.format("%.2fGB", gb)
     }
 
     companion object {
         const val JOB_ID = 4100
         private const val UIDT_NOTIFICATION_ID = 4101
-        private const val CHANNEL_ACTIVE = "siphon_active_downloads"
 
         fun scheduleFallback(context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {

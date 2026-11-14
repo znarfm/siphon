@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import com.znarfm.siphon.ui.common.effectiveForDevice
 
 @Immutable
 enum class AppThemeMode(val title: String) {
@@ -48,12 +49,12 @@ fun SiphonTheme(
     }
 
     val context = LocalContext.current
-    val useDynamic = colorSeed == AppColorSeed.DYNAMIC && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val effectiveSeed = colorSeed.effectiveForDevice()
+    val useDynamic = effectiveSeed == AppColorSeed.DYNAMIC && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     val baseScheme = if (useDynamic) {
         if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else {
-        val effectiveSeed = if (colorSeed == AppColorSeed.DYNAMIC) AppColorSeed.SAPPHIRE else colorSeed
         if (isDark) effectiveSeed.toDarkScheme() else effectiveSeed.toLightScheme()
     }
 

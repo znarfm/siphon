@@ -1,7 +1,6 @@
 package com.znarfm.siphon.core.service
 
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -13,8 +12,8 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
-import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import com.znarfm.siphon.SiphonApp
 import com.znarfm.siphon.core.dash.DashQueueEngine
 import com.znarfm.siphon.core.engine.ChunkQueueEngine
 import com.znarfm.siphon.core.hls.HlsQueueEngine
@@ -24,6 +23,7 @@ import com.znarfm.siphon.data.db.DownloadDao
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.db.DownloadType
 import com.znarfm.siphon.data.db.SiphonDatabase
+import com.znarfm.siphon.data.prefs.AppPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -105,14 +105,15 @@ class DownloadForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val initialMaxConcurrent = prefs.getInt(PREF_MAX_CONCURRENT_DOWNLOADS, 2).coerceIn(1, 4)
-        currentWorkers = prefs.getInt(PREF_WORKERS_PER_DOWNLOAD, 6).coerceIn(1, 8)
-        val initialBandwidthLimit = prefs.getLong(PREF_BANDWIDTH_LIMIT_BYTES, 0L).coerceAtLeast(0L)
-        isWifiOnly = prefs.getBoolean(PREF_WIFI_ONLY, false)
+        val prefs = getSharedPreferences(AppPreferences.PREFS_NAME, Context.MODE_PRIVATE)
+        val initialMaxConcurrent = prefs.getInt(AppPreferences.PREF_MAX_CONCURRENT_DOWNLOADS, 2).coerceIn(1, 4)
+        currentWorkers = prefs.getInt(AppPreferences.PREF_WORKERS_PER_DOWNLOAD, 6).coerceIn(1, 8)
+        val initialBandwidthLimit = prefs.getLong(AppPreferences.PREF_BANDWIDTH_LIMIT_BYTES, 0L).coerceAtLeast(0L)
+        isWifiOnly = prefs.getBoolean(AppPreferences.PREF_WIFI_ONLY, false)
 
-        dao = SiphonDatabase.get(this).downloadDao()
-        storage = DownloadStorageProvider(this)
+        val container = (application as? SiphonApp)?.container
+        dao = container?.downloadDao ?: SiphonDatabase.get(this).downloadDao()
+        storage = container?.storageProvider ?: DownloadStorageProvider(this)
         engine = ChunkQueueEngine(
             dao = dao,
             maxConcurrentDownloads = initialMaxConcurrent,
@@ -133,7 +134,7 @@ class DownloadForegroundService : Service() {
         notificationManager = getSystemService(NotificationManager::class.java)
         connectivityManager = getSystemService(ConnectivityManager::class.java)
 
-        ensureNotificationChannels()
+        DownloadNotificationFactory.ensureChannels(notificationManager)
         runCatching { connectivityManager.registerDefaultNetworkCallback(networkCallback) }
 
         serviceScope.launch(Dispatchers.IO) {
@@ -450,109 +451,65 @@ class DownloadForegroundService : Service() {
     }
 
     private fun buildForegroundNotification(items: List<TransferProgress>): Notification {
-        val builder = NotificationCompat.Builder(this, CHANNEL_ACTIVE)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
-
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, com.znarfm.siphon.ui.MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        builder.setContentIntent(contentIntent)
-
-        if (items.isEmpty()) {
-            return builder
-                .setContentTitle("Preparing download…")
-                .setProgress(0, 0, true)
-                .addAction(
+        return DownloadNotificationFactory.buildProgressNotification(
+            context = this,
+            items = items,
+            emptyTitle = "Preparing download…",
+            indeterminateFallbackText = "Remuxing & saving to storage…",
+            configureEmptyActions = {
+                addAction(
                     android.R.drawable.ic_menu_close_clear_cancel,
                     "Cancel",
                     buildServicePendingIntent(ACTION_CANCEL_ALL, 0L, reqOffset = 7)
                 )
-                .build()
-        }
-
-        val primary = items.first()
-        val totalDownloaded = items.sumOf { it.downloadedBytes }
-        val totalSize = items.sumOf { it.totalBytes.coerceAtLeast(0L) }
-        val title = if (items.size == 1) {
-            primary.title
-        } else {
-            "${items.size} active downloads"
-        }
-
-        builder.setContentTitle(title)
-        if (totalSize > 0L) {
-            val pct = ((totalDownloaded * 100L) / totalSize).toInt().coerceIn(0, 100)
-            builder.setProgress(100, pct, false)
-            builder.setContentText("$pct% • ${formatBytes(totalDownloaded)} / ${formatBytes(totalSize)}")
-        } else {
-            builder.setProgress(0, 0, true)
-            builder.setContentText(if (totalDownloaded > 0L) formatBytes(totalDownloaded) else "Remuxing & saving to storage…")
-        }
-
-        if (items.size == 1) {
-            builder.addAction(
-                android.R.drawable.ic_media_pause,
-                "Pause",
-                buildServicePendingIntent(ACTION_PAUSE, primary.downloadId, reqOffset = 1)
-            )
-            builder.addAction(
-                android.R.drawable.ic_media_play,
-                "Resume",
-                buildServicePendingIntent(ACTION_START_OR_RESUME, primary.downloadId, reqOffset = 4)
-            )
-            builder.addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
-                "Cancel",
-                buildServicePendingIntent(ACTION_CANCEL, primary.downloadId, reqOffset = 2)
-            )
-        } else {
-            builder.addAction(
-                android.R.drawable.ic_media_pause,
-                "Pause All",
-                buildServicePendingIntent(ACTION_PAUSE_ALL, 0L, reqOffset = 3)
-            )
-            builder.addAction(
-                android.R.drawable.ic_media_play,
-                "Resume All",
-                buildServicePendingIntent(ACTION_RESUME_ALL, 0L, reqOffset = 6)
-            )
-            builder.addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
-                "Cancel All",
-                buildServicePendingIntent(ACTION_CANCEL_ALL, 0L, reqOffset = 7)
-            )
-        }
-
-        return builder.build()
+            },
+            configureActiveActions = { activeItems ->
+                if (activeItems.size == 1) {
+                    val primaryId = activeItems.first().downloadId
+                    addAction(
+                        android.R.drawable.ic_media_pause,
+                        "Pause",
+                        buildServicePendingIntent(ACTION_PAUSE, primaryId, reqOffset = 1)
+                    )
+                    addAction(
+                        android.R.drawable.ic_media_play,
+                        "Resume",
+                        buildServicePendingIntent(ACTION_START_OR_RESUME, primaryId, reqOffset = 4)
+                    )
+                    addAction(
+                        android.R.drawable.ic_menu_close_clear_cancel,
+                        "Cancel",
+                        buildServicePendingIntent(ACTION_CANCEL, primaryId, reqOffset = 2)
+                    )
+                } else {
+                    addAction(
+                        android.R.drawable.ic_media_pause,
+                        "Pause All",
+                        buildServicePendingIntent(ACTION_PAUSE_ALL, 0L, reqOffset = 3)
+                    )
+                    addAction(
+                        android.R.drawable.ic_media_play,
+                        "Resume All",
+                        buildServicePendingIntent(ACTION_RESUME_ALL, 0L, reqOffset = 6)
+                    )
+                    addAction(
+                        android.R.drawable.ic_menu_close_clear_cancel,
+                        "Cancel All",
+                        buildServicePendingIntent(ACTION_CANCEL_ALL, 0L, reqOffset = 7)
+                    )
+                }
+            }
+        )
     }
 
     private fun postResumeNotification(downloadId: Long, displayName: String, isTimeout: Boolean) {
-        val resumeIntent = buildServicePendingIntent(ACTION_START_OR_RESUME, downloadId, reqOffset = 4)
-        val cancelIntent = buildServicePendingIntent(ACTION_CANCEL, downloadId, reqOffset = 5)
-        val subtitle = if (isTimeout) {
-            "Paused by background limit — tap Resume to continue"
-        } else {
-            "Download paused"
-        }
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_STATUS)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle(displayName)
-            .setContentText(subtitle)
-            .setAutoCancel(true)
-            .setContentIntent(resumeIntent)
-            .addAction(android.R.drawable.ic_media_play, "Resume", resumeIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancelIntent)
-            .build()
-
+        val notification = DownloadNotificationFactory.buildResumeNotification(
+            context = this,
+            displayName = displayName,
+            isTimeout = isTimeout,
+            resumeIntent = buildServicePendingIntent(ACTION_START_OR_RESUME, downloadId, reqOffset = 4),
+            cancelIntent = buildServicePendingIntent(ACTION_CANCEL, downloadId, reqOffset = 5)
+        )
         notificationManager.notify(statusNotificationId(downloadId), notification)
     }
 
@@ -561,24 +518,13 @@ class DownloadForegroundService : Service() {
         displayName: String,
         state: DownloadState
     ) {
-        if (state == DownloadState.PAUSED || state == DownloadState.CANCELLED) return
-        val builder = NotificationCompat.Builder(this, CHANNEL_STATUS)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle(displayName)
-            .setAutoCancel(true)
-
-        when (state) {
-            DownloadState.COMPLETED -> builder.setContentText("Download complete")
-            DownloadState.AUTH_EXPIRED -> builder.setContentText("Link expired (HTTP 403/410) — open app to refresh link")
-            DownloadState.WAITING_FOR_NETWORK -> {
-                val resumeIntent = buildServicePendingIntent(ACTION_START_OR_RESUME, downloadId, reqOffset = 4)
-                builder.setContentText("Waiting for network…")
-                    .addAction(android.R.drawable.ic_media_play, "Retry", resumeIntent)
-            }
-            else -> builder.setContentText("Download failed")
-        }
-
-        notificationManager.notify(statusNotificationId(downloadId), builder.build())
+        val notification = DownloadNotificationFactory.buildTerminalStatusNotification(
+            context = this,
+            displayName = displayName,
+            state = state,
+            retryIntent = buildServicePendingIntent(ACTION_START_OR_RESUME, downloadId, reqOffset = 4)
+        ) ?: return
+        notificationManager.notify(statusNotificationId(downloadId), notification)
     }
 
     private fun buildServicePendingIntent(
@@ -600,45 +546,45 @@ class DownloadForegroundService : Service() {
         }
     }
 
-    private fun ensureNotificationChannels() {
-        val activeChannel = NotificationChannel(
-            CHANNEL_ACTIVE,
-            "Active Downloads",
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = "Live progress for active downloads"
-            setShowBadge(false)
-        }
-        val statusChannel = NotificationChannel(
-            CHANNEL_STATUS,
-            "Download Alerts",
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = "Completed, paused, and failed download notifications"
-        }
-        notificationManager.createNotificationChannels(listOf(activeChannel, statusChannel))
-    }
-
     private fun statusNotificationId(downloadId: Long): Int =
-        STATUS_NOTIFICATION_BASE_ID + (downloadId.toInt() and 0x0FFFFFFF)
-
-    private fun formatBytes(bytes: Long): String {
-        if (bytes < 1024L) return "${bytes}B"
-        val kb = bytes / 1024.0
-        if (kb < 1024.0) return String.format("%.1fKB", kb)
-        val mb = kb / 1024.0
-        if (mb < 1024.0) return String.format("%.1fMB", mb)
-        val gb = mb / 1024.0
-        return String.format("%.2fGB", gb)
-    }
+        DownloadNotificationFactory.statusNotificationId(downloadId)
 
     companion object {
-        const val PREFS_NAME = "siphon_prefs"
-        const val PREF_MAX_CONCURRENT_DOWNLOADS = "max_concurrent_downloads"
-        const val PREF_WORKERS_PER_DOWNLOAD = "workers_per_download"
-        const val PREF_BANDWIDTH_LIMIT_BYTES = "bandwidth_limit_bytes"
-        const val PREF_WIFI_ONLY = "wifi_only"
-        const val PREF_CUSTOM_DOWNLOAD_URI = "pref_custom_download_uri"
+        @Deprecated(
+            "Use AppPreferences.PREFS_NAME",
+            ReplaceWith("AppPreferences.PREFS_NAME", "com.znarfm.siphon.data.prefs.AppPreferences")
+        )
+        const val PREFS_NAME = AppPreferences.PREFS_NAME
+
+        @Deprecated(
+            "Use AppPreferences.PREF_MAX_CONCURRENT_DOWNLOADS",
+            ReplaceWith("AppPreferences.PREF_MAX_CONCURRENT_DOWNLOADS", "com.znarfm.siphon.data.prefs.AppPreferences")
+        )
+        const val PREF_MAX_CONCURRENT_DOWNLOADS = AppPreferences.PREF_MAX_CONCURRENT_DOWNLOADS
+
+        @Deprecated(
+            "Use AppPreferences.PREF_WORKERS_PER_DOWNLOAD",
+            ReplaceWith("AppPreferences.PREF_WORKERS_PER_DOWNLOAD", "com.znarfm.siphon.data.prefs.AppPreferences")
+        )
+        const val PREF_WORKERS_PER_DOWNLOAD = AppPreferences.PREF_WORKERS_PER_DOWNLOAD
+
+        @Deprecated(
+            "Use AppPreferences.PREF_BANDWIDTH_LIMIT_BYTES",
+            ReplaceWith("AppPreferences.PREF_BANDWIDTH_LIMIT_BYTES", "com.znarfm.siphon.data.prefs.AppPreferences")
+        )
+        const val PREF_BANDWIDTH_LIMIT_BYTES = AppPreferences.PREF_BANDWIDTH_LIMIT_BYTES
+
+        @Deprecated(
+            "Use AppPreferences.PREF_WIFI_ONLY",
+            ReplaceWith("AppPreferences.PREF_WIFI_ONLY", "com.znarfm.siphon.data.prefs.AppPreferences")
+        )
+        const val PREF_WIFI_ONLY = AppPreferences.PREF_WIFI_ONLY
+
+        @Deprecated(
+            "Use AppPreferences.PREF_CUSTOM_DOWNLOAD_URI",
+            ReplaceWith("AppPreferences.PREF_CUSTOM_DOWNLOAD_URI", "com.znarfm.siphon.data.prefs.AppPreferences")
+        )
+        const val PREF_CUSTOM_DOWNLOAD_URI = AppPreferences.PREF_CUSTOM_DOWNLOAD_URI
 
         const val ACTION_START_OR_RESUME = "com.znarfm.siphon.action.START_OR_RESUME"
         const val ACTION_PAUSE = "com.znarfm.siphon.action.PAUSE"
@@ -654,10 +600,7 @@ class DownloadForegroundService : Service() {
         const val EXTRA_BANDWIDTH_LIMIT = "extra_bandwidth_limit"
         const val EXTRA_WIFI_ONLY = "extra_wifi_only"
 
-        private const val CHANNEL_ACTIVE = "siphon_active_downloads"
-        private const val CHANNEL_STATUS = "siphon_download_status"
         private const val FOREGROUND_NOTIFICATION_ID = 1001
-        private const val STATUS_NOTIFICATION_BASE_ID = 2000
 
         fun updateConcurrency(
             context: Context,

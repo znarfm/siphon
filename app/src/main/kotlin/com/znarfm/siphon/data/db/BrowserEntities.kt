@@ -3,6 +3,7 @@ package com.znarfm.siphon.data.db
 import androidx.compose.runtime.Immutable
 import androidx.room.Dao
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
@@ -10,7 +11,10 @@ import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
 @Immutable
-@Entity(tableName = "bookmarks")
+@Entity(
+    tableName = "bookmarks",
+    indices = [Index(value = ["url"])]
+)
 data class BookmarkEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
@@ -19,7 +23,10 @@ data class BookmarkEntity(
 )
 
 @Immutable
-@Entity(tableName = "history")
+@Entity(
+    tableName = "history",
+    indices = [Index(value = ["url"]), Index(value = ["visitedAt"])]
+)
 data class HistoryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,

@@ -1,7 +1,6 @@
 package com.znarfm.siphon.ui.browser
 
 import android.annotation.SuppressLint
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.Uri
@@ -14,6 +13,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -44,9 +44,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +55,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -93,97 +91,12 @@ import com.znarfm.siphon.data.db.BookmarkEntity
 import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.HistoryEntity
 import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
+import com.znarfm.siphon.ui.common.shareText
 import com.znarfm.siphon.ui.theme.AppColorSeed
 import com.znarfm.siphon.ui.theme.AppThemeMode
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import kotlinx.coroutines.CancellationException
-
-private const val DARK_MODE_INJECT_JS = """
-(function() {
-    var parseLuma = function(bg) {
-        if (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') return null;
-        var m = bg.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
-        if (!m) return null;
-        if (m[4] !== undefined && parseFloat(m[4]) < 0.15) return null;
-        return (0.299 * parseInt(m[1], 10) + 0.587 * parseInt(m[2], 10) + 0.114 * parseInt(m[3], 10));
-    };
-    var isPageNativelyDark = function() {
-        var docEl = document.documentElement;
-        var body = document.body;
-        if (!docEl) return false;
-        var meta = document.querySelector('meta[name="color-scheme"], meta[name="supported-color-schemes"]');
-        if (meta && /dark/i.test(meta.content)) return true;
-        if ([docEl, body].some(function(el) {
-            return el && (el.hasAttribute('dark') || /dark|night|black/i.test([el.className, el.getAttribute('data-theme'), el.getAttribute('data-color-mode'), el.getAttribute('data-bs-theme')].join(' ')));
-        })) return true;
-        var existingStyle = document.getElementById('__siphon_dark_mode');
-        if (existingStyle) existingStyle.disabled = true;
-        var darkBg = false;
-        try {
-            var ds = window.getComputedStyle(docEl);
-            if (ds && (ds.colorScheme || '').toLowerCase().includes('dark')) darkBg = true;
-            if (!darkBg) {
-                var luma = parseLuma(body ? window.getComputedStyle(body).backgroundColor : null);
-                if (luma === null) luma = parseLuma(ds ? ds.backgroundColor : null);
-                if (luma !== null && luma < 115) darkBg = true;
-            }
-        } catch (e) {}
-        if (existingStyle) existingStyle.disabled = false;
-        return darkBg;
-    };
-    var applyDark = function() {
-        var root = document.head || document.documentElement;
-        if (!root) return;
-        var existing = document.getElementById('__siphon_dark_mode');
-        if (isPageNativelyDark()) {
-            if (existing) existing.remove();
-            return;
-        }
-        if (!existing) {
-            var s = document.createElement('style');
-            s.id = '__siphon_dark_mode';
-            s.textContent = ':root { color-scheme: dark !important; } html { filter: invert(90%) hue-rotate(180deg) !important; background-color: #121212 !important; } img, video, iframe, canvas, svg, picture, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
-            root.appendChild(s);
-        }
-    };
-    applyDark();
-    if (!window.__siphon_dark_observer && document.documentElement) {
-        var timer = null;
-        window.__siphon_dark_observer = new MutationObserver(function() {
-            if (timer) return;
-            timer = setTimeout(function() { timer = null; applyDark(); }, 120);
-        });
-        window.__siphon_dark_observer.observe(document.documentElement, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode', 'data-color-scheme', 'data-bs-theme', 'dark']
-        });
-    }
-})();
-"""
-
-private const val DARK_MODE_REMOVE_JS = """
-(function() {
-    if (window.__siphon_dark_observer) {
-        window.__siphon_dark_observer.disconnect();
-        window.__siphon_dark_observer = null;
-    }
-    var s = document.getElementById('__siphon_dark_mode');
-    if (s) s.remove();
-})();
-"""
-
-private fun applyWebDarkModeToWebView(webView: WebView, enabled: Boolean) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        @Suppress("DEPRECATION")
-        webView.settings.forceDark = if (enabled) WebSettings.FORCE_DARK_ON else WebSettings.FORCE_DARK_OFF
-    }
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        webView.settings.isAlgorithmicDarkeningAllowed = enabled
-    }
-    webView.evaluateJavascript(if (enabled) DARK_MODE_INJECT_JS else DARK_MODE_REMOVE_JS, null)
-}
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
@@ -472,15 +385,11 @@ fun BrowserScreen(
         if (shareUrl.isBlank() || shareUrl == NEW_TAB_URL) {
             Toast.makeText(context, "Nothing to share", Toast.LENGTH_SHORT).show()
         } else {
-            val shareTitle = activeWebView?.title?.takeIf { it.isNotBlank() } ?: activeTab?.title
-            val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, shareUrl)
-                if (!shareTitle.isNullOrBlank()) {
-                    putExtra(Intent.EXTRA_SUBJECT, shareTitle)
-                }
-            }
-            context.startActivity(Intent.createChooser(sendIntent, "Share page"))
+            shareText(
+                context = context,
+                text = shareUrl,
+                chooserTitle = "Share page"
+            )
         }
     }
 
@@ -604,7 +513,7 @@ fun BrowserScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Link,
+                            imageVector = SiphonIcons.Link,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onErrorContainer,
                             modifier = Modifier.size(20.dp)
@@ -627,7 +536,7 @@ fun BrowserScreen(
                         }
                         IconButton(onClick = onCancelRebind) {
                             Icon(
-                                imageVector = Icons.Rounded.Close,
+                                imageVector = SiphonIcons.Close,
                                 contentDescription = "Cancel rebind",
                                 tint = MaterialTheme.colorScheme.onErrorContainer
                             )
@@ -718,6 +627,15 @@ fun BrowserScreen(
                                 )
                             }
                         } else {
+                            DisposableEffect(tab.id) {
+                                onDispose {
+                                    readyTabs.remove(tab.id)
+                                    webViewMap.remove(tab.id)?.let { webView ->
+                                        webView.stopLoading()
+                                        webView.destroy()
+                                    }
+                                }
+                            }
                             val isPageReady = readyTabs[tab.id] == true
                             Box(
                                 modifier = Modifier
@@ -1003,14 +921,32 @@ fun BrowserScreen(
                                                 ): Boolean {
                                                     if (resultMsg == null) return false
                                                     val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
-                                                    val popupWebView = WebView(view?.context ?: return false).apply {
+                                                    val hostContext = view?.context ?: return false
+                                                    val mainHandler = Handler(Looper.getMainLooper())
+                                                    var popupWebViewRef: WebView? = null
+                                                    var isPopupCleanedUp = false
+                                                    lateinit var timeoutRunnable: Runnable
+                                                    val cleanupPopup: () -> Unit = {
+                                                        if (!isPopupCleanedUp) {
+                                                            isPopupCleanedUp = true
+                                                            mainHandler.removeCallbacks(timeoutRunnable)
+                                                            popupWebViewRef?.let { wv ->
+                                                                wv.stopLoading()
+                                                                wv.destroy()
+                                                            }
+                                                            popupWebViewRef = null
+                                                        }
+                                                    }
+                                                    timeoutRunnable = Runnable { cleanupPopup() }
+
+                                                    val popupWebView = WebView(hostContext).apply {
                                                         webViewClient = object : WebViewClient() {
                                                             override fun shouldOverrideUrlLoading(v: WebView?, request: WebResourceRequest?): Boolean {
                                                                 val popupUrl = request?.url?.toString()
                                                                 if (!popupUrl.isNullOrBlank()) {
                                                                     if (popupUrl.startsWith("magnet:", ignoreCase = true)) {
                                                                         currentOnMagnetLinkClicked.value(popupUrl)
-                                                                        destroy()
+                                                                        cleanupPopup()
                                                                         return true
                                                                     }
                                                                     val sourceUrl = tabSnifferClient.resolveSourceUrl(
@@ -1021,19 +957,33 @@ fun BrowserScreen(
                                                                         tabSnifferClient.adblockEngine.shouldBlockRequest(popupUrl, sourceUrl, "main_frame")
                                                                     ) {
                                                                         tabSnifferClient.notifyAdBlocked(sourceUrl, popupUrl)
-                                                                        destroy()
+                                                                        cleanupPopup()
                                                                         return true
                                                                     }
                                                                     pendingPopupUrl = popupUrl
-                                                                    destroy()
+                                                                    cleanupPopup()
                                                                     return true
                                                                 }
                                                                 return false
                                                             }
+
+                                                            override fun onPageFinished(v: WebView?, url: String?) {
+                                                                cleanupPopup()
+                                                            }
+
+                                                            override fun onReceivedError(
+                                                                v: WebView?,
+                                                                request: WebResourceRequest?,
+                                                                error: WebResourceError?
+                                                            ) {
+                                                                cleanupPopup()
+                                                            }
                                                         }
                                                     }
+                                                    popupWebViewRef = popupWebView
                                                     transport.webView = popupWebView
                                                     resultMsg.sendToTarget()
+                                                    mainHandler.postDelayed(timeoutRunnable, 10_000L)
                                                     return true
                                                 }
 
@@ -1081,6 +1031,13 @@ fun BrowserScreen(
                                         if (isVisible && isPageReady) {
                                             canGoBack = webView.canGoBack()
                                             canGoForward = webView.canGoForward()
+                                        }
+                                    },
+                                    onRelease = { webView ->
+                                        readyTabs.remove(tab.id)
+                                        if (webViewMap.remove(tab.id) != null) {
+                                            webView.stopLoading()
+                                            webView.destroy()
                                         }
                                     },
                                     modifier = Modifier.fillMaxSize()

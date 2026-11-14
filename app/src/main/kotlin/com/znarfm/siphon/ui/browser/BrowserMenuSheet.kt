@@ -14,24 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.DarkMode
-import androidx.compose.material.icons.rounded.DesktopWindows
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.FindInPage
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.PrivacyTip
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BottomSheetDefaults
@@ -56,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -139,7 +122,7 @@ fun BrowserMenuSheet(
                         modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            imageVector = SiphonIcons.ArrowBack,
                             contentDescription = "Back"
                         )
                     }
@@ -155,7 +138,7 @@ fun BrowserMenuSheet(
                         modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                            imageVector = SiphonIcons.ArrowForward,
                             contentDescription = "Forward"
                         )
                     }
@@ -175,7 +158,7 @@ fun BrowserMenuSheet(
                         modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
-                            imageVector = if (isBookmarked) Icons.Rounded.Star else Icons.Outlined.StarBorder,
+                            imageVector = if (isBookmarked) SiphonIcons.Star else SiphonIcons.Outlined.StarBorder,
                             contentDescription = if (isBookmarked) "Remove bookmark" else "Bookmark"
                         )
                     }
@@ -190,7 +173,7 @@ fun BrowserMenuSheet(
                         modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Share,
+                            imageVector = SiphonIcons.Share,
                             contentDescription = "Share"
                         )
                     }
@@ -205,7 +188,7 @@ fun BrowserMenuSheet(
                         modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Info,
+                            imageVector = SiphonIcons.Info,
                             contentDescription = "Page Info"
                         )
                     }
@@ -220,7 +203,7 @@ fun BrowserMenuSheet(
                         modifier = Modifier.size(42.dp)
                     ) {
                         Icon(
-                            imageVector = if (isLoading) Icons.Rounded.Close else Icons.Rounded.Refresh,
+                            imageVector = if (isLoading) SiphonIcons.Close else SiphonIcons.Refresh,
                             contentDescription = if (isLoading) "Stop" else "Reload"
                         )
                     }
@@ -238,7 +221,7 @@ fun BrowserMenuSheet(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     BrowserMenuItemRow(
-                        icon = Icons.Rounded.Add,
+                        icon = SiphonIcons.Add,
                         title = "New tab",
                         onClick = {
                             onDismissRequest()
@@ -250,7 +233,7 @@ fun BrowserMenuSheet(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
                     BrowserMenuItemRow(
-                        icon = Icons.Rounded.PrivacyTip,
+                        icon = SiphonIcons.PrivacyTip,
                         title = "New incognito tab",
                         onClick = {
                             onDismissRequest()
@@ -271,7 +254,7 @@ fun BrowserMenuSheet(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     BrowserMenuItemRow(
-                        icon = Icons.Rounded.Star,
+                        icon = SiphonIcons.Star,
                         title = "Bookmarks",
                         onClick = {
                             onDismissRequest()
@@ -283,7 +266,7 @@ fun BrowserMenuSheet(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
                     BrowserMenuItemRow(
-                        icon = Icons.Rounded.History,
+                        icon = SiphonIcons.History,
                         title = "History",
                         onClick = {
                             onDismissRequest()
@@ -295,7 +278,7 @@ fun BrowserMenuSheet(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
                     BrowserMenuItemRow(
-                        icon = Icons.Rounded.Download,
+                        icon = SiphonIcons.Download,
                         title = "Downloads",
                         onClick = {
                             onDismissRequest()
@@ -321,7 +304,7 @@ fun BrowserMenuSheet(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
                     BrowserMenuItemRow(
-                        icon = Icons.Rounded.FindInPage,
+                        icon = SiphonIcons.FindInPage,
                         title = "Find in page",
                         onClick = {
                             onDismissRequest()
@@ -342,7 +325,7 @@ fun BrowserMenuSheet(
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     BrowserMenuItemRow(
-                        icon = Icons.Rounded.DarkMode,
+                        icon = SiphonIcons.DarkMode,
                         title = "Web Dark Mode",
                         onClick = onToggleWebDarkMode,
                         trailingContent = {
@@ -357,7 +340,7 @@ fun BrowserMenuSheet(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
                     BrowserMenuItemRow(
-                        icon = Icons.Rounded.DesktopWindows,
+                        icon = SiphonIcons.DesktopWindows,
                         title = "Desktop site",
                         onClick = onToggleDesktopMode,
                         trailingContent = {
@@ -372,7 +355,7 @@ fun BrowserMenuSheet(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
                     BrowserMenuItemRow(
-                        icon = Icons.Rounded.Shield,
+                        icon = SiphonIcons.Shield,
                         title = "Ad Blocker",
                         onClick = onToggleAdBlock,
                         trailingContent = {
@@ -426,7 +409,7 @@ fun BrowserMenuSheet(
                     .clip(ExpressiveShapeTokens.PillShape)
             ) {
                 BrowserMenuItemRow(
-                    icon = Icons.Rounded.Settings,
+                    icon = SiphonIcons.Settings,
                     title = "Settings",
                     onClick = {
                         onDismissRequest()

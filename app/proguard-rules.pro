@@ -1,5 +1,4 @@
-# Keep Room entities, DAOs, and Database implementations
--keep class com.znarfm.siphon.data.db.** { *; }
+# Keep Room Database implementations
 -keep class * extends androidx.room.RoomDatabase {
     void <init>();
 }
@@ -9,8 +8,16 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 
-# Keep Service & TileService entry points
--keep class com.znarfm.siphon.core.service.** { *; }
+# Keep Service, JobService & TileService entry points
+-keep class * extends android.app.Service {
+    public void <init>();
+}
+-keep class * extends android.app.job.JobService {
+    public void <init>();
+}
+-keep class * extends android.service.quicksettings.TileService {
+    public void <init>();
+}
 
 # OkHttp & Kotlin Coroutines R8 full mode compatibility
 -dontwarn okhttp3.**
@@ -21,10 +28,13 @@
 -dontwarn org.openjsse.**
 -keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase
 
-# libtorrent4j JNI and wrapper classes
--keep class org.libtorrent4j.** { *; }
+# libtorrent4j JNI/SWIG bindings and native callbacks
+-keep class org.libtorrent4j.swig.** { *; }
+-keep interface org.libtorrent4j.AlertListener { *; }
+-keepclasseswithmembers class * {
+    native <methods>;
+}
 -dontwarn org.libtorrent4j.**
 
 # NativeAdblockJni JNI bindings
 -keep class com.znarfm.siphon.core.adblock.NativeAdblockJni { *; }
--keep class com.znarfm.siphon.core.adblock.CosmeticResources { *; }

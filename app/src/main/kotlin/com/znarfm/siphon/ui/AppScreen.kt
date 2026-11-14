@@ -1,0 +1,15 @@
+package com.znarfm.siphon.ui
+
+enum class AppScreen {
+    BROWSER,
+    QUEUE,
+    TAB_SWITCHER,
+    BOOKMARKS,
+    HISTORY,
+    SETTINGS,
+    SETTINGS_BROWSER,
+    SETTINGS_APPEARANCE,
+    SETTINGS_ADBLOCK,
+    SETTINGS_DOWNLOADS,
+    SETTINGS_ABOUT
+}

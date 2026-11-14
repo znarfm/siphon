@@ -30,34 +30,44 @@ object SnifferUrlClassifier {
         "master", "index", "playlist", "manifest", "stream", "media", "video", "audio", "chunklist", "prog_index"
     )
 
-    fun isCandidateMediaUrl(url: String, requestHeaders: Map<String, String>): Boolean {
-        val secFetchDest = requestHeaders.entries
-            .firstOrNull { it.key.equals("Sec-Fetch-Dest", ignoreCase = true) }
-            ?.value
-            ?.lowercase(Locale.ROOT)
-        if (secFetchDest == "video" || secFetchDest == "audio" || secFetchDest == "track") return true
+    private val CLEAN_LANG_REGEX = Regex("[^a-zA-Z0-9_-]")
+    private val INVALID_FILENAME_CHARS_REGEX = Regex("[\\\\/:*?\"<>|]")
 
-        val accept = requestHeaders.entries
-            .firstOrNull { it.key.equals("Accept", ignoreCase = true) }
-            ?.value
-            ?.lowercase(Locale.ROOT)
-        if (accept?.contains("video/") == true || accept?.contains("audio/") == true || accept?.contains("text/vtt") == true) return true
-
-        val path = runCatching<String?> {
+    private fun extractLowercasePath(url: String): String {
+        return runCatching<String?> {
             url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
         }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+    }
+
+    private fun isSubtitlePathOrQuery(lowercasePath: String, url: String): Boolean {
+        val ext = lowercasePath.substringAfterLast('.', "")
+        if (ext in SUBTITLE_EXTENSIONS) return true
+        val lowerUrl = url.lowercase(Locale.ROOT)
+        return lowerUrl.contains("format=vtt") || lowerUrl.contains("fmt=vtt") ||
+            lowerUrl.contains("type=vtt") || lowerUrl.contains(".vtt?") || lowerUrl.contains(".srt?")
+    }
+
+    fun isCandidateMediaUrl(url: String, requestHeaders: Map<String, String>): Boolean {
+        var secFetchDest: String? = null
+        var accept: String? = null
+        for ((key, value) in requestHeaders) {
+            if (key.equals("Sec-Fetch-Dest", ignoreCase = true)) {
+                secFetchDest = value.lowercase(Locale.ROOT)
+            } else if (key.equals("Accept", ignoreCase = true)) {
+                accept = value.lowercase(Locale.ROOT)
+            }
+            if (secFetchDest != null && accept != null) break
+        }
+        if (secFetchDest == "video" || secFetchDest == "audio" || secFetchDest == "track") return true
+        if (accept != null && (accept.contains("video/") || accept.contains("audio/") || accept.contains("text/vtt"))) return true
+
+        val path = extractLowercasePath(url)
         val ext = path.substringAfterLast('.', "")
-        return ext in MEDIA_EXTENSIONS || ext in SEGMENT_EXTENSIONS || isSubtitleUrl(url)
+        return ext in MEDIA_EXTENSIONS || ext in SEGMENT_EXTENSIONS || isSubtitlePathOrQuery(path, url)
     }
 
     fun isSubtitleUrl(url: String): Boolean {
-        val path = runCatching<String?> {
-            url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
-        }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
-        val ext = path.substringAfterLast('.', "")
-        if (ext in SUBTITLE_EXTENSIONS) return true
-        val lowerUrl = url.lowercase(Locale.ROOT)
-        return lowerUrl.contains("format=vtt") || lowerUrl.contains("fmt=vtt") || lowerUrl.contains("type=vtt") || lowerUrl.contains(".vtt?") || lowerUrl.contains(".srt?")
+        return isSubtitlePathOrQuery(extractLowercasePath(url), url)
     }
 
     fun isSubtitleMime(mime: String): Boolean {
@@ -67,10 +77,7 @@ object SnifferUrlClassifier {
     }
 
     fun subtitleExtFromUrlOrMime(url: String, mime: String): String {
-        val path = runCatching<String?> {
-            url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
-        }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
-        val ext = path.substringAfterLast('.', "")
+        val ext = extractLowercasePath(url).substringAfterLast('.', "")
         if (ext in SUBTITLE_EXTENSIONS) return ext
         val m = mime.lowercase(Locale.ROOT)
         return when {
@@ -112,7 +119,7 @@ object SnifferUrlClassifier {
 
     fun buildSubtitleDisplayName(url: String, label: String?, lang: String?, ext: String): String {
         val rawName = extractDisplayNameFromUrl(url, "subtitle.$ext").substringBeforeLast('.')
-        val cleanLang = (lang ?: label)?.trim()?.replace(Regex("[^a-zA-Z0-9_-]"), "")?.takeIf { it.isNotBlank() }
+        val cleanLang = (lang ?: label)?.trim()?.replace(CLEAN_LANG_REGEX, "")?.takeIf { it.isNotBlank() }
         return if (cleanLang != null && !rawName.endsWith(".$cleanLang", ignoreCase = true)) {
             "$rawName.$cleanLang.$ext"
         } else {
@@ -121,9 +128,7 @@ object SnifferUrlClassifier {
     }
 
     fun isSegmentUrl(url: String): Boolean {
-        val path = runCatching<String?> {
-            url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
-        }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+        val path = extractLowercasePath(url)
         val ext = path.substringAfterLast('.', "")
         if (ext in SEGMENT_EXTENSIONS) return true
         if (ext in SUBTITLE_EXTENSIONS && (path.contains("/seg") || path.contains("segment") || path.contains("chunk") || path.contains("part"))) {
@@ -133,16 +138,12 @@ object SnifferUrlClassifier {
     }
 
     fun isHlsUrl(url: String): Boolean {
-        val path = runCatching<String?> {
-            url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
-        }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+        val path = extractLowercasePath(url)
         return path.endsWith(".m3u8") || path.contains(".m3u8")
     }
 
     fun isDashUrl(url: String): Boolean {
-        val path = runCatching<String?> {
-            url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
-        }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+        val path = extractLowercasePath(url)
         return path.endsWith(".mpd") || path.contains(".mpd")
     }
 
@@ -159,10 +160,7 @@ object SnifferUrlClassifier {
     }
 
     fun isAudioUrl(url: String): Boolean {
-        val path = runCatching<String?> {
-            url.toHttpUrlOrNull()?.encodedPath?.lowercase(Locale.ROOT)
-        }.getOrNull() ?: url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
-        val ext = path.substringAfterLast('.', "")
+        val ext = extractLowercasePath(url).substringAfterLast('.', "")
         return ext in AUDIO_EXTENSIONS
     }
 
@@ -195,7 +193,7 @@ object SnifferUrlClassifier {
             ?: url.substringBefore('?').substringBefore('#')
         val rawName = path.substringAfterLast('/', "").trim()
         val sanitizedTitle = pageTitle?.trim()
-            ?.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            ?.replace(INVALID_FILENAME_CHARS_REGEX, "_")
             ?.take(80)
             ?.trim()
             ?.takeIf { it.isNotBlank() }

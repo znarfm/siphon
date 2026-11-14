@@ -22,18 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.FileOpen
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
@@ -67,8 +56,10 @@ import com.znarfm.siphon.core.adblock.AdblockSettings
 import com.znarfm.siphon.core.adblock.FilterListCategory
 import com.znarfm.siphon.core.adblock.FilterListSource
 import com.znarfm.siphon.core.adblock.NativeAdblockJni
+import com.znarfm.siphon.ui.common.ClearHistoryDialog
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
 import com.znarfm.siphon.ui.theme.TabularNumberStyle
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 private enum class FilterManagerTab(val label: String) {
     BUILT_IN("Built-in"),
@@ -143,37 +134,12 @@ fun PrivacyAdblockSettingsScreen(
     }
 
     if (showClearHistoryDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearHistoryDialog = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.DeleteSweep,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
+        ClearHistoryDialog(
+            onConfirm = {
+                showClearHistoryDialog = false
+                onClearHistory()
             },
-            title = { Text("Clear browsing history?") },
-            text = {
-                Text("This will permanently delete all visited pages from your browsing history.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showClearHistoryDialog = false
-                        onClearHistory()
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Clear", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearHistoryDialog = false }) {
-                    Text("Cancel")
-                }
-            }
+            onDismiss = { showClearHistoryDialog = false }
         )
     }
 
@@ -203,7 +169,7 @@ fun PrivacyAdblockSettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     SettingsSwitchRow(
-                        icon = Icons.Rounded.Shield,
+                        icon = SiphonIcons.Shield,
                         title = "Ad Blocker",
                         subtitle = if (isAdBlockEnabled) "Blocking ads and trackers" else "Disabled",
                         checked = isAdBlockEnabled,
@@ -227,7 +193,7 @@ fun PrivacyAdblockSettingsScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Warning,
+                                imageVector = SiphonIcons.Warning,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onErrorContainer,
                                 modifier = Modifier.size(22.dp)
@@ -257,7 +223,7 @@ fun PrivacyAdblockSettingsScreen(
             item(key = "filter_lists_header") {
                 Spacer(modifier = Modifier.height(4.dp))
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.Tune,
+                    icon = SiphonIcons.Tune,
                     title = "Filter Lists & Rules"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -295,7 +261,7 @@ fun PrivacyAdblockSettingsScreen(
                             Text("Updating...")
                         } else {
                             Icon(
-                                imageVector = Icons.Rounded.Refresh,
+                                imageVector = SiphonIcons.Refresh,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -399,7 +365,7 @@ fun PrivacyAdblockSettingsScreen(
                                     shape = RoundedCornerShape(14.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Add,
+                                        imageVector = SiphonIcons.Add,
                                         contentDescription = null,
                                         modifier = Modifier.size(18.dp)
                                     )
@@ -483,7 +449,7 @@ fun PrivacyAdblockSettingsScreen(
                                         shape = RoundedCornerShape(14.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Rounded.FileOpen,
+                                            imageVector = SiphonIcons.FileOpen,
                                             contentDescription = null,
                                             modifier = Modifier.size(18.dp)
                                         )
@@ -511,7 +477,7 @@ fun PrivacyAdblockSettingsScreen(
             item(key = "section_browsing_data") {
                 Spacer(modifier = Modifier.height(4.dp))
                 SettingsSectionHeader(
-                    icon = Icons.Rounded.DeleteSweep,
+                    icon = SiphonIcons.DeleteSweep,
                     title = "Browsing Data"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -522,7 +488,7 @@ fun PrivacyAdblockSettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     SettingsNavigationRow(
-                        icon = Icons.Rounded.DeleteSweep,
+                        icon = SiphonIcons.DeleteSweep,
                         title = "Clear Browsing History",
                         subtitle = "Remove all visited pages",
                         titleColor = MaterialTheme.colorScheme.error,
@@ -640,7 +606,7 @@ private fun CustomFilterListItem(
             }
             IconButton(onClick = onRemove) {
                 Icon(
-                    imageVector = Icons.Rounded.Delete,
+                    imageVector = SiphonIcons.Delete,
                     contentDescription = "Remove custom list",
                     tint = MaterialTheme.colorScheme.error
                 )

@@ -6,11 +6,14 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import com.znarfm.siphon.core.network.NetworkClients
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -232,7 +235,7 @@ class AppUpdater(private val client: OkHttpClient = defaultClient()) {
         private val SHA256_HEX_REGEX = Regex("^[0-9a-fA-F]{64}$")
 
         private fun defaultClient(): OkHttpClient {
-            return OkHttpClient.Builder()
+            return NetworkClients.defaultClient.newBuilder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
                 .followRedirects(true)
@@ -269,23 +272,25 @@ class AppUpdater(private val client: OkHttpClient = defaultClient()) {
         }
 
         internal fun parseReleaseJson(json: String): ReleaseInfo? {
-            val root = SimpleJsonParser(json).parseObjectOrNull() ?: return null
+            val root = try {
+                JSONObject(json)
+            } catch (_: Exception) {
+                return null
+            }
 
-            val tagName = root["tag_name"] as? String ?: return null
-            if (tagName.isBlank()) return null
-
-            val releaseUrl = (root["html_url"] as? String).orEmpty()
-            val releaseNotes = (root["body"] as? String).orEmpty()
-            val assets = root["assets"] as? List<*> ?: emptyList<Any?>()
+            val tagName = root.optString("tag_name", "").takeIf { it.isNotBlank() } ?: return null
+            val releaseUrl = root.optString("html_url", "")
+            val releaseNotes = root.optString("body", "")
+            val assets = root.optJSONArray("assets") ?: JSONArray()
 
             var apkUrl: String? = null
             var apkSizeBytes = 0L
             var expectedSha256: String? = null
 
-            for (item in assets) {
-                val asset = item as? Map<*, *> ?: continue
-                val name = (asset["name"] as? String).orEmpty()
-                val downloadUrl = (asset["browser_download_url"] as? String).orEmpty()
+            for (i in 0 until assets.length()) {
+                val asset = assets.optJSONObject(i) ?: continue
+                val name = asset.optString("name", "")
+                val downloadUrl = asset.optString("browser_download_url", "")
                 if (downloadUrl.isBlank()) continue
 
                 val isApk = name.endsWith(".apk", ignoreCase = true) ||
@@ -293,8 +298,8 @@ class AppUpdater(private val client: OkHttpClient = defaultClient()) {
 
                 if (isApk && apkUrl == null) {
                     apkUrl = downloadUrl
-                    apkSizeBytes = (asset["size"] as? Number)?.toLong() ?: 0L
-                    val digest = asset["digest"] as? String
+                    apkSizeBytes = asset.optLong("size", 0L)
+                    val digest = asset.optString("digest", "").takeIf { it.isNotBlank() }
                     if (digest != null && digest.startsWith("sha256:", ignoreCase = true)) {
                         expectedSha256 = normalizeSha256Hex(digest.substringAfter(':'))
                     }
@@ -333,159 +338,5 @@ class AppUpdater(private val client: OkHttpClient = defaultClient()) {
             }
             return digest.digest().joinToString("") { "%02x".format(it) }
         }
-    }
-}
-
-/**
- * Minimal pure-Kotlin JSON parser so release JSON parsing has no dependency on Android's
- * org.json stubs and runs identically in local JVM unit tests and on Android.
- */
-private class SimpleJsonParser(private val input: String) {
-    private var pos = 0
-
-    fun parseObjectOrNull(): Map<String, Any?>? {
-        return try {
-            skipWhitespace()
-            if (pos >= input.length || input[pos] != '{') return null
-            parseObject()
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun parseValue(): Any? {
-        skipWhitespace()
-        if (pos >= input.length) error("Unexpected end of JSON")
-        return when (val ch = input[pos]) {
-            '{' -> parseObject()
-            '[' -> parseArray()
-            '"' -> parseString()
-            't' -> parseLiteral("true", true)
-            'f' -> parseLiteral("false", false)
-            'n' -> parseLiteral("null", null)
-            '-', in '0'..'9' -> parseNumber()
-            else -> error("Unexpected char '$ch' at $pos")
-        }
-    }
-
-    private fun parseObject(): Map<String, Any?> {
-        expect('{')
-        val map = LinkedHashMap<String, Any?>()
-        skipWhitespace()
-        if (peek() == '}') {
-            pos++
-            return map
-        }
-        while (true) {
-            skipWhitespace()
-            val key = parseString()
-            skipWhitespace()
-            expect(':')
-            val value = parseValue()
-            map[key] = value
-            skipWhitespace()
-            when (peek()) {
-                ',' -> pos++
-                '}' -> {
-                    pos++
-                    return map
-                }
-                else -> error("Expected ',' or '}' at $pos")
-            }
-        }
-    }
-
-    private fun parseArray(): List<Any?> {
-        expect('[')
-        val list = ArrayList<Any?>()
-        skipWhitespace()
-        if (peek() == ']') {
-            pos++
-            return list
-        }
-        while (true) {
-            list.add(parseValue())
-            skipWhitespace()
-            when (peek()) {
-                ',' -> pos++
-                ']' -> {
-                    pos++
-                    return list
-                }
-                else -> error("Expected ',' or ']' at $pos")
-            }
-        }
-    }
-
-    private fun parseString(): String {
-        expect('"')
-        val sb = StringBuilder()
-        while (pos < input.length) {
-            val ch = input[pos++]
-            when (ch) {
-                '"' -> return sb.toString()
-                '\\' -> {
-                    if (pos >= input.length) error("Unterminated escape")
-                    when (val esc = input[pos++]) {
-                        '"' -> sb.append('"')
-                        '\\' -> sb.append('\\')
-                        '/' -> sb.append('/')
-                        'b' -> sb.append('\b')
-                        'f' -> sb.append('\u000C')
-                        'n' -> sb.append('\n')
-                        'r' -> sb.append('\r')
-                        't' -> sb.append('\t')
-                        'u' -> {
-                            if (pos + 4 > input.length) error("Invalid unicode escape")
-                            val hex = input.substring(pos, pos + 4)
-                            sb.append(hex.toInt(16).toChar())
-                            pos += 4
-                        }
-                        else -> error("Invalid escape '\\$esc'")
-                    }
-                }
-                else -> sb.append(ch)
-            }
-        }
-        error("Unterminated string")
-    }
-
-    private fun parseNumber(): Number {
-        val start = pos
-        if (peek() == '-') pos++
-        while (pos < input.length && input[pos] in '0'..'9') pos++
-        var isDecimal = false
-        if (pos < input.length && input[pos] == '.') {
-            isDecimal = true
-            pos++
-            while (pos < input.length && input[pos] in '0'..'9') pos++
-        }
-        if (pos < input.length && (input[pos] == 'e' || input[pos] == 'E')) {
-            isDecimal = true
-            pos++
-            if (pos < input.length && (input[pos] == '+' || input[pos] == '-')) pos++
-            while (pos < input.length && input[pos] in '0'..'9') pos++
-        }
-        val raw = input.substring(start, pos)
-        return if (isDecimal) raw.toDouble() else raw.toLong()
-    }
-
-    private fun parseLiteral(expected: String, value: Any?): Any? {
-        if (!input.startsWith(expected, pos)) error("Expected $expected at $pos")
-        pos += expected.length
-        return value
-    }
-
-    private fun skipWhitespace() {
-        while (pos < input.length && input[pos].isWhitespace()) pos++
-    }
-
-    private fun peek(): Char? = if (pos < input.length) input[pos] else null
-
-    private fun expect(expected: Char) {
-        if (pos >= input.length || input[pos] != expected) {
-            error("Expected '$expected' at $pos")
-        }
-        pos++
     }
 }

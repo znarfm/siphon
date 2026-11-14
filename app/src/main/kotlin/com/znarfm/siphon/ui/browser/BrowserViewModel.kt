@@ -1,18 +1,17 @@
 package com.znarfm.siphon.ui.browser
 
-import android.content.Context
-import android.net.Uri
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.znarfm.siphon.core.adblock.AdblockEngine
 import com.znarfm.siphon.core.adblock.AdblockSettings
-import com.znarfm.siphon.core.service.DownloadForegroundService
+import com.znarfm.siphon.core.common.FormatUtils
 import com.znarfm.siphon.core.sniffer.MediaSnifferClient
 import com.znarfm.siphon.core.sniffer.SniffedMedia
 import com.znarfm.siphon.data.db.BookmarkEntity
 import com.znarfm.siphon.data.db.DownloadEntity
 import com.znarfm.siphon.data.db.HistoryEntity
+import com.znarfm.siphon.data.prefs.AppPreferences
 import com.znarfm.siphon.data.repository.BrowserPreferences
 import com.znarfm.siphon.data.repository.BrowserRepository
 import com.znarfm.siphon.data.repository.DownloadRepository
@@ -116,10 +115,7 @@ class BrowserViewModel(
     private val _isSnifferSheetOpen = MutableStateFlow(false)
     val isSnifferSheetOpen = _isSnifferSheetOpen.asStateFlow()
 
-    private val prefs = browserRepository.application.getSharedPreferences(
-        DownloadForegroundService.PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    private val prefs = AppPreferences.prefs(browserRepository.application)
 
     private val _themeMode = MutableStateFlow(
         runCatching {
@@ -233,9 +229,9 @@ class BrowserViewModel(
         val closedTab = currentList[closedIndex]
         _lastClosedTab.value = closedTab
         lastClosedTabIndex = closedIndex
-        _tabThumbnails.value = _tabThumbnails.value - tabId
+        _tabThumbnails.update { it - tabId }
         _blockedCountsByTab.update { it - tabId }
-        synchronized(tabSnifferClients) { tabSnifferClients.remove(tabId) }
+        synchronized(tabSnifferClients) { tabSnifferClients.remove(tabId) }?.destroy()
 
         if (currentList.size <= 1) {
             val resetTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
@@ -279,9 +275,12 @@ class BrowserViewModel(
         val currentList = _browserTabs.value
         if (incognitoOnly) {
             val closedIds = currentList.filter { it.isIncognito }.map { it.id }.toSet()
-            _tabThumbnails.value = _tabThumbnails.value - closedIds
+            _tabThumbnails.update { it - closedIds }
             _blockedCountsByTab.update { it - closedIds }
-            synchronized(tabSnifferClients) { closedIds.forEach { tabSnifferClients.remove(it) } }
+            val removedClients = synchronized(tabSnifferClients) {
+                closedIds.mapNotNull { tabSnifferClients.remove(it) }
+            }
+            removedClients.forEach { it.destroy() }
             val remaining = currentList.filter { !it.isIncognito }
             if (remaining.isEmpty()) {
                 val freshTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
@@ -301,7 +300,10 @@ class BrowserViewModel(
         } else {
             _tabThumbnails.value = emptyMap()
             _blockedCountsByTab.value = emptyMap()
-            synchronized(tabSnifferClients) { tabSnifferClients.clear() }
+            val removedClients = synchronized(tabSnifferClients) {
+                tabSnifferClients.values.toList().also { tabSnifferClients.clear() }
+            }
+            removedClients.forEach { it.destroy() }
             val freshTab = BrowserTab(url = NEW_TAB_URL, title = "New Tab")
             _browserTabs.value = listOf(freshTab)
             _activeTabId.value = freshTab.id
@@ -591,10 +593,16 @@ class BrowserViewModel(
     }
 
     private fun deriveTitleFromUrl(url: String): String {
-        return runCatching {
-            val uri = Uri.parse(url)
-            uri.host?.removePrefix("www.")?.ifBlank { null }
-        }.getOrNull() ?: "Tab"
+        return FormatUtils.extractHostDisplay(url).ifBlank { "Tab" }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        val clients = synchronized(tabSnifferClients) {
+            tabSnifferClients.values.toList().also { tabSnifferClients.clear() }
+        }
+        clients.forEach { it.destroy() }
+        _tabThumbnails.value = emptyMap()
     }
 }
 

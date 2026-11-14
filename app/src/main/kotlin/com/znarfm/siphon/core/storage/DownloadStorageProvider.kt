@@ -9,6 +9,8 @@ import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
+import com.znarfm.siphon.core.common.FormatUtils
+import com.znarfm.siphon.data.prefs.AppPreferences
 import java.io.Closeable
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -73,9 +75,8 @@ class DownloadStorageProvider(context: Context) {
             else -> SmartRouting.resolveCategoryFolder(safeName, safeMime)
         }
 
-        val effectiveTreeUri = customTreeUri ?: appContext
-            .getSharedPreferences("siphon_prefs", Context.MODE_PRIVATE)
-            .getString("pref_custom_download_uri", null)
+        val effectiveTreeUri = customTreeUri ?: AppPreferences.prefs(appContext)
+            .getString(AppPreferences.PREF_CUSTOM_DOWNLOAD_URI, null)
             ?.takeIf { it.isNotBlank() }
             ?.let { Uri.parse(it) }
 
@@ -280,12 +281,7 @@ class DownloadStorageProvider(context: Context) {
         uri.authority == MediaStore.AUTHORITY
 
     companion object {
-        fun sanitizeDisplayName(raw: String): String {
-            val cleaned = raw
-                .replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001F]"), "_")
-                .trim()
-                .trim('.')
-            return cleaned.ifEmpty { "download_${System.currentTimeMillis()}" }
-        }
+        fun sanitizeDisplayName(raw: String): String =
+            FormatUtils.sanitizeFileName(raw, fallback = "download_${System.currentTimeMillis()}")
     }
 }

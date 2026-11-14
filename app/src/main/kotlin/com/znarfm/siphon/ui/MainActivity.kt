@@ -39,15 +39,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ContentPaste
-import androidx.compose.material.icons.rounded.Hub
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -70,7 +65,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -83,7 +77,12 @@ import com.znarfm.siphon.SiphonApp
 import com.znarfm.siphon.core.updater.AppUpdater
 import com.znarfm.siphon.core.updater.UpdateState
 import com.znarfm.siphon.data.db.DownloadState
+import com.znarfm.siphon.data.repository.ConcurrencySettings
 import com.znarfm.siphon.data.repository.UpdateRepository
+import com.znarfm.siphon.core.adblock.AdblockSettings
+import com.znarfm.siphon.data.repository.BrowserPreferences
+import com.znarfm.siphon.ui.theme.AppColorSeed
+import com.znarfm.siphon.ui.theme.AppThemeMode
 import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
 import com.znarfm.siphon.ui.adaptive.TabletNavigationRail
 import com.znarfm.siphon.ui.adaptive.rememberWindowSizeClass
@@ -112,20 +111,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-enum class AppScreen {
-    BROWSER,
-    QUEUE,
-    TAB_SWITCHER,
-    BOOKMARKS,
-    HISTORY,
-    SETTINGS,
-    SETTINGS_BROWSER,
-    SETTINGS_APPEARANCE,
-    SETTINGS_ADBLOCK,
-    SETTINGS_DOWNLOADS,
-    SETTINGS_ABOUT
-}
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 class MainActivity : ComponentActivity() {
 
@@ -213,7 +199,7 @@ class MainActivity : ComponentActivity() {
             val clipText = clipboard?.primaryClip?.let { clip ->
                 if (clip.itemCount > 0) clip.getItemAt(0).text?.toString() else null
             }
-            val link = extractLinkFromText(clipText)
+            val link = IntentLinkExtractor.extractLinkFromText(clipText)
             if (!link.isNullOrBlank() && link != lastPromptedClipboardLink) {
                 lastPromptedClipboardLink = link
                 _pendingClipboardLink.value = link
@@ -279,7 +265,7 @@ class MainActivity : ComponentActivity() {
                 val clipText = clipboard?.primaryClip?.let { clip ->
                     if (clip.itemCount > 0) clip.getItemAt(0).text?.toString() else null
                 }
-                val link = extractLinkFromText(clipText)
+                val link = IntentLinkExtractor.extractLinkFromText(clipText)
                 when {
                     !link.isNullOrBlank() && link.startsWith("magnet:", ignoreCase = true) -> {
                         queueMagnetDownload(link)
@@ -298,7 +284,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val link = extractLinkFromIntent(intent) ?: return
+        val link = IntentLinkExtractor.extractLinkFromIntent(intent) ?: return
         when {
             link.startsWith("magnet:", ignoreCase = true) -> {
                 queueMagnetDownload(link)
@@ -313,77 +299,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun extractLinkFromIntent(intent: Intent): String? {
-        val data = intent.dataString
-        if (!data.isNullOrBlank()) {
-            val lower = data.lowercase()
-            if (lower.startsWith("magnet:") ||
-                lower.startsWith("http://") ||
-                lower.startsWith("https://") ||
-                lower.startsWith("content://") ||
-                lower.startsWith("file://")
-            ) {
-                return data
-            }
-        }
-
-        val streamUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            intent.getParcelableExtra(Intent.EXTRA_STREAM)
-        }
-        if (streamUri != null) {
-            val streamStr = streamUri.toString()
-            if (streamStr.startsWith("content://", ignoreCase = true) ||
-                streamStr.startsWith("file://", ignoreCase = true)
-            ) {
-                return streamStr
-            }
-        }
-
-        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
-        extractLinkFromText(text)?.let { return it }
-
-        val clip = intent.clipData
-        if (clip != null && clip.itemCount > 0) {
-            for (i in 0 until clip.itemCount) {
-                val item = clip.getItemAt(i)
-                val uriStr = item.uri?.toString()
-                if (!uriStr.isNullOrBlank()) {
-                    val lower = uriStr.lowercase()
-                    if (lower.startsWith("magnet:") ||
-                        lower.startsWith("http://") ||
-                        lower.startsWith("https://") ||
-                        lower.startsWith("content://") ||
-                        lower.startsWith("file://")
-                    ) {
-                        return uriStr
-                    }
-                }
-                extractLinkFromText(item.text?.toString())?.let { return it }
-            }
-        }
-
-        extractLinkFromText(intent.getStringExtra(Intent.EXTRA_SUBJECT))?.let { return it }
-
-        return null
-    }
-
     companion object {
-        private val magnetRegex = Regex("""magnet:\?[^\s<>"']+""", RegexOption.IGNORE_CASE)
-        private val urlRegex = Regex("""https?://[^\s<>"'{}|\\^`]+""", RegexOption.IGNORE_CASE)
-
-        fun extractLinkFromText(text: String?): String? {
-            if (text.isNullOrBlank()) return null
-            magnetRegex.find(text)?.value?.trimEnd('.', ',', ')', ']', ';', '!')?.let { return it }
-            return urlRegex.find(text)?.value?.trimEnd('.', ',', ')', ']', ';', '!')
-        }
-
-        fun extractUrlFromText(text: String?): String? {
-            if (text.isNullOrBlank()) return null
-            return urlRegex.find(text)?.value?.trimEnd('.', ',', ')', ']', ';', '!')
-        }
+        fun extractUrlFromText(text: String?): String? = IntentLinkExtractor.extractUrlFromText(text)
     }
 
     private fun requestNotificationPermissionIfNeeded() {
@@ -474,6 +391,7 @@ fun MainContent(
 
     val downloads by queueViewModel.downloads.collectAsStateWithLifecycle()
     val chunksMap by queueViewModel.chunksMap.collectAsStateWithLifecycle()
+    val downloadFilesMap by queueViewModel.downloadFilesMap.collectAsStateWithLifecycle()
     val concurrencySettings by queueViewModel.concurrencySettings.collectAsStateWithLifecycle()
     val queueFilter by queueViewModel.filter.collectAsStateWithLifecycle()
     val queueSortOption by queueViewModel.sortOption.collectAsStateWithLifecycle()
@@ -481,8 +399,16 @@ fun MainContent(
     val queueSelectedIds by queueViewModel.selectedIds.collectAsStateWithLifecycle()
     val queueIsSelectionMode by queueViewModel.isSelectionMode.collectAsStateWithLifecycle()
 
-    val activeDownloadsCount = downloads.count {
-        it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED || it.state == DownloadState.MERGING
+    val activeDownloadsCount = remember(downloads) {
+        downloads.count {
+            it.state == DownloadState.ACTIVE || it.state == DownloadState.QUEUED || it.state == DownloadState.MERGING
+        }
+    }
+    val enabledAdblockListCount = remember(adblockSettings) {
+        adblockSettings.enabledLists.count { it.isEnabled }
+    }
+    val activeTabTitle = remember(browserTabs, activeTabId) {
+        browserTabs.firstOrNull { it.id == activeTabId }?.title
     }
 
     var backProgress by remember { mutableFloatStateOf(0f) }
@@ -629,7 +555,7 @@ fun MainContent(
                         colorSeed = colorSeed,
                         isAdBlockEnabled = isAdBlockEnabled,
                         adblockRuleCount = adblockRuleCount,
-                        enabledListCount = adblockSettings.enabledLists.count { it.isEnabled },
+                        enabledListCount = enabledAdblockListCount,
                         maxConcurrentDownloads = concurrencySettings.maxDownloads,
                         workersPerDownload = concurrencySettings.workers,
                         bandwidthLimit = concurrencySettings.bandwidthLimit,
@@ -653,6 +579,7 @@ fun MainContent(
                     QueueScreen(
                         downloads = downloads,
                         chunksMap = chunksMap,
+                        downloadFilesMap = downloadFilesMap,
                         maxConcurrentDownloads = concurrencySettings.maxDownloads,
                         workersPerDownload = concurrencySettings.workers,
                         bandwidthLimitBytes = concurrencySettings.bandwidthLimit,
@@ -729,7 +656,7 @@ fun MainContent(
                                 colorSeed = colorSeed,
                                 isAdBlockEnabled = isAdBlockEnabled,
                                 adblockRuleCount = adblockRuleCount,
-                                enabledListCount = adblockSettings.enabledLists.count { it.isEnabled },
+                                enabledListCount = enabledAdblockListCount,
                                 maxConcurrentDownloads = concurrencySettings.maxDownloads,
                                 workersPerDownload = concurrencySettings.workers,
                                 bandwidthLimit = concurrencySettings.bandwidthLimit,
@@ -753,115 +680,23 @@ fun MainContent(
                                     .weight(1f)
                                     .fillMaxHeight()
                             ) {
-                                when (activeSettingsScreen) {
-                                    AppScreen.SETTINGS_BROWSER -> {
-                                        BrowserSearchSettingsScreen(
-                                            browserPreferences = browserPrefs,
-                                            onSetSearchEngine = { browserViewModel.setSearchEngine(it) },
-                                            onSetWebDarkMode = { enabled ->
-                                                if (enabled != browserPrefs.webDarkMode) {
-                                                    browserViewModel.toggleWebDarkMode()
-                                                }
-                                            },
-                                            onSetDesktopMode = { enabled ->
-                                                if (enabled != browserPrefs.desktopMode) {
-                                                    browserViewModel.toggleDesktopMode()
-                                                }
-                                            },
-                                            onBack = navigateBack,
-                                            showBackButton = false
-                                        )
-                                    }
-                                    AppScreen.SETTINGS_APPEARANCE -> {
-                                        AppearanceSettingsScreen(
-                                            themeMode = themeMode,
-                                            colorSeed = colorSeed,
-                                            onSetThemeMode = { browserViewModel.setThemeMode(it) },
-                                            onSetColorSeed = { browserViewModel.setColorSeed(it) },
-                                            onBack = navigateBack,
-                                            showBackButton = false
-                                        )
-                                    }
-                                    AppScreen.SETTINGS_ADBLOCK -> {
-                                        PrivacyAdblockSettingsScreen(
-                                            isAdBlockEnabled = isAdBlockEnabled,
-                                            adblockSettings = adblockSettings,
-                                            activeRuleCount = adblockRuleCount,
-                                            onToggleAdBlock = { browserViewModel.toggleAdBlock() },
-                                            onToggleList = { id, enabled -> browserViewModel.toggleFilterList(id, enabled) },
-                                            onAddCustomList = { name, url -> browserViewModel.addCustomFilterList(name, url) },
-                                            onRemoveCustomList = { id -> browserViewModel.removeCustomFilterList(id) },
-                                            onUpdateCustomRules = { rules -> browserViewModel.updateCustomUserRules(rules) },
-                                            onRefreshSubscriptions = { onComplete ->
-                                                browserViewModel.refreshAdblockSubscriptions(
-                                                    onError = { err ->
-                                                        onComplete()
-                                                        Toast.makeText(
-                                                            context,
-                                                            "Adblock error: ${err.message ?: "Failed to update"}",
-                                                            Toast.LENGTH_SHORT
-                                                        ).show()
-                                                    },
-                                                    onResult = { rules, lists ->
-                                                        onComplete()
-                                                        Toast.makeText(
-                                                            context,
-                                                            "Adblock updated: $rules rules ($lists lists)",
-                                                            Toast.LENGTH_SHORT
-                                                        ).show()
-                                                    }
-                                                )
-                                            },
-                                            onClearHistory = { browserViewModel.clearHistory() },
-                                            onBack = navigateBack,
-                                            showBackButton = false
-                                        )
-                                    }
-                                    AppScreen.SETTINGS_DOWNLOADS -> {
-                                        DownloadSettingsScreen(
-                                            currentMaxDownloads = concurrencySettings.maxDownloads,
-                                            currentWorkers = concurrencySettings.workers,
-                                            currentBandwidthLimit = concurrencySettings.bandwidthLimit,
-                                            currentWifiOnly = concurrencySettings.wifiOnly,
-                                            currentCustomDownloadUri = concurrencySettings.customDownloadUri,
-                                            onUpdateConcurrency = { maxD, w, limit, wifi, customUri ->
-                                                queueViewModel.setConcurrency(maxD, w, limit, wifi, customUri)
-                                            },
-                                            onBack = navigateBack,
-                                            showBackButton = false
-                                        )
-                                    }
-                                    AppScreen.SETTINGS_ABOUT -> {
-                                        AboutUpdatesSettingsScreen(
-                                            versionName = updateRepository.currentVersionName,
-                                            versionCode = updateRepository.currentVersionCode,
-                                            autoUpdateEnabled = autoUpdateEnabled,
-                                            updateState = updateState,
-                                            onToggleAutoUpdate = { updateRepository.setAutoUpdateEnabled(it) },
-                                            onCheckForUpdates = { updateRepository.checkForUpdates(silent = false) },
-                                            onDownloadAndVerify = { updateRepository.downloadAndVerifyUpdate() },
-                                            onInstallUpdate = {
-                                                if (!updateRepository.installReadyApk(context)) {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Allow installing unknown apps for Siphon, then tap Install again",
-                                                        Toast.LENGTH_LONG
-                                                    ).show()
-                                                }
-                                            },
-                                            onOpenAuthorProfile = {
-                                                runCatching {
-                                                    context.startActivity(
-                                                        Intent(Intent.ACTION_VIEW, Uri.parse(AppUpdater.AUTHOR_GITHUB_URL))
-                                                    )
-                                                }
-                                            },
-                                            onBack = navigateBack,
-                                            showBackButton = false
-                                        )
-                                    }
-                                    else -> Unit
-                                }
+                                SettingsDetailPane(
+                                    screen = activeSettingsScreen,
+                                    showBackButton = false,
+                                    browserViewModel = browserViewModel,
+                                    queueViewModel = queueViewModel,
+                                    updateRepository = updateRepository,
+                                    browserPrefs = browserPrefs,
+                                    themeMode = themeMode,
+                                    colorSeed = colorSeed,
+                                    isAdBlockEnabled = isAdBlockEnabled,
+                                    adblockSettings = adblockSettings,
+                                    adblockRuleCount = adblockRuleCount,
+                                    concurrencySettings = concurrencySettings,
+                                    autoUpdateEnabled = autoUpdateEnabled,
+                                    updateState = updateState,
+                                    onBack = navigateBack
+                                )
                             }
                         }
                     } else {
@@ -870,6 +705,7 @@ fun MainContent(
                             QueueScreen(
                                 downloads = downloads,
                                 chunksMap = chunksMap,
+                                downloadFilesMap = downloadFilesMap,
                                 maxConcurrentDownloads = concurrencySettings.maxDownloads,
                                 workersPerDownload = concurrencySettings.workers,
                                 bandwidthLimitBytes = concurrencySettings.bandwidthLimit,
@@ -971,7 +807,7 @@ fun MainContent(
                                 colorSeed = colorSeed,
                                 isAdBlockEnabled = isAdBlockEnabled,
                                 adblockRuleCount = adblockRuleCount,
-                                enabledListCount = adblockSettings.enabledLists.count { it.isEnabled },
+                                enabledListCount = enabledAdblockListCount,
                                 maxConcurrentDownloads = concurrencySettings.maxDownloads,
                                 workersPerDownload = concurrencySettings.workers,
                                 bandwidthLimit = concurrencySettings.bandwidthLimit,
@@ -1000,104 +836,26 @@ fun MainContent(
                                 onBack = { onSelectScreen(AppScreen.BROWSER) }
                             )
                         }
-                        AppScreen.SETTINGS_BROWSER -> {
-                            BrowserSearchSettingsScreen(
-                                browserPreferences = browserPrefs,
-                                onSetSearchEngine = { browserViewModel.setSearchEngine(it) },
-                                onSetWebDarkMode = { enabled ->
-                                    if (enabled != browserPrefs.webDarkMode) {
-                                        browserViewModel.toggleWebDarkMode()
-                                    }
-                                },
-                                onSetDesktopMode = { enabled ->
-                                    if (enabled != browserPrefs.desktopMode) {
-                                        browserViewModel.toggleDesktopMode()
-                                    }
-                                },
-                                onBack = navigateBack
-                            )
-                        }
-                        AppScreen.SETTINGS_APPEARANCE -> {
-                            AppearanceSettingsScreen(
+                        AppScreen.SETTINGS_BROWSER,
+                        AppScreen.SETTINGS_APPEARANCE,
+                        AppScreen.SETTINGS_ADBLOCK,
+                        AppScreen.SETTINGS_DOWNLOADS,
+                        AppScreen.SETTINGS_ABOUT -> {
+                            SettingsDetailPane(
+                                screen = currentScreen,
+                                showBackButton = true,
+                                browserViewModel = browserViewModel,
+                                queueViewModel = queueViewModel,
+                                updateRepository = updateRepository,
+                                browserPrefs = browserPrefs,
                                 themeMode = themeMode,
                                 colorSeed = colorSeed,
-                                onSetThemeMode = { browserViewModel.setThemeMode(it) },
-                                onSetColorSeed = { browserViewModel.setColorSeed(it) },
-                                onBack = navigateBack
-                            )
-                        }
-                        AppScreen.SETTINGS_ADBLOCK -> {
-                            PrivacyAdblockSettingsScreen(
                                 isAdBlockEnabled = isAdBlockEnabled,
                                 adblockSettings = adblockSettings,
-                                activeRuleCount = adblockRuleCount,
-                                onToggleAdBlock = { browserViewModel.toggleAdBlock() },
-                                onToggleList = { id, enabled -> browserViewModel.toggleFilterList(id, enabled) },
-                                onAddCustomList = { name, url -> browserViewModel.addCustomFilterList(name, url) },
-                                onRemoveCustomList = { id -> browserViewModel.removeCustomFilterList(id) },
-                                onUpdateCustomRules = { rules -> browserViewModel.updateCustomUserRules(rules) },
-                                onRefreshSubscriptions = { onComplete ->
-                                    browserViewModel.refreshAdblockSubscriptions(
-                                        onError = { err ->
-                                            onComplete()
-                                            Toast.makeText(
-                                                context,
-                                                "Adblock error: ${err.message ?: "Failed to update"}",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        },
-                                        onResult = { rules, lists ->
-                                            onComplete()
-                                            Toast.makeText(
-                                                context,
-                                                "Adblock updated: $rules rules ($lists lists)",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    )
-                                },
-                                onClearHistory = { browserViewModel.clearHistory() },
-                                onBack = navigateBack
-                            )
-                        }
-                        AppScreen.SETTINGS_DOWNLOADS -> {
-                            DownloadSettingsScreen(
-                                currentMaxDownloads = concurrencySettings.maxDownloads,
-                                currentWorkers = concurrencySettings.workers,
-                                currentBandwidthLimit = concurrencySettings.bandwidthLimit,
-                                currentWifiOnly = concurrencySettings.wifiOnly,
-                                currentCustomDownloadUri = concurrencySettings.customDownloadUri,
-                                onUpdateConcurrency = { maxD, w, limit, wifi, customUri ->
-                                    queueViewModel.setConcurrency(maxD, w, limit, wifi, customUri)
-                                },
-                                onBack = navigateBack
-                            )
-                        }
-                        AppScreen.SETTINGS_ABOUT -> {
-                            AboutUpdatesSettingsScreen(
-                                versionName = updateRepository.currentVersionName,
-                                versionCode = updateRepository.currentVersionCode,
+                                adblockRuleCount = adblockRuleCount,
+                                concurrencySettings = concurrencySettings,
                                 autoUpdateEnabled = autoUpdateEnabled,
                                 updateState = updateState,
-                                onToggleAutoUpdate = { updateRepository.setAutoUpdateEnabled(it) },
-                                onCheckForUpdates = { updateRepository.checkForUpdates(silent = false) },
-                                onDownloadAndVerify = { updateRepository.downloadAndVerifyUpdate() },
-                                onInstallUpdate = {
-                                    if (!updateRepository.installReadyApk(context)) {
-                                        Toast.makeText(
-                                            context,
-                                            "Allow installing unknown apps for Siphon, then tap Install again",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                    }
-                                },
-                                onOpenAuthorProfile = {
-                                    runCatching {
-                                        context.startActivity(
-                                            Intent(Intent.ACTION_VIEW, Uri.parse(AppUpdater.AUTHOR_GITHUB_URL))
-                                        )
-                                    }
-                                },
                                 onBack = navigateBack
                             )
                         }
@@ -1106,8 +864,6 @@ fun MainContent(
                     }
                 }
             }
-
-            val activeTabTitle = browserTabs.firstOrNull { it.id == activeTabId }?.title
 
             SnifferSheet(
                 isOpen = isSnifferSheetOpen,
@@ -1147,144 +903,14 @@ fun MainContent(
                 )
             }
 
-            if (!startupPromptDismissed && currentScreen != AppScreen.SETTINGS_ABOUT) {
-                when (val state = updateState) {
-                    is UpdateState.UpdateAvailable -> {
-                        val release = state.release
-                        val shaPreview = release.expectedSha256?.take(16)?.plus("...") ?: "Missing"
-                        AlertDialog(
-                            onDismissRequest = { updateRepository.dismissStartupPrompt() },
-                            title = { Text("Update Available (${release.tagName})") },
-                            text = {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (release.releaseNotes.isNotBlank()) {
-                                        Text(
-                                            text = release.releaseNotes.trim(),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            maxLines = 6,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                    Text(
-                                        text = "SHA-256: $shaPreview",
-                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            },
-                            confirmButton = {
-                                FilledTonalButton(
-                                    onClick = { updateRepository.downloadAndVerifyUpdate() },
-                                    shape = ExpressiveShapeTokens.PillShape
-                                ) {
-                                    Text("Download & Verify")
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(
-                                    onClick = { updateRepository.dismissStartupPrompt() },
-                                    shape = ExpressiveShapeTokens.PillShape
-                                ) {
-                                    Text("Later")
-                                }
-                            }
-                        )
-                    }
-
-                    is UpdateState.Downloading -> {
-                        val progressFraction = (state.progressPercent / 100f).coerceIn(0f, 1f)
-                        AlertDialog(
-                            onDismissRequest = { updateRepository.dismissStartupPrompt() },
-                            title = { Text("Downloading ${state.release.tagName}") },
-                            text = {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    LinearProgressIndicator(
-                                        progress = { progressFraction },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Text(
-                                        text = "${state.progressPercent}% downloaded...",
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                            },
-                            confirmButton = {},
-                            dismissButton = {
-                                TextButton(
-                                    onClick = { updateRepository.dismissStartupPrompt() },
-                                    shape = ExpressiveShapeTokens.PillShape
-                                ) {
-                                    Text("Hide")
-                                }
-                            }
-                        )
-                    }
-
-                    is UpdateState.Verifying -> {
-                        AlertDialog(
-                            onDismissRequest = { updateRepository.dismissStartupPrompt() },
-                            title = { Text("Verifying ${state.release.tagName}") },
-                            text = {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                                    Text(
-                                        text = "Verifying SHA-256 checksum...",
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                            },
-                            confirmButton = {},
-                            dismissButton = {
-                                TextButton(
-                                    onClick = { updateRepository.dismissStartupPrompt() },
-                                    shape = ExpressiveShapeTokens.PillShape
-                                ) {
-                                    Text("Hide")
-                                }
-                            }
-                        )
-                    }
-
-                    is UpdateState.ReadyToInstall -> {
-                        AlertDialog(
-                            onDismissRequest = { updateRepository.dismissStartupPrompt() },
-                            title = { Text("Update Ready (${state.release.tagName})") },
-                            text = {
-                                Text(
-                                    text = "SHA-256 verified: ${state.verifiedSha256.take(16)}...",
-                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
-                                )
-                            },
-                            confirmButton = {
-                                FilledTonalButton(
-                                    onClick = {
-                                        if (!updateRepository.installReadyApk(context)) {
-                                            Toast.makeText(
-                                                context,
-                                                "Allow installing unknown apps for Siphon, then tap Install again",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        }
-                                    },
-                                    shape = ExpressiveShapeTokens.PillShape
-                                ) {
-                                    Text("Install")
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(
-                                    onClick = { updateRepository.dismissStartupPrompt() },
-                                    shape = ExpressiveShapeTokens.PillShape
-                                ) {
-                                    Text("Later")
-                                }
-                            }
-                        )
-                    }
-
-                    else -> Unit
-                }
-            }
+            AppUpdateDialogHost(
+                updateState = updateState,
+                startupPromptDismissed = startupPromptDismissed,
+                isAboutScreen = currentScreen == AppScreen.SETTINGS_ABOUT,
+                onDismissPrompt = { updateRepository.dismissStartupPrompt() },
+                onDownloadAndVerify = { updateRepository.downloadAndVerifyUpdate() },
+                onInstallReadyApk = { ctx -> updateRepository.installReadyApk(ctx) }
+            )
 
             AnimatedVisibility(
                 visible = !pendingClipboardLink.isNullOrBlank(),
@@ -1382,7 +1008,7 @@ private fun ClipboardDetectionBanner(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = if (isMagnet) Icons.Rounded.Hub else Icons.Rounded.ContentPaste,
+                        imageVector = if (isMagnet) SiphonIcons.Hub else SiphonIcons.ContentPaste,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(20.dp)
@@ -1431,3 +1057,135 @@ private fun ClipboardDetectionBanner(
         }
     }
 }
+
+@Composable
+private fun SettingsDetailPane(
+    screen: AppScreen,
+    showBackButton: Boolean,
+    browserViewModel: BrowserViewModel,
+    queueViewModel: QueueViewModel,
+    updateRepository: UpdateRepository,
+    browserPrefs: BrowserPreferences,
+    themeMode: AppThemeMode,
+    colorSeed: AppColorSeed,
+    isAdBlockEnabled: Boolean,
+    adblockSettings: AdblockSettings,
+    adblockRuleCount: Int,
+    concurrencySettings: ConcurrencySettings,
+    autoUpdateEnabled: Boolean,
+    updateState: UpdateState,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+
+    when (screen) {
+        AppScreen.SETTINGS_BROWSER -> {
+            BrowserSearchSettingsScreen(
+                browserPreferences = browserPrefs,
+                onSetSearchEngine = { browserViewModel.setSearchEngine(it) },
+                onSetWebDarkMode = { enabled ->
+                    if (enabled != browserPrefs.webDarkMode) {
+                        browserViewModel.toggleWebDarkMode()
+                    }
+                },
+                onSetDesktopMode = { enabled ->
+                    if (enabled != browserPrefs.desktopMode) {
+                        browserViewModel.toggleDesktopMode()
+                    }
+                },
+                onBack = onBack,
+                showBackButton = showBackButton
+            )
+        }
+        AppScreen.SETTINGS_APPEARANCE -> {
+            AppearanceSettingsScreen(
+                themeMode = themeMode,
+                colorSeed = colorSeed,
+                onSetThemeMode = { browserViewModel.setThemeMode(it) },
+                onSetColorSeed = { browserViewModel.setColorSeed(it) },
+                onBack = onBack,
+                showBackButton = showBackButton
+            )
+        }
+        AppScreen.SETTINGS_ADBLOCK -> {
+            PrivacyAdblockSettingsScreen(
+                isAdBlockEnabled = isAdBlockEnabled,
+                adblockSettings = adblockSettings,
+                activeRuleCount = adblockRuleCount,
+                onToggleAdBlock = { browserViewModel.toggleAdBlock() },
+                onToggleList = { id, enabled -> browserViewModel.toggleFilterList(id, enabled) },
+                onAddCustomList = { name, url -> browserViewModel.addCustomFilterList(name, url) },
+                onRemoveCustomList = { id -> browserViewModel.removeCustomFilterList(id) },
+                onUpdateCustomRules = { rules -> browserViewModel.updateCustomUserRules(rules) },
+                onRefreshSubscriptions = { onComplete ->
+                    browserViewModel.refreshAdblockSubscriptions(
+                        onError = { err ->
+                            onComplete()
+                            Toast.makeText(
+                                context,
+                                "Adblock error: ${err.message ?: "Failed to update"}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        onResult = { rules, lists ->
+                            onComplete()
+                            Toast.makeText(
+                                context,
+                                "Adblock updated: $rules rules ($lists lists)",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                },
+                onClearHistory = { browserViewModel.clearHistory() },
+                onBack = onBack,
+                showBackButton = showBackButton
+            )
+        }
+        AppScreen.SETTINGS_DOWNLOADS -> {
+            DownloadSettingsScreen(
+                currentMaxDownloads = concurrencySettings.maxDownloads,
+                currentWorkers = concurrencySettings.workers,
+                currentBandwidthLimit = concurrencySettings.bandwidthLimit,
+                currentWifiOnly = concurrencySettings.wifiOnly,
+                currentCustomDownloadUri = concurrencySettings.customDownloadUri,
+                onUpdateConcurrency = { maxD, w, limit, wifi, customUri ->
+                    queueViewModel.setConcurrency(maxD, w, limit, wifi, customUri)
+                },
+                onBack = onBack,
+                showBackButton = showBackButton
+            )
+        }
+        AppScreen.SETTINGS_ABOUT -> {
+            AboutUpdatesSettingsScreen(
+                versionName = updateRepository.currentVersionName,
+                versionCode = updateRepository.currentVersionCode,
+                autoUpdateEnabled = autoUpdateEnabled,
+                updateState = updateState,
+                onToggleAutoUpdate = { updateRepository.setAutoUpdateEnabled(it) },
+                onCheckForUpdates = { updateRepository.checkForUpdates(silent = false) },
+                onDownloadAndVerify = { updateRepository.downloadAndVerifyUpdate() },
+                onInstallUpdate = {
+                    if (!updateRepository.installReadyApk(context)) {
+                        Toast.makeText(
+                            context,
+                            "Allow installing unknown apps for Siphon, then tap Install again",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                },
+                onOpenAuthorProfile = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(AppUpdater.AUTHOR_GITHUB_URL))
+                        )
+                    }
+                },
+                onBack = onBack,
+                showBackButton = showBackButton
+            )
+        }
+        else -> Unit
+    }
+}
+

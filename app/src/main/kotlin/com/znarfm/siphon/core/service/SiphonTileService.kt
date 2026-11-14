@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import com.znarfm.siphon.SiphonApp
 import com.znarfm.siphon.data.db.DownloadDao
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.db.SiphonDatabase
@@ -23,7 +24,8 @@ class SiphonTileService : TileService() {
 
     override fun onCreate() {
         super.onCreate()
-        dao = SiphonDatabase.get(this).downloadDao()
+        val container = (application as? SiphonApp)?.container
+        dao = container?.downloadDao ?: SiphonDatabase.get(this).downloadDao()
     }
 
     override fun onStartListening() {

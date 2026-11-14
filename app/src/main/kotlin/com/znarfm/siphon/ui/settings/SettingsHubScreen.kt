@@ -1,18 +1,11 @@
 package com.znarfm.siphon.ui.settings
 
-import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -21,9 +14,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.znarfm.siphon.data.repository.BrowserPreferences
 import com.znarfm.siphon.ui.AppScreen
+import com.znarfm.siphon.ui.common.effectiveForDevice
 import com.znarfm.siphon.ui.theme.AppColorSeed
 import com.znarfm.siphon.ui.theme.AppThemeMode
 import com.znarfm.siphon.ui.theme.ExpressiveShapeTokens
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @Composable
 fun SettingsHubScreen(
@@ -54,14 +49,7 @@ fun SettingsHubScreen(
         if (browserPreferences.desktopMode) add("Desktop")
     }.joinToString(" • ")
 
-    val effectiveSeedTitle = if (
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
-        colorSeed == AppColorSeed.DYNAMIC
-    ) {
-        AppColorSeed.SAPPHIRE.title
-    } else {
-        colorSeed.title
-    }
+    val effectiveSeedTitle = colorSeed.effectiveForDevice().title
     val appearanceSummary = "${themeMode.title} • $effectiveSeedTitle"
 
     val privacySummary = if (isAdBlockEnabled) {
@@ -92,7 +80,7 @@ fun SettingsHubScreen(
         ) {
             item(key = "category_browser_search") {
                 SettingsCategoryCard(
-                    icon = Icons.Rounded.Public,
+                    icon = SiphonIcons.Public,
                     title = "Browser & Search",
                     subtitle = browserSummary,
                     selected = selectedCategory == AppScreen.SETTINGS_BROWSER,
@@ -102,7 +90,7 @@ fun SettingsHubScreen(
 
             item(key = "category_appearance") {
                 SettingsCategoryCard(
-                    icon = Icons.Rounded.Palette,
+                    icon = SiphonIcons.Palette,
                     title = "Appearance",
                     subtitle = appearanceSummary,
                     selected = selectedCategory == AppScreen.SETTINGS_APPEARANCE,
@@ -112,7 +100,7 @@ fun SettingsHubScreen(
 
             item(key = "category_privacy_adblock") {
                 SettingsCategoryCard(
-                    icon = Icons.Rounded.Shield,
+                    icon = SiphonIcons.Shield,
                     title = "Privacy & Ad Blocker",
                     subtitle = privacySummary,
                     selected = selectedCategory == AppScreen.SETTINGS_ADBLOCK,
@@ -122,7 +110,7 @@ fun SettingsHubScreen(
 
             item(key = "category_downloads_storage") {
                 SettingsCategoryCard(
-                    icon = Icons.Rounded.Download,
+                    icon = SiphonIcons.Download,
                     title = "Downloads & Storage",
                     subtitle = downloadsSummary,
                     selected = selectedCategory == AppScreen.SETTINGS_DOWNLOADS,
@@ -132,7 +120,7 @@ fun SettingsHubScreen(
 
             item(key = "category_about_updates") {
                 SettingsCategoryCard(
-                    icon = Icons.Rounded.SystemUpdate,
+                    icon = SiphonIcons.SystemUpdate,
                     title = "About & Updates",
                     subtitle = if (updateAvailableTag != null) {
                         "Update available: $updateAvailableTag • v$versionName"

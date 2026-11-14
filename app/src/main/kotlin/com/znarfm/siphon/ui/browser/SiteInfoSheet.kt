@@ -10,16 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.DarkMode
-import androidx.compose.material.icons.rounded.DesktopWindows
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -39,6 +29,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.znarfm.siphon.ui.theme.SiphonIcons
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -66,9 +57,9 @@ fun SiteInfoSheet(
     val isHttp = url.startsWith("http://", ignoreCase = true)
 
     val securityIcon = when {
-        isHttps -> Icons.Rounded.Lock
-        isHttp -> Icons.Rounded.Warning
-        else -> Icons.Rounded.Info
+        isHttps -> SiphonIcons.Lock
+        isHttp -> SiphonIcons.Warning
+        else -> SiphonIcons.Info
     }
     val securityLabel = when {
         isHttps -> "Connection is secure"
@@ -143,7 +134,7 @@ fun SiteInfoSheet(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.VisibilityOff,
+                                imageVector = SiphonIcons.VisibilityOff,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(14.dp)
@@ -193,7 +184,7 @@ fun SiteInfoSheet(
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(onClick = { onCopyUrl(url) }) {
                         Icon(
-                            imageVector = Icons.Rounded.ContentCopy,
+                            imageVector = SiphonIcons.ContentCopy,
                             contentDescription = "Copy URL",
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -213,7 +204,7 @@ fun SiteInfoSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = if (isAdBlockEnabled && !isSiteAllowlisted) Icons.Rounded.Shield else Icons.Outlined.Shield,
+                            imageVector = if (isAdBlockEnabled && !isSiteAllowlisted) SiphonIcons.Shield else SiphonIcons.Outlined.Shield,
                             contentDescription = null,
                             tint = if (isAdBlockEnabled && !isSiteAllowlisted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(22.dp)
@@ -282,7 +273,7 @@ fun SiteInfoSheet(
 
             // Quick Toggles: Desktop Site & Web Dark Mode
             SiteToggleRow(
-                icon = Icons.Rounded.DesktopWindows,
+                icon = SiphonIcons.DesktopWindows,
                 title = "Desktop site",
                 subtitle = "Request desktop version of this site",
                 checked = desktopMode,
@@ -290,7 +281,7 @@ fun SiteInfoSheet(
             )
 
             SiteToggleRow(
-                icon = Icons.Rounded.DarkMode,
+                icon = SiphonIcons.DarkMode,
                 title = "Web dark mode",
                 subtitle = "Force dark theme on web pages",
                 checked = webDarkMode,
