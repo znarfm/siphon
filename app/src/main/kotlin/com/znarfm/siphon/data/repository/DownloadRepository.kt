@@ -2,7 +2,7 @@ package com.znarfm.siphon.data.repository
 
 import android.app.Application
 import android.net.Uri
-import com.znarfm.siphon.core.common.FormatUtils.toOkHttpHeaders
+import com.znarfm.siphon.core.common.toOkHttpHeaders
 import com.znarfm.siphon.core.network.HeadersCodec
 import com.znarfm.siphon.core.network.MetadataProber
 import com.znarfm.siphon.core.service.DownloadForegroundService

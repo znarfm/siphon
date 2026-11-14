@@ -79,9 +79,10 @@ import com.znarfm.siphon.core.updater.UpdateState
 import com.znarfm.siphon.data.db.DownloadState
 import com.znarfm.siphon.data.repository.ConcurrencySettings
 import com.znarfm.siphon.data.repository.UpdateRepository
-import com.znarfm.siphon.data.settings.AdblockSettings
-import com.znarfm.siphon.data.settings.BrowserPreferences
-import com.znarfm.siphon.data.settings.ThemeMode
+import com.znarfm.siphon.core.adblock.AdblockSettings
+import com.znarfm.siphon.data.repository.BrowserPreferences
+import com.znarfm.siphon.ui.theme.AppColorSeed
+import com.znarfm.siphon.ui.theme.AppThemeMode
 import com.znarfm.siphon.ui.adaptive.LocalWindowSizeClass
 import com.znarfm.siphon.ui.adaptive.TabletNavigationRail
 import com.znarfm.siphon.ui.adaptive.rememberWindowSizeClass
@@ -1065,8 +1066,8 @@ private fun SettingsDetailPane(
     queueViewModel: QueueViewModel,
     updateRepository: UpdateRepository,
     browserPrefs: BrowserPreferences,
-    themeMode: ThemeMode,
-    colorSeed: Long,
+    themeMode: AppThemeMode,
+    colorSeed: AppColorSeed,
     isAdBlockEnabled: Boolean,
     adblockSettings: AdblockSettings,
     adblockRuleCount: Int,
