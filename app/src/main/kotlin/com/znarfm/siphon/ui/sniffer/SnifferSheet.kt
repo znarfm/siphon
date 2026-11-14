@@ -1,6 +1,7 @@
 package com.znarfm.siphon.ui.sniffer
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -76,6 +77,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.znarfm.siphon.core.sniffer.HlsVariantInfo
 import com.znarfm.siphon.core.sniffer.SniffedMedia
 import com.znarfm.siphon.data.db.DownloadEntity
@@ -171,7 +173,8 @@ fun SnifferSheet(
     val isExpanded = LocalWindowSizeClass.current.isExpanded
 
     if (isExpanded) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        BackHandler(enabled = isOpen) { onDismiss() }
+        Box(modifier = Modifier.fillMaxSize().zIndex(15f)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
